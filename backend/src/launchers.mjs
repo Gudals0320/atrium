@@ -17,7 +17,7 @@ import { EFFORTS, PERMISSION_MODES } from './settings.mjs';
 import { unlistedModel } from './codex-models.mjs';
 import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는 launch.mjs
 import { adapterOf, reservedArg, wrapperInfo } from './harness.mjs'; // P115: 하네스 어댑터 표. P309: 감싼 호출자(omh)
-import { HERMES_EFFORTS, hermesEffortOf, hermesReasoningOf, reasoningIn, withoutReasoning } from './harness.mjs'; // P299: Hermes 노력 수준
+import { HERMES_EFFORTS, hermesEffortOf, hermesReasoningOf, reasoningIn, withoutReasoning, AGY_TIER_RE, agyModelArg } from './harness.mjs'; // P299: Hermes 노력 수준
 import { V2_KEY, migrateLaunchers, legacyInitialLaunchers } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
 // P330: 하네스 계약 표(harness-contract.mjs, 근거 harness-contract.md). 칸 값 → 인자, 추가 인자와 칸의 겹침, 하네스 런처로 바꾸기, 점검
 import { CODEX_EFFORTS, PI_THINKING, CONTRACTS, contractOf, effortArgsFor, hasEffortArg, approvalArgsFor, hasApprovalArgs, argOverlaps, moveArgsToFields, harnessOfCommand, contractHint, runCheck, modelArgsFor } from './harness-contract.mjs';
@@ -363,6 +363,7 @@ export function effortArgsOf(kind, effort, args = []) {
 // 노력 수준을 무시한 까닭 한 줄(atrium child 응답). P299: Hermes의 까닭(받지 않는 값, 런처 인자의 --reasoning)
 export const effortIgnoredLine = (kind, effort, why = null) => why === 'value' ? `--effort ${effort}는 무시했다: ${kind}는 ${HERMES_EFFORTS.join(', ')}만 받는다(${kind} 설정의 기본을 따른다).`
   : why === 'launcherArgs' ? `--effort는 무시했다: 런처 추가 인자의 --reasoning ${effort}를 따른다.`
+  : CONTRACTS[kind] && CONTRACTS[kind].effort.via === 'slash' && !CONTRACTS[kind].effort.values ? `--effort ${effort}는 무시했다: ${kind}는 노력 수준을 인자로 받지 않는다(${kind} 안 ${CONTRACTS[kind].effort.slash}로 정한다).` // P330: 계약 표
   : `--effort ${effort}는 무시했다: ${kind}는 노력 수준을 받지 않는다(호출자 인자나 ${kind} 설정을 따른다).`;
 // P192: 노력 수준·승인 방식 → 그 하네스 인자. 추가 인자에 같은 인자가 있으면 붙이지 않는다(런처 인자가 이긴다)
 // P330: 계약 표(harness-contract.mjs): AGY --effort·--mode, Codex -c model_reasoning_effort·승인 표, pi --thinking, Hermes --yolo, opencode --auto.
@@ -400,7 +401,7 @@ export function previewLauncher(l) {
   const ha = h.kind === 'hermes' ? withoutReasoning(r.args) : r.args;
   const omh = h.kind === 'hermes' && wrapperInfo(s); // P309: omh는 모델을 인자가 아니라 env HERMES_MODEL로 받는다
   const mEnv = omh && r.model ? ['HERMES_MODEL'] : h.kind === 'opencode' && r.model ? ['OPENCODE_CONFIG_CONTENT'] : []; // P330: opencode는 모델을 설정 글(env)로 받는다
-  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a && !omh ? a.modelArgs(r.model) : [])].join(' ') + (ha.length ? ' ' + joinArgs(ha) : ''), env: mEnv, board: !!a, ...(ra ? { after: `/reasoning ${ra}` } : {}) };
+  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a && !omh ? a.modelArgs(r.model, r.args) : [])].join(' ') + (ha.length ? ' ' + joinArgs(ha) : ''), env: mEnv, board: !!a, ...(ra ? { after: `/reasoning ${ra}` } : {}) };
 }
 
 // ---------- P330: 하네스 계약에 맞추기(설정 › 런처의 안내·겹침 경고·바꾸기·점검) ----------
@@ -427,7 +428,10 @@ export function launcherContract(l) {
   if (!hint) return null;
   const ov = argOverlaps(h.id, splitArgs(l.args), l.startCommand || '');
   const overlaps = ov.items.map((x) => ({ arg: x.arg, field: x.field, value: x.value, ok: x.ok, movable: x.ok && h.fields.includes(x.field) }));
-  return { hint, overlaps, unknown: ov.unknown, rejected: ov.rejected };
+  // P330: AGY 단계 붙은 모델 ID + 노력 수준 → 보드가 단계를 떼고 넘긴다(알림)
+  let tier = null;
+  if (h.id === 'agy' && l.model && AGY_TIER_RE.test(l.model)) { const r = resolveLauncher(l); const base = agyModelArg(l.model, r.args); if (base !== l.model) tier = { model: l.model, base, effort: (r.args[r.args.indexOf('--effort') + 1]) || '' }; }
+  return { hint, overlaps, unknown: ov.unknown, rejected: ov.rejected, ...(tier ? { tier } : {}) };
 }
 // 겹치는 인자를 칸으로(fields) 또는 명령 한 줄 런처를 하네스 런처로(harness). 저장하지 않는다(설정 탭이 칸을 채우고 사람이 저장한다)
 export function fixLauncher(l, action) {

@@ -166,7 +166,7 @@ export function otherKindPlan({ route, permissionMode = 'manual', lists = {} }) 
   const approval = agyBypass && approval0.from === 'parent' ? { ...approval0, from: 'agy-bypass' } : approval0;
   const args = [...largs, ...approval.args];
   return {
-    launcher: l, model, args, argv: [...modelArgsFor(kind, model, l ? l.startCommand || '' : ''), ...args], // P330: 그 하네스의 모델 모양(-m, --model, 설정·env면 없음)
+    launcher: l, model, args, argv: [...modelArgsFor(kind, model, l ? l.startCommand || '' : '', args), ...args], // P330: 그 하네스의 모델 모양(-m, --model, 설정·env면 없음)
     record: { base: route.type === 'launcher' ? 'launcher' : inherit ? 'parent' : l ? 'rail' : 'bare', launcher: l ? l.name : null, model, modelFrom: override ? 'model' : model ? 'launcher' : null, approvalArgs: approval.args, approvalFrom: approval.from, parentPermissionMode: permissionMode },
   };
 }
@@ -821,7 +821,7 @@ export class Branch {
       effortNote: effortPlan && effortPlan.ignored ? effortIgnoredLine(kind, effortPlan.why === 'launcherArgs' ? effortPlan.effort : otherEffort, effortPlan.why || null) : null, // P299: Hermes 까닭 // P208: 노력 수준을 받지 않는 종류
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
-      harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgsFor(kind, other.model, other.launcher ? other.launcher.startCommand || '' : ''), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
+      harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgsFor(kind, other.model, other.launcher ? other.launcher.startCommand || '' : '', effortPlan.args), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
       permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,

@@ -3,7 +3,7 @@
 // 하위 세션(branch.mjs)·atrium models가 이 표를 본다.
 // 이 모듈은 하네스 설정·로그인 파일을 열지 않는다. 점검(runCheck)은 실행 명령에 --version·--help만 붙여 돌린다(모델을 부르지 않는다).
 import { execFile } from 'node:child_process';
-import { AGY_APPROVAL, HERMES_EFFORTS, hermesEffortOf, wrapperOf } from './harness.mjs';
+import { AGY_APPROVAL, HERMES_EFFORTS, hermesEffortOf, wrapperOf, agyModelArg } from './harness.mjs';
 
 const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions']; // settings.mjs와 같다
 export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']; // claude --effort
@@ -103,11 +103,11 @@ export function hasEffortArg(kind, args = []) {
   return a.some((x) => x.split('=')[0] === c.effort.flag);
 }
 // 모델 → 그 하네스 인자(설정·env·하네스 안 명령으로 받는 하네스는 [])
-export function modelArgsFor(kind, model, startCommand = '') {
+export function modelArgsFor(kind, model, startCommand = '', args = []) {
   const c = contractOf(kind, startCommand);
   if (!model) return [];
   if (!c) return ['-m', model];
-  return c.model.via === 'arg' ? [c.model.flags[0], model] : [];
+  return c.model.via === 'arg' ? [c.model.flags[0], kind === 'agy' ? agyModelArg(model, args) : model] : []; // P330: AGY 단계 붙은 ID + --effort
 }
 // 판이 넘기지 못하는 모델(하네스 안 /model로만 정한다)
 export const modelIgnoredLine = (kind, model) => '--model ' + model + '는 무시했다: ' + kind + '는 모델을 인자로 받지 않는다(' + kind + ' 안 /model 또는 ' + kind + ' 설정을 따른다).';

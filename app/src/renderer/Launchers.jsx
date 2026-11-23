@@ -254,7 +254,7 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
         {cv.movable && <button type="button" className="mt-btn small" data-action="launcher-move-args" onClick={() => fix('fields')}>{t('launcherContract.moveBtn')}</button>}
       </div>}
       {d.harness !== 'shell' && <div className="mt-ln-check" data-role="launcher-check">
-        <button type="button" className="mt-btn small ghost" data-action="launcher-check" disabled={ckBusy || (d.harness === 'command' && !d.command.trim())} onClick={check}>{ckBusy ? t('launcherCheck.running') : t('launcherCheck.btn')}</button>
+        <button type="button" className="mt-btn small" data-action="launcher-check" disabled={ckBusy || (d.harness === 'command' && !d.command.trim())} onClick={check}>{ckBusy ? t('launcherCheck.running') : t('launcherCheck.btn')}</button>
         <span className="mt-set-hint">{t('launcherCheck.note')}</span>
         {ck && <ul className="mt-ln-check-rows" data-role="launcher-check-result" data-ok={ck.ok ? '1' : '0'}>{checkRows(ck).map((r, i) => <li key={i} className={r.tone} data-tone={r.tone}>{t(r.key, r.vars)}</li>)}</ul>}
       </div>}

@@ -155,6 +155,18 @@ test('P330 점검: 도움말 표본에서 판이 붙일 인자를 찾는다(없�
   assert.equal(old.ok, false); assert.deepEqual(old.flags, [{ flag: '--approve-for-me', ok: false }]);
 });
 
+test('P330 AGY 단계 붙은 모델 ID: 노력 인자가 있으면 단계를 떼고 넘긴다(AGY 1.5.14는 둘을 함께 주면 모델을 버린다)', () => {
+  const l = N({ name: 'A', harness: 'agy', model: 'gemini-3.8-flash-medium', effort: 'low', permissionMode: 'bypassPermissions' });
+  assert.equal(previewLauncher(l).line, 'agy --model gemini-3.8-flash --effort low --dangerously-skip-permissions');
+  assert.deepEqual(harnessLaunch({ kind: 'agy', sessionId: 's', model: 'gemini-3.8-flash-medium', launcherArgs: resolveLauncher(l).args }).args.slice(0, 2), ['--model', 'gemini-3.8-flash']);
+  assert.deepEqual(launcherContract(l).tier, { model: 'gemini-3.8-flash-medium', base: 'gemini-3.8-flash', effort: 'low' });
+  // 단계 붙은 ID만(노력 없음)·단계 없는 이름 + 노력은 그대로
+  const only = N({ name: 'B', harness: 'agy', model: 'gemini-3.8-flash-high', permissionMode: 'manual' });
+  assert.equal(previewLauncher(only).line, 'agy --model gemini-3.8-flash-high'); assert.equal(launcherContract(only).tier, undefined);
+  assert.equal(previewLauncher(N({ name: 'C', harness: 'agy', model: 'gemini-4-hydrogen', effort: 'high' })).line, 'agy --model gemini-4-hydrogen --effort high --dangerously-skip-permissions');
+  assert.deepEqual(modelArgsFor('agy', 'gemini-4-neon-xhigh', '', ['--effort', 'low']), ['--model', 'gemini-4-neon']);
+});
+
 test('P330 계약 표: 명령 이름 → 하네스, omh는 hermes 계열', () => {
   assert.deepEqual(harnessOfCommand('C:/x/dsh-tui.cmd'), { harness: 'dsh', startCommand: '' });
   assert.deepEqual(harnessOfCommand('dst'), { harness: 'dsh', startCommand: 'dst' });

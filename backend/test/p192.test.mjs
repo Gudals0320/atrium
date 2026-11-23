@@ -23,7 +23,7 @@ const INSTR = { file: 'C:/d/plugin/harness-system-prompt.md', text: HARNESS_PROM
 
 test('P192 어댑터: agy는 --model, 안내문 폴더(--add-dir <데이터>/harness/agy, 그 안 AGENTS.md), 추가 인자. 이어 가기는 --conversation <ID>(모르면 새로)', () => {
   const a = ADAPTERS.agy.build({ sessionId: SID, model: 'gemini-3.8-flash-low', launcherArgs: ['--effort', 'low'], instructions: INSTR, filesDir: 'C:\\d\\harness' });
-  assert.deepEqual(a.args, ['--model', 'gemini-3.8-flash-low', '--add-dir', 'C:/d/harness/agy', '--effort', 'low', '--settings', '{"altScreenMode":"always"}']); // P203: 판 설정
+  assert.deepEqual(a.args, ['--model', 'gemini-3.8-flash', '--add-dir', 'C:/d/harness/agy', '--effort', 'low', '--settings', '{"altScreenMode":"always"}']); // P203: 판 설정. P330: --effort가 있으면 단계 없는 이름
   assert.deepEqual(a.files, [{ file: 'C:/d/harness/agy/AGENTS.md', text: `${HARNESS_PROMPT}\n` }]);
   assert.equal(a.harnessSessionId, null); assert.equal(a.resumed, false);
   const r = ADAPTERS.agy.build({ sessionId: SID, resume: true, harnessSessionId: CONV, model: 'm', instructions: INSTR, filesDir: 'C:/d/harness' });
@@ -80,7 +80,7 @@ test('P192 호출자: AGY는 모델·노력 수준·승인 방식·추가 인자
   const r = resolveLauncher(l);
   assert.equal(r.kind, 'agy'); assert.equal(r.model, 'gemini-3.8-flash-low'); assert.equal(r.permissionMode, 'bypassPermissions');
   assert.deepEqual(r.args, ['--sandbox', '--effort', 'high', '--dangerously-skip-permissions']);
-  assert.equal(previewLauncher(l).line, 'agy --model gemini-3.8-flash-low --sandbox --effort high --dangerously-skip-permissions');
+  assert.equal(previewLauncher(l).line, 'agy --model gemini-3.8-flash --sandbox --effort high --dangerously-skip-permissions'); // P330: 단계 붙은 ID + --effort → 단계 없는 이름
   // 함께 준 값이 호출자 값을 덮는다(atrium spawn --mode plan)
   assert.deepEqual(resolveLauncher(l, { permissionMode: 'plan', effort: 'low' }).args, ['--sandbox', '--effort', 'low', '--mode', 'plan']);
   // 추가 인자에 같은 인자가 있으면 그것이 이긴다

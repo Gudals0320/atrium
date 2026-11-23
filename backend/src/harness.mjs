@@ -118,7 +118,7 @@ export const ADAPTERS = {
     sessionIdFrom: 'learned', // 대화 기록 폴더의 새 대화(agySessionOf)
     mustRePass: ['instructions'], // --add-dir은 그 세션에만 든다. 이어 갈 때도 다시 준다
     reserved: { flags: ['--conversation', '-c', '--continue', '-p', '--print', '--prompt', '-i', '--prompt-interactive', '--input-format', '--output-format', '--json-schema', '--print-timeout', '--remote-agent', '--new-project'] },
-    modelArgs: (m) => ['--model', m],
+    modelArgs: (m, args = []) => ['--model', agyModelArg(m, args)], // P330: 노력 인자가 있으면 단계 없는 이름
     // atrium 명령과 승인(P192 개발용 판 시험, 1.5.9): AGY Auto 모드(이 PC 사용자 기본)는 명령을 터미널 샌드박스에서 먼저 돌리는데, 샌드박스는
     //   판 데이터 폴더의 bin/·sessions/와 127.0.0.1 연결을 막는다. 그래서 atrium은 샌드박스 밖에서만 되고, 그때 AGY가 사람에게 묻는다(판은 waiting,
     //   하위면 상위에 needs_human). accept-edits도 묻는다. 묻지 않고 되는 것은 --dangerously-skip-permissions(판의 dontAsk·bypassPermissions)뿐이다.
@@ -132,7 +132,7 @@ export const ADAPTERS = {
         files.push({ file: `${dir}/AGENTS.md`, text: `${ctx.instructions.text}\n` });
         rules = ['--add-dir', dir];
       }
-      const args = [...(resumed ? ['--conversation', ctx.harnessSessionId] : []), ...(ctx.model ? ['--model', ctx.model] : []), ...rules, ...agySettingsArgs(ctx.launcherArgs || [], AGY_BOARD_SETTINGS, undefined, ctx.statusLine || null)]; // P203: 판 설정(대체 화면)과 사용자 --settings를 합친다. P211: 판의 상태 줄 명령
+      const args = [...(resumed ? ['--conversation', ctx.harnessSessionId] : []), ...(ctx.model ? ['--model', agyModelArg(ctx.model, ctx.launcherArgs || [])] : []), ...rules, ...agySettingsArgs(ctx.launcherArgs || [], AGY_BOARD_SETTINGS, undefined, ctx.statusLine || null)]; // P203: 판 설정(대체 화면)과 사용자 --settings를 합친다. P211: 판의 상태 줄 명령
       return { args, env: {}, files, harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
     },
     isBoardLine: (argv) => argv.some((a) => /[\\/]agy$/.test(String(a))),
@@ -203,6 +203,15 @@ function omhBuild(ctx) {
   const args = [...(resumed ? ['--resume', ctx.harnessSessionId] : ['--new']), ...withoutReasoning(ctx.launcherArgs)];
   const env = { ...OMH_BOARD_ENV, ...(ctx.instructions ? { HERMES_EPHEMERAL_SYSTEM_PROMPT: ctx.instructions.text } : {}), ...(ctx.model ? { HERMES_MODEL: ctx.model } : {}) };
   return { ...(reasoning ? { readyInput: hermesReasoningInput(reasoning), reasoning } : {}), args, env, files: [], harnessSessionId: resumed ? ctx.harnessSessionId : null, resumed };
+}
+// P330: AGY 모델 ID(agy models)는 끝에 추론 단계가 붙어 있다(gemini-3.8-flash-medium). 단계 붙은 ID와 --effort를 함께 주면 AGY 1.5.14는 모델을 버리고
+//   기본 모델로 뜬다(개발용 판 시험: 상태 줄 "Gemini 4 Argon · medium"). 단계 없는 이름 + --effort(gemini-3.8-flash --effort low)나 단계 붙은 ID만은 먹는다.
+//   그래서 인자에 --effort가 있으면 단계를 떼고 넘긴다(노력 칸·--effort가 단계를 정한다)
+export const AGY_TIER_RE = /-(low|medium|high|xhigh|max)$/;
+export function agyModelArg(model, args = []) {
+  const m = String(model || '');
+  const hasEffort = (args || []).some((a) => String(a) === '--effort' || String(a).startsWith('--effort='));
+  return hasEffort && AGY_TIER_RE.test(m) ? m.replace(AGY_TIER_RE, '') : m;
 }
 // P192: AGY 승인 방식. 판의 권한 모드 → AGY 인자. manual은 덧붙이지 않는다(AGY 기본 Agent 모드: 묻는다)
 // auto는 AGY Auto 모드(Windows 11 24H2 이상·개인 계정에서만, 안 되면 AGY가 기본 모드로 돌아간다). dontAsk·bypassPermissions는 묻지 않음

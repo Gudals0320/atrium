@@ -198,6 +198,7 @@ export function contractView(c) {
     out.overlaps.push({ key: o.movable ? 'launcherContract.overlap' : o.ok ? 'launcherContract.overlapNoField' : 'launcherContract.overlapBad', vars: { arg: o.arg, field: o.field, value: o.value }, tone: o.ok ? 'warn' : 'bad' });
     if (o.movable) out.movable = true;
   }
+  if (c.tier) out.overlaps.push({ key: 'launcherContract.agyTier', vars: { model: c.tier.model, base: c.tier.base, effort: c.tier.effort }, tone: 'warn' }); // P330: AGY 단계 붙은 모델 ID + 노력
   for (const r of c.rejected || []) out.overlaps.push({ key: 'launcherContract.rejected_' + r.why, vars: { arg: r.arg }, tone: 'bad' });
   if (c.unknown && c.unknown.length) out.overlaps.push({ key: 'launcherContract.unknown', vars: { args: c.unknown.join(' ') }, tone: 'warn' });
   out.flag = out.movable || (c.rejected || []).length > 0;
