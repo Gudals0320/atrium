@@ -8,7 +8,7 @@ const jsx = read('../src/renderer/MissionLineage.jsx');
 const css = read('../src/renderer/styles.css');
 
 test('PC 세션 맵 카드: [할 일][작업 완료] 차례로 한 무리, 휴대폰 맵(todo 없음)은 작업 완료 꼬리표 그대로', () => {
-  assert.match(jsx, /\{todo \? \(\s*<span className="mt-sm-tags" data-role="map-tags"><TodoBadge sessionId=\{n\.sessionId\} \/>\{done && <span className="mt-mm-donetag" data-role="mm-done">/);
+  assert.match(jsx, /\{todo \? \(\s*<span className="mt-sm-tags" data-role="map-tags">(?:<GuardBadge sessionId=\{n\.sessionId\} where="map" \/>)?<TodoBadge sessionId=\{n\.sessionId\} \/>\{done && <span className="mt-mm-donetag" data-role="mm-done">/);
   assert.match(jsx, /\) : done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark \/>/);
   assert.doesNotMatch(jsx, /\{todo && <TodoBadge/, '배지가 무리 밖에 따로 있지 않다');
 });

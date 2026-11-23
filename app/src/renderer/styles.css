@@ -3161,7 +3161,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-guard-badge.k-suspect { background: var(--bad-bg); color: var(--bad); border-color: rgba(224, 96, 122, .55); }
 .mt-guard-badge.paused { background: rgba(110, 182, 255, .14); color: #8cc8ff; border-color: rgba(140, 200, 255, .5); }
 .mt-guard-resume { margin-left: 2px; padding: 0 .45em; height: 1.2em; border-radius: .6em; border: none; background: #8cc8ff; color: #0b1a2a; font: 700 .9em/1.2em var(--font-ui); cursor: pointer; }
-.mt-guard-resume:disabled { opacity: .6; cursor: default; }
+.mt-guard-resume:disabled { filter: brightness(.7); cursor: default; }
 .mt-guard-badge.list { margin-left: 6px; font-size: .78em; }
 .mt-sm-tags .mt-guard-badge.map { pointer-events: auto; height: 22px; padding: 0 9px 0 7px; gap: 5px; border-radius: 11px; font: 700 14px/22px var(--font-ui); box-shadow: 0 0 0 2px #151412; border: none; }
 .mt-sm-tags .mt-guard-badge.map.k-suspect { background: var(--bad); color: #24070d; }
