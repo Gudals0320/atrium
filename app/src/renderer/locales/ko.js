@@ -3061,6 +3061,7 @@ export default {
     mergeHint: 'merger에게 {branch} → {target} (보고는 {to})',
     mergeHintShort: 'merger에게 {branch}',
     mergeBusy: '맡은 일이 열려 있습니다',
+    mergeNothing: '{target}보다 앞선 커밋이 없습니다(병합할 것 없음)',
     toHuman: '사람',
     mergeAsked: '@{name}에게 병합 준비를 맡겼습니다: {branch} → {target} (보고는 {to}). done 보고가 오면 merger가 병합합니다.',
     mergeFailed: '병합을 맡기지 못했습니다: {error}',

@@ -3057,6 +3057,7 @@ export default {
     mergeHint: 'to the merger: {branch} → {target} (reports to {to})',
     mergeHintShort: 'to the merger: {branch}',
     mergeBusy: 'It has an open task',
+    mergeNothing: 'No commits ahead of {target} (nothing to merge)',
     toHuman: 'you',
     mergeAsked: 'Asked @{name} to get ready for merge: {branch} → {target} (reports to {to}). The merger merges when its done report comes.',
     mergeFailed: 'Could not hand off the merge: {error}',

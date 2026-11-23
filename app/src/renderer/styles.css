@@ -2946,4 +2946,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-qwt-note { font-size: 11px; line-height: 1.45; color: var(--dim); word-break: break-all; }
 .mt-qwt-note.bad { color: var(--bad); }
 .mt-qwt-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.mt-menu-row a[data-action^="rel-"] { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.mt-menu-row a[data-action^="rel-"]:hover { color: var(--accent, var(--text)); }
 .mt-merge-ask { color: var(--ok, #3ecf8e); border-color: color-mix(in srgb, var(--ok, #3ecf8e) 55%, transparent); }

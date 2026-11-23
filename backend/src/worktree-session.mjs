@@ -163,10 +163,28 @@ export class WorktreeSessions {
     if (s) s.quickWorktree = { name, via: plan.via };
     if (gate && s) this.gates.set(s.sessionId, { worktree: name, at: Date.now(), prompt });
     if (head && s && b.branch) b.branch.setRelation(head, s, 'peer', { source: 'user', by: 'user', quiet: true });
-    if (plan.via === 'claude-w' && b.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => b.worktrees.kick('worktree session'), ms); if (t.unref) t.unref(); }
+    if (plan.via === 'claude-w' && s && !gate) this.watchWorktree(s, wtDir(root, name));
     this.store().addEvent(r.sessionId, 'worktree_session', { name, via: plan.via, kind, branch: wtBranch(name), base: plan.via === 'git' ? base : null, peerOf: head ? head.sessionId : null, gate: !!gate, prompt: !!prompt });
     b.log('worktree session ' + name + ' (' + plan.via + ', ' + kind + (head ? ', peer of ' + head.name : '') + (gate ? ', trust gate' : '') + ')');
     return { ...r, worktree: { name, branch: wtBranch(name), path: slash(plan.via === 'git' ? plan.cwd : wtDir(root, name)), via: plan.via, base: plan.via === 'git' ? base : null, gate: !!gate }, peer: head ? shownName(head) : null };
+  }
+  // claude -w는 첫 요청(hook) 전까지 판에 리포 뿌리에서 도는 것으로 보인다. 워크트리 폴더가 생기면 hook을 기다리지 않고 그 폴더를 세션의 폴더로 보고
+  //   git을 다시 읽는다(카드가 노란 상자에 들고 병합 맡기기가 보인다. 하위의 --worktree 워커는 worktrees.mjs expectedWt가 같은 일을 한다). hook이 오면 hook을 따른다
+  watchWorktree(s, dir, { everyMs = 1000, maxMs = 90000 } = {}) {
+    const b = this.b; const t0 = Date.now();
+    const tick = () => {
+      if (!b.sessions.has(s.sessionId)) return;
+      if (s.rt && s.rt.cwd && path.resolve(s.rt.cwd).toLowerCase() !== path.resolve(s.cwd).toLowerCase()) { if (b.worktrees) b.worktrees.kick('worktree session'); return; } // hook이 이미 알렸다
+      if (fs.existsSync(path.join(dir, '.git'))) {
+        if (s.rt) s.rt.cwd = slash(dir);
+        if (b.probeGit) b.probeGit(s, dir);
+        if (b.worktrees) b.worktrees.kick('worktree session');
+        this.store().addEvent(s.sessionId, 'worktree_session_in', { dir: slash(dir), ms: Date.now() - t0 });
+        return;
+      }
+      if (Date.now() - t0 < maxMs) { const t = setTimeout(tick, everyMs); if (t.unref) t.unref(); }
+    };
+    tick();
   }
   // 신뢰 관문: 사람이 신뢰에 답해 ready(또는 그 사이 들어간 지시로 working·waiting)가 되면 claude -w로 다시 띄운다
   onSession(s, sum) {
@@ -181,7 +199,7 @@ export class WorktreeSessions {
         this.store().addEvent(s.sessionId, 'trust_gate_passed', { worktree: g.worktree, trusted: r.trusted, slipped: !!r.slipped, args: r.args, quick: true });
         this.b.log('worktree session trust gate passed ' + s.name + ': relaunch with -w ' + g.worktree);
         this.b.broadcastSession(s, { cause: 'trust_gate' });
-        if (this.b.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.b.worktrees.kick('worktree session'), ms); if (t.unref) t.unref(); }
+        this.watchWorktree(s, wtDir(s.cwd, g.worktree));
         const text = [g.prompt, r.slipped].filter(Boolean).join('\n\n');
         if (text) this.b.queue.enqueue(s.sessionId, text, { origin: { kind: 'human' } });
       })
@@ -214,6 +232,7 @@ export class WorktreeSessions {
     if (p.dryRun) return v;
     if (!v.worktree || !v.branch) throw apiError('not_worktree', '@' + v.name + '는 워크트리 브랜치에서 일하지 않습니다(병합할 브랜치가 없다).');
     if (v.branch === v.target) throw apiError('same_branch', '@' + v.name + '의 브랜치가 합칠 브랜치(' + v.target + ')와 같습니다.');
+    if (v.ahead === 0 && v.dirty === 0) throw apiError('no_commits', '@' + v.name + '의 브랜치에 ' + v.target + '보다 앞선 커밋도, 커밋 안 한 변경도 없습니다(병합할 것이 없다).');
     if (v.busy) throw apiError('busy', '@' + v.name + '는 맡은 일이 열려 있습니다. 그 일이 닫힌 뒤 다시 맡기세요.');
     if (!v.enabled && !v.headId) {
       if (v.mode === 'ask' && v.answer == null && b.merger) { b.merger.ask(v.workspace, { child: v.name, branch: v.branch, target: v.target, root: v.root }); throw apiError('merger_ask', '이 리포에서 merger를 쓸지 먼저 답하세요(판의 merger 카드). 답한 뒤 다시 맡기세요.', { workspace: v.workspace }); }

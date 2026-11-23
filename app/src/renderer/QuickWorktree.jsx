@@ -180,10 +180,11 @@ export function MergeMenuRows({ s, onClose }) {
   const [v, setV] = useState(null);
   useEffect(() => { if (!ok) return; let live = true; api.call('merge.request', { session: s.sessionId, dryRun: true }).then((r) => live && setV(r)).catch(() => {}); return () => { live = false; }; }, [ok, s.sessionId]);
   if (!ok) return null;
-  const hint = v ? t('quickWt.mergeHint', { branch: v.branch || s.git.branch, target: v.target || '?', to: v.head ? '@' + v.head : t('quickWt.toHuman') }) : t('quickWt.mergeHintShort', { branch: s.git.branch });
+  const empty = !!(v && v.ahead === 0 && v.dirty === 0); // 합칠 것이 없다(앞선 커밋·변경 없음)
+  const hint = empty ? t('quickWt.mergeNothing', { target: v.target || '?' }) : v ? t('quickWt.mergeHint', { branch: v.branch || s.git.branch, target: v.target || '?', to: v.head ? '@' + v.head : t('quickWt.toHuman') }) : t('quickWt.mergeHintShort', { branch: s.git.branch });
   const rel = (relation) => api.call('relation.set', { a: v.headId, b: s.sessionId, relation }).then(() => { onClose(); toast(t('quickWt.relSet', { head: v.head, rel: t('quickWt.rel.' + relation) })); }, (e) => toast(errText(e), 'error'));
   return <>
-    <div className="mt-menu-row"><button className="mt-btn small mt-merge-ask" data-action="merge-ask" disabled={!!(v && v.busy)} onClick={() => { onClose(); askMerge(s); }}>{t('quickWt.mergeAsk')}</button><span className="dim" data-role="merge-hint">{v && v.busy ? t('quickWt.mergeBusy') : hint}</span></div>
+    <div className="mt-menu-row"><button className="mt-btn small mt-merge-ask" data-action="merge-ask" disabled={!!(v && (v.busy || empty))} onClick={() => { onClose(); askMerge(s); }}>{t('quickWt.mergeAsk')}</button><span className="dim" data-role="merge-hint">{v && v.busy ? t('quickWt.mergeBusy') : hint}</span></div>
     {v && v.head && <div className="mt-menu-row" data-role="peer-row"><button className="mt-btn small" data-action="peer-show" onClick={() => { onClose(); const st = getState(); if (st.navigateTo) st.navigateTo(v.headId, { viewOnly: true }); }}>{t('quickWt.relNow', { head: v.head })}</button>
       <span className="dim">{t('quickWt.relChange')} <a href="#" data-action="rel-none" onClick={(e) => { e.preventDefault(); rel('none'); }}>{t('quickWt.rel.none')}</a> · <a href="#" data-action="rel-sub" onClick={(e) => { e.preventDefault(); rel('sub'); }}>{t('quickWt.rel.sub')}</a></span></div>}
   </>;

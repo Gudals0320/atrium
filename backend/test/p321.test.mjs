@@ -188,6 +188,10 @@ test('P321 session.worktree: 다른 하네스는 판이 git worktree add 뒤 그
     const sp2 = b.spawned.at(-1);
     assert.equal(norm(sp2.cwd), norm(dir)); assert.equal(sp2.worktree, 'cl1'); assert.equal(sp2.prompt, undefined, '첫 지시를 비우면 띄우기만');
     assert.equal(r2.worktree.gate, false); assert.equal(r2.peer, null);
+    // claude -w가 워크트리를 만들면 hook 전에도 그 폴더를 세션의 폴더로 본다
+    const s2 = b.sessions.get(r2.sessionId);
+    fs.mkdirSync(wtDir(dir, 'cl1'), { recursive: true }); fs.writeFileSync(path.join(wtDir(dir, 'cl1'), '.git'), 'gitdir: x\n');
+    await until(() => s2.rt.cwd && norm(s2.rt.cwd) === norm(wtDir(dir, 'cl1')), 5000);
     await assert.rejects(b.wtSessions.create({ workspace: ws.key, name: 'cx1', kind: 'codex' }), (e) => e.code === 'name_taken');
     await assert.rejects(b.wtSessions.create({ workspace: ws.key, name: 'Bad_Name', kind: 'codex' }), (e) => e.code === 'bad_request');
     G(dir, 'branch', 'worktree-taken');
@@ -309,6 +313,9 @@ test('P321 병합 맡기기: merger 꺼짐(head 없음) 거절, head가 있으�
     const w = wtWorker(y, 'a1');
     await assert.rejects(y.b.wtSessions.request({ session: w.sessionId }), (e) => e.code === 'merger_ask');
     assert.equal(y.M().asks().length, 1);
+    const e0 = wtWorker(y, 'e0', { commit: false });
+    y.b.merger.answer(y.ws.key, 'on');
+    await assert.rejects(y.b.wtSessions.request({ session: e0.sessionId }), (e) => e.code === 'no_commits');
     const root = y.add('root');
     await assert.rejects(y.b.wtSessions.request({ session: root.sessionId }), (e) => e.code === 'not_worktree');
   } finally { await y.stop(); }
