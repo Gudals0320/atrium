@@ -53,9 +53,10 @@ try {
     const opened = await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) { b.click(); return true; } return false; });
     if (!opened) await page.evaluate(() => { const st = window.__mt.getState(); if (st.openDialog) st.openDialog({ kind: 'settings' }); });
     await page.waitForSelector('[data-role=settings]', { timeout: 10000 });
-    await page.click('[data-role=settings-tabs] [data-tab=agents]');
+    await page.click('[data-role=settings-tabs] [data-tab=bots]'); // P338: 봇 쪽, 하네스는 런처 줄(h:<하네스>), 모델·노력은 "▸ 고급"
     await page.waitForSelector('[data-role=merger-settings]');
-    const v = await page.evaluate(() => ({ mode: document.querySelector('[data-field=setting-mergerMode]').dataset.value, kind: document.querySelector('[data-field=setting-mergerKind]').value, model: document.querySelector('[data-field=setting-mergerModel]').value, effort: document.querySelector('[data-field=setting-mergerEffort]').value }));
+    await page.click('[data-bot=merge] [data-action=bot-advanced]');
+    const v = await page.evaluate(() => ({ mode: document.querySelector('[data-field=setting-mergerMode]').dataset.value, kind: document.querySelector('[data-field=bot-launcher-merge]').value.replace(/^h:/, ''), model: document.querySelector('[data-field=setting-mergerModel]').value, effort: document.querySelector('[data-field=setting-mergerEffort]').value }));
     check(l + ' 설정 칸 값(ask, claude, haiku, 빈 노력)', v.mode === 'ask' && v.kind === 'claude' && v.model === 'haiku' && v.effort === '', v);
     await shot(page, 'settings-' + l, await boxOf(page, '[data-role=settings]', 8));
     await page.click('[data-action=settings-close]');
@@ -65,7 +66,8 @@ try {
   {
     await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) b.click(); else window.__mt.getState().openDialog({ kind: 'settings' }); });
     await page.waitForSelector('[data-role=settings]');
-    await page.click('[data-role=settings-tabs] [data-tab=agents]');
+    await page.click('[data-role=settings-tabs] [data-tab=bots]');
+    await page.click('[data-bot=merge] [data-action=bot-advanced]');
     await page.selectOption('[data-field=setting-mergerEffort]', 'low');
     await sleep(800);
     const e1 = call('settings.get').settings.mergerEffort;
@@ -86,9 +88,10 @@ try {
   // 설정 탭의 프로젝트 줄(다시 묻기)
   await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) b.click(); else window.__mt.getState().openDialog({ kind: 'settings' }); });
   await page.waitForSelector('[data-role=settings]');
-  await page.click('[data-role=settings-tabs] [data-tab=agents]');
-  await page.waitForSelector('[data-role=merger-answers]', { timeout: 5000 }).catch(() => {});
-  check('설정 탭에 기억한 답(켬) 줄', !!(await page.$('[data-role=merger-answers] [data-answer=on]')));
+  await page.click('[data-role=settings-tabs] [data-tab=bots]'); // P338: 기억한 답은 병합 봇 "▸ 저장소별" 표의 마지막 칸
+  await page.click('[data-action=bot-repos]');
+  await page.waitForSelector('[data-role=merge-repos]', { timeout: 5000 }).catch(() => {});
+  check('설정 탭에 기억한 답(켬) 줄', !!(await page.$('[data-role=merge-repos] .mt-bot-ans.on')));
   await shot(page, 'settings-answers-ko', await boxOf(page, '[data-role=settings]', 8));
   await page.click('[data-action=settings-close]');
 

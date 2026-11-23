@@ -17,6 +17,7 @@ import { DeliveryQueue, bgOnlyOf, steerBlock } from './delivery.mjs';
 import { docHandlers } from './doc-watch.mjs'; // P257: 문서 점검 판 API(docs.status·enable·disable)
 import { initRepo, gitStateAt } from './ws-git-init.mjs'; // P195: 프로젝트 열기의 Git 저장소로 시작
 import { mergerHandlers } from './merger.mjs'; // P267: merger.status | asks | answer
+import { botsHandlers } from './bots.mjs'; // P338: bots.status, merger.configs, merger.config.set
 import { retireRigRoles } from './old-roles.mjs'; // P269: 옛 rig 역할 세션을 보통 세션으로(한 번)
 import { TerminalRelay } from './relay.mjs';
 import { PerfTrace } from './perf-trace.mjs'; // P146: 성능 기록
@@ -44,7 +45,7 @@ import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
 import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
-import { PERMISSION_MODES as MODES, touchesRemoteRules } from './settings.mjs';
+import { PERMISSION_MODES as MODES, touchesRemoteRules, resolveBotSettings } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
 import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
@@ -246,7 +247,8 @@ export class Backend {
     this.api.handlers['usage.get'] = () => this.usage.get();
     this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
     // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄, decisions.mjs autoTurn). 단위 시험 판에서는 끈다(진짜 claude를 부르지 않게)
-    this.todoTidy = new TodoTidy({ settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}), dir: (cfg.todoTidy ?? !process.env.NODE_TEST_CONTEXT) ? path.join(cfg.dataDir, 'todo-tidy') : null, ...(cfg.todoTidyCall ? { call: cfg.todoTidyCall } : {}), log: (m) => this.log(m) });
+    // P338: 할 일 정리 봇이 런처를 골랐으면 하네스·모델·노력은 그 런처(settings.mjs resolveBotSettings)
+    this.todoTidy = new TodoTidy({ settings: () => (this.features && this.features.settings ? resolveBotSettings(this.features.settings.get(), (id) => (this.features.launchers ? this.features.launchers.find(id) : null)) : {}), dir: (cfg.todoTidy ?? !process.env.NODE_TEST_CONTEXT) ? path.join(cfg.dataDir, 'todo-tidy') : null, ...(cfg.todoTidyCall ? { call: cfg.todoTidyCall } : {}), log: (m) => this.log(m) });
     // P298: Hermes의 바쁨 읽개(busy 칸 { reader: 'hermes' }). 그 세션이 띄운 하위 에이전트가 돌거나 턴 임대가 살아 있으면 바쁨
     registerInnerReader('hermes', ({ session }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesBusyOf({ id, home: this.hermesHome() }) : null; });
     // P300: Hermes의 안 진행 읽개(같은 busy 칸 { reader: 'hermes' }). OMH dag-ulw 실행 기록, 없으면 Hermes 자체 위임(state.db)
@@ -2337,6 +2339,7 @@ export class Backend {
       'session.get': (p) => this.get(p),
       'session.send': (p) => this.send(p),
       ...docHandlers(this), // P257: docs.status·docs.enable·docs.disable
+      ...botsHandlers(this), // P338: 설정 › 봇 탭(읽기 전용 요약, 저장소별 merge.json)
       ...mergerHandlers(this), // P267: 합치기 merger(창 쪽 계약: merger.status, merger.asks, merger.answer)
       'records.read': (p) => this.branch.units.readRecords(p || {}), // P334: 일 기록 보기(카드의 기록 단추)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)

@@ -4,18 +4,20 @@
 // 표를 주지 않는 옛 판이면 아래 FALLBACK_AGENTS(지금의 병합 하나)로 그린다. 설정 키(merger*)와 .atrium/merge.json은 그대로다(호환).
 import { PERMISSION_MODES } from './permission-modes.js';
 
-export const AGENT_FIELDS = ['mode', 'kind', 'model', 'effort', 'permission']; // 칸 차례(판 settings.mjs AGENT_FIELDS와 같다)
+export const AGENT_FIELDS = ['mode', 'launcher', 'kind', 'model', 'effort', 'permission']; // 칸 차례(판 settings.mjs AGENT_FIELDS와 같다). P338: launcher(봇이 쓰는 런처 ID)
 export const AGENT_MODES = ['on', 'ask', 'off'];
 export const AGENT_EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max']; // 빈 값: 넘기지 않음
 export const AGENT_PERMISSIONS = ['', ...PERMISSION_MODES]; // 빈 값: 맡긴 세션 따름(판의 inherit도 빈 값으로 보인다)
 // 판 설정 schema와 같은 꼴 검사. 창에서 미리 걸러 잘못된 값을 보내지 않는다
 const KIND_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:\/\[\]-]{0,79}$/;
+const LAUNCHER_RE = /^[A-Za-z0-9_-]{0,40}$/; // P338: 봇의 런처 ID(빈 값 = 런처 없이)
 
 // 표를 주지 않는 옛 판(P312 이전)에서 쓰는 표. 판 HELPER_AGENTS의 병합 줄과 같다
 export const FALLBACK_AGENTS = [
   { id: 'merge', dict: 'merger', ready: true, fields: [
     { field: 'mode', key: 'mergerMode', default: 'ask', options: AGENT_MODES },
+    { field: 'launcher', key: 'mergerLauncher', default: '' }, // P338: 옛 판에는 키가 없어 칸이 빠진다
     { field: 'kind', key: 'mergerKind', default: 'claude' },
     { field: 'model', key: 'mergerModel', default: 'claude-sonnet-5-5' },
     { field: 'effort', key: 'mergerEffort', default: 'medium', options: AGENT_EFFORTS },
@@ -23,6 +25,7 @@ export const FALLBACK_AGENTS = [
   ] },
   { id: 'todoTidy', dict: 'todoTidy', ready: true, fields: [ // P316: 할 일 정리(판 todoTidy*). 옛 판에는 그 키가 없어 칸이 그려지지 않는다
     { field: 'mode', key: 'todoTidyMode', default: 'on', options: ['on', 'off'] },
+    { field: 'launcher', key: 'todoTidyLauncher', default: '' },
     { field: 'kind', key: 'todoTidyKind', default: 'claude', options: ['claude', 'codex'] },
     { field: 'model', key: 'todoTidyModel', default: 'haiku' },
     { field: 'effort', key: 'todoTidyEffort', default: 'low', options: AGENT_EFFORTS },
@@ -67,6 +70,7 @@ export function agentValueOf(f, raw) {
   if (opts) return opts.includes(v) ? { value: v } : { error: f.field };
   if (f.field === 'kind') { const x = (v || f.default || '').toLowerCase(); return KIND_RE.test(x) ? { value: x } : { error: 'kind' }; }
   if (f.field === 'model') { const x = v || f.default || ''; return MODEL_RE.test(x) ? { value: x } : { error: 'model' }; }
+  if (f.field === 'launcher') return LAUNCHER_RE.test(v) ? { value: v } : { error: 'key' };
   return { error: 'key' };
 }
 

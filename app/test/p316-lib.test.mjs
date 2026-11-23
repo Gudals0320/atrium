@@ -10,9 +10,9 @@ test('P316 할 일 정리 칸: 판 설정이 있으면 병합 다음에 켬/끔�
   const list = agentsOf(agentsTable(), DEFAULTS);
   assert.deepEqual(list.map((a) => a.id), ['merge', 'todoTidy']);
   const t = list[1];
-  assert.deepEqual(t.fields.map((f) => [f.field, f.value]), [['mode', 'on'], ['kind', 'claude'], ['model', 'haiku'], ['effort', 'low']]);
+  assert.deepEqual(t.fields.map((f) => [f.field, f.value]), [['mode', 'on'], ['launcher', ''], ['kind', 'claude'], ['model', 'haiku'], ['effort', 'low']]); // P338: launcher(봇의 런처 ID)
   assert.deepEqual(t.fields[0].options, ['on', 'off'], '물어봄 없음');
-  assert.deepEqual(t.fields[1].options, ['claude', 'codex'], '하네스는 고르기');
+  assert.deepEqual(t.fields[2].options, ['claude', 'codex'], '하네스는 고르기');
   assert.deepEqual(agentsOf(FALLBACK_AGENTS, DEFAULTS), list, '옛 판 표(창의 것)와 같다');
   assert.deepEqual(agentsOf(agentsTable(), { mergerMode: 'on' }).map((a) => a.id), ['merge'], '옛 판(할 일 정리 키 없음)에서는 숨김');
 });

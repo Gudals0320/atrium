@@ -22,8 +22,9 @@ const boxOf = (page, sel, pad = 8) => page.evaluate(([s, p]) => { const e = docu
 async function openAgents(page) {
   await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) b.click(); else window.__mt.getState().openDialog({ kind: 'settings' }); });
   await page.waitForSelector('[data-role=settings]', { timeout: 10000 });
-  await page.click('[data-role=settings-tabs] [data-tab=agents]');
+  await page.click('[data-role=settings-tabs] [data-tab=bots]'); // P338: 봇 쪽, 모델·노력·시간당 상한은 "▸ 고급"
   await page.waitForSelector('[data-role=todoTidy-settings]', { timeout: 10000 });
+  await page.click('[data-bot=todoTidy] [data-action=bot-advanced]');
   await page.$eval('[data-role=todoTidy-settings]', (e) => e.scrollIntoView({ block: 'start' }));
   await sleep(400);
 }
@@ -32,18 +33,18 @@ const { app, page } = await launch({ log, args: ['--remote-debugging-port=9547']
 try {
   await page.setViewportSize({ width: 1500, height: 960 }).catch(() => {});
   const got = call('settings.get');
-  check('판 settings.get: 할 일 정리 ready, 칸 넷', got.agents.some((a) => a.id === 'todoTidy' && a.ready && a.fields.length === 4), got.agents.map((a) => [a.id, a.ready, a.fields.length]));
+  check('판 settings.get: 할 일 정리 ready, 칸 넷', got.agents.some((a) => a.id === 'todoTidy' && a.ready && a.fields.length === 5), got.agents.map((a) => [a.id, a.ready, a.fields.length]));
   for (const l of ['ko', 'en']) {
     call('settings.set', { key: 'language', value: l });
     await page.waitForFunction((x) => document.documentElement.lang === x, l, { timeout: 10000 }).catch(() => {});
     await sleep(3000); // 창이 막 떴을 때의 "보드를 준비하고 있습니다" 가림막이 걷힐 때까지
     await openAgents(page);
-    const agents = await page.$$eval('[data-role=agents-settings] [data-agent]', (xs) => xs.map((x) => x.dataset.agent));
+    const agents = await page.$$eval('[data-role=bots-settings] [data-agent]', (xs) => xs.map((x) => x.dataset.agent));
     const fields = await page.$$eval('[data-role=todoTidy-settings] [data-field]', (xs) => xs.map((x) => x.dataset.field));
     const body = await page.$eval('[data-role=todoTidy-settings]', (x) => x.innerText);
-    const kinds = await page.$$eval('[data-field=setting-todoTidyKind] option', (xs) => xs.map((x) => x.textContent));
+    const kinds = await page.$eval('[data-field=bot-launcher-todoTidy] optgroup:last-of-type option', (xs) => xs.map((x) => x.textContent)); // P338: 런처 줄의 하네스 묶음
     check(l + ' 에이전트 칸: 병합·할 일 정리', JSON.stringify(agents) === JSON.stringify(['merge', 'todoTidy']), agents);
-    check(l + ' 할 일 정리 칸 차례', JSON.stringify(fields) === JSON.stringify(['setting-todoTidyMode', 'setting-todoTidyKind', 'setting-todoTidyModel', 'setting-todoTidyEffort', 'setting-todoTidyPerHour']), fields);
+    check(l + ' 할 일 정리 칸 차례', JSON.stringify(fields) === JSON.stringify(['setting-todoTidyMode', 'bot-launcher-todoTidy', 'setting-todoTidyModel', 'setting-todoTidyEffort', 'setting-todoTidyPerHour', 'setting-autoDecisions']), fields);
     check(l + ' 하네스 고르기(Claude Code·Codex)', JSON.stringify(kinds) === JSON.stringify(['Claude Code', 'Codex']), kinds);
     check(l + ' 이름·상한 글', l === 'ko' ? /할 일 정리/.test(body) && /시간당 상한/.test(body) : /To-do tidy/.test(body) && /Hourly cap/.test(body), body.slice(0, 400));
     await page.screenshot({ path: path.join(OUT, 'settings-todo-tidy-' + l + '.png'), clip: await boxOf(page, '[data-role=todoTidy-settings]') });
@@ -55,13 +56,13 @@ try {
   const before = call('settings.get').settings;
   await page.click('[data-field=setting-todoTidyMode] [data-mode=off]'); await sleep(800);
   const m1 = call('settings.get').settings.todoTidyMode;
-  await page.selectOption('[data-field=setting-todoTidyKind]', 'codex'); await sleep(800);
+  await page.selectOption('[data-field=bot-launcher-todoTidy]', 'h:codex'); await sleep(800);
   const k1 = call('settings.get').settings.todoTidyKind;
   await page.fill('[data-field=setting-todoTidyPerHour]', '12'); await page.press('[data-field=setting-todoTidyPerHour]', 'Enter'); await sleep(800);
   const h1 = call('settings.get').settings.todoTidyPerHour;
   await page.screenshot({ path: path.join(OUT, 'settings-todo-tidy-en-changed.png'), clip: await boxOf(page, '[data-role=todoTidy-settings]') });
   await page.click('[data-field=setting-todoTidyMode] [data-mode=' + before.todoTidyMode + ']');
-  await page.selectOption('[data-field=setting-todoTidyKind]', before.todoTidyKind);
+  await page.selectOption('[data-field=bot-launcher-todoTidy]', before.todoTidyLauncher ? 'l:' + before.todoTidyLauncher : 'h:' + before.todoTidyKind);
   await page.fill('[data-field=setting-todoTidyPerHour]', String(before.todoTidyPerHour)); await page.press('[data-field=setting-todoTidyPerHour]', 'Enter');
   await sleep(800);
   const after = call('settings.get').settings;

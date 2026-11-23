@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { branchProbe, worktreeList, revOf, branchOf, isAncestor, worktreeRootOf } from './git.mjs';
 import { shownName } from './session-label.mjs';
 import { ensureAtriumDir, excludeFileOf } from './doc-check.mjs';
-import { DEFAULTS, PERMISSION_MODES } from './settings.mjs';
+import { DEFAULTS, PERMISSION_MODES, resolveBotSettings } from './settings.mjs';
 import { APPROVAL_ARGS } from './branch.mjs'; // P287: 종류마다 받는 승인 방식
 import { workspaceNames } from './workspaces.mjs';
 import { clip } from './text.mjs';
@@ -267,7 +267,8 @@ export class Merger {
   store() { return this.b.store; }
   log(m) { if (this.b.log) this.b.log(m); }
   emit(e, v) { try { if (this.b.api && this.b.api.broadcast) this.b.api.broadcast(e, v); } catch {} }
-  settings() { if (this._settings) return { ...DEFAULTS, ...this._settings() }; const f = this.b.features; try { return f && f.settings ? f.settings.get() : DEFAULTS; } catch { return DEFAULTS; } }
+  // P338: 병합 봇이 런처를 골랐으면 종류·모델·노력은 그 런처를 따른다(settings.mjs resolveBotSettings)
+  settings() { const f = this.b.features; const find = (id) => (f && f.launchers ? f.launchers.find(id) : null); if (this._settings) return resolveBotSettings({ ...DEFAULTS, ...this._settings() }, find); try { return f && f.settings ? resolveBotSettings(f.settings.get(), find) : DEFAULTS; } catch { return DEFAULTS; } }
   nameOf(id) { return this.units.nameOf(id); }
   // ---------- 기록(판 기록 meta) ----------
   meta(k) { return this.store().getMeta(k) || {}; }

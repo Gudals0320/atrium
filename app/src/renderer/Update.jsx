@@ -9,7 +9,7 @@ import { toast } from './store.js';
 import { useT, errText, getLanguage } from './lib/i18n.js';
 import { useUpdate, checkNow, applyUpdate } from './update.js';
 import { isWeb } from './web.js';
-import { SetRow, SetNote, SetSub } from './Settings.jsx';
+import { SetRow, SetSub } from './Settings.jsx';
 import { channelOf, versionLabel, vTag } from './lib/update-notice.js';
 
 const when = (ms) => { if (!ms) return ''; try { return new Date(ms).toLocaleString(getLanguage(), { dateStyle: 'medium', timeStyle: 'short' }); } catch { return new Date(ms).toLocaleString(); } }; // 화면 언어로
@@ -44,17 +44,17 @@ export function UpdateSettings({ settings }) {
   const local = !isWeb;
   return <>
     <SetSub>{t('update.group')}</SetSub>
-    <SetRow name={t('update.checkName')} hint={t('update.checkHint')} role="update-check-setting">
+    <SetRow id="updateCheck" name={t('update.checkName')} hint={t('update.checkHint')} info={t('update.note')} role="update-check-setting">
       <span className="mt-set-toggle"><input type="checkbox" checked={pending ?? (settings.updateCheck !== false)} data-field="setting-updateCheck" onChange={(e) => toggle(e.target.checked)} /><span>{(pending ?? (settings.updateCheck !== false)) ? t('settings.on') : t('settings.off')}</span></span>
     </SetRow>
-    {'updateChannel' in settings && <div className="mt-set-row" data-role="update-channel-setting">
-      <span className="mt-set-name">{t('update.channelName')}</span>
+    {'updateChannel' in settings && <div className={`mt-set-row child${settings.updateCheck === false ? ' dim' : ''}`} data-role="update-channel-setting" data-set-id="updateChannel">
+      <span className="mt-set-name" data-set-anchor="updateChannel">{t('update.channelName')}</span>
       <span className="mt-set-value mt-seg-lang" data-field="setting-updateChannel" data-value={channel} role="radiogroup">
         {['stable', 'dev'].map((c) => (
           <button key={c} type="button" role="radio" aria-checked={channel === c} className={`mt-btn small${channel === c ? ' primary' : ' ghost'}`} data-channel={c} disabled={!!chPending} onClick={() => channel !== c && pickChannel(c)}>{t(`update.channel.${c}`)}</button>
         ))}
       </span>
-      <span className="mt-set-hint">{t(channel === 'dev' ? 'update.channelDevHint' : view.current.prerelease ? 'update.channelStableFromDev' : 'update.channelStableHint')}</span>
+      <span className="mt-set-hint"><span className="mt-set-hint-text" title={t(channel === 'dev' ? 'update.channelDevHint' : view.current.prerelease ? 'update.channelStableFromDev' : 'update.channelStableHint')}>{t(channel === 'dev' ? 'update.channelDevHint' : view.current.prerelease ? 'update.channelStableFromDev' : 'update.channelStableHint')}</span></span>
     </div>}
     <div className="mt-set-row" data-role="update-version">
       <span className="mt-set-name">{t('update.versionName')}</span>
@@ -89,7 +89,6 @@ export function UpdateSettings({ settings }) {
     </div>}
     {failed && !job && <div className="mt-set-note mt-upd-error" data-role="update-error">{t('update.failed', { error: failed.error })}</div>}
     {view.latest && view.latest.notes && view.available && <pre className="mt-upd-notes" data-role="update-notes-text">{view.latest.notes}</pre>}
-    <SetNote>{t('update.note')}</SetNote>
   </>;
 }
 

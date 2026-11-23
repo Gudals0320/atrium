@@ -1,4 +1,4 @@
-// P313 창 시험: 설정 › 에이전트 › 병합(옛 합치기 탭). ko·en 그림, 탭·칸 이름, 할 일 정리는 숨김, 칸을 바꾸면 판 설정(옛 키 merger*)이 바뀌고 되돌린다.
+// P313 창 시험: 설정 › 봇 › 병합 봇(P338, 옛 에이전트 탭·합치기 탭). ko·en 그림, 탭·칸 이름, 할 일 정리는 숨김, 칸을 바꾸면 판 설정(옛 키 merger*)이 바뀌고 되돌린다.
 // 판: 따로 띄운 개발용 판(atrium-dev-p313, 48063, 창 디버깅 9544)만. 판 변수를 지운 셸에서 그 판의 환경으로 부른다.
 // 결과는 experiments/p313/<round>/(저장소 밖)
 import fs from 'node:fs';
@@ -21,8 +21,9 @@ const boxOf = (page, sel, pad = 8) => page.evaluate(([s, p]) => { const e = docu
 async function openAgents(page) {
   await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) b.click(); else window.__mt.getState().openDialog({ kind: 'settings' }); });
   await page.waitForSelector('[data-role=settings]', { timeout: 10000 });
-  await page.click('[data-role=settings-tabs] [data-tab=agents]');
+  await page.click('[data-role=settings-tabs] [data-tab=bots]');
   await page.waitForSelector('[data-role=merger-settings]', { timeout: 10000 });
+  await page.click('[data-bot=merge] [data-action=bot-advanced]'); // P338: 모델·노력·승인 방식은 "▸ 고급"
   await sleep(300);
 }
 
@@ -30,7 +31,7 @@ const { app, page } = await launch({ log, args: ['--remote-debugging-port=9544']
 try {
   await page.setViewportSize({ width: 1500, height: 960 }).catch(() => {});
   const got = call('settings.get');
-  check('판 settings.get에 보조 에이전트 표(병합 ready, 할 일 정리 자리)', Array.isArray(got.agents) && got.agents.some((a) => a.id === 'merge' && a.ready && a.fields.length === 5) && got.agents.some((a) => a.id === 'todoTidy'), got.agents); // P316: 할 일 정리도 ready
+  check('판 settings.get에 보조 에이전트 표(병합 ready, 할 일 정리 자리)', Array.isArray(got.agents) && got.agents.some((a) => a.id === 'merge' && a.ready && a.fields.length === 6) && got.agents.some((a) => a.id === 'todoTidy'), got.agents); // P316: 할 일 정리도 ready
   for (const l of ['en', 'ko']) {
     call('settings.set', { key: 'language', value: l });
     await page.waitForFunction((x) => document.documentElement.lang === x, l, { timeout: 10000 }).catch(() => {});
@@ -39,11 +40,11 @@ try {
     const tabs = await page.$$eval('[data-role=settings-tabs] [data-tab]', (xs) => xs.map((x) => [x.dataset.tab, x.innerText.trim()]));
     const body = await page.$eval('[data-role=settings]', (x) => x.innerText);
     const fields = await page.$$eval('[data-role=merger-settings] [data-field]', (xs) => xs.map((x) => x.dataset.field));
-    const agents = await page.$$eval('[data-role=agents-settings] [data-agent]', (xs) => xs.map((x) => x.dataset.agent));
-    check(l + ' 탭: 에이전트, 옛 merger 탭 없음', tabs.some(([k, n]) => k === 'agents' && n === (l === 'ko' ? '에이전트' : 'Agents')) && !tabs.some(([k]) => k === 'merger'), tabs);
-    check(l + ' 병합 칸 머리·칸 이름', l === 'ko' ? /병합/.test(body) && /하네스/.test(body) && /승인 방식/.test(body) : /Merge/.test(body) && /Harness/.test(body) && /Permission mode/.test(body), body.slice(0, 600));
+    const agents = await page.$eval('[data-role=bots-settings] [data-agent]', (xs) => xs.map((x) => x.dataset.agent));
+    check(l + ' 탭: 봇, 옛 merger·agents 탭 없음', tabs.some(([k, n]) => k === 'bots' && n === (l === 'ko' ? '봇' : 'Bots')) && !tabs.some(([k]) => k === 'merger' || k === 'agents'), tabs);
+    check(l + ' 병합 봇 머리·칸 이름', l === 'ko' ? /병합 봇/.test(body) && /런처/.test(body) && /승인 방식/.test(body) : /Merge bot/.test(body) && /Launcher/.test(body) && /Permission mode/.test(body), body.slice(0, 600));
     check(l + ' "합치기" 글 없음', !/합치기/.test(body), body.slice(0, 300));
-    check(l + ' 칸 차례(옛 키)', JSON.stringify(fields) === JSON.stringify(['setting-mergerMode', 'setting-mergerKind', 'setting-mergerModel', 'setting-mergerEffort', 'setting-mergerPermission']), fields);
+    check(l + ' 칸 차례(켬/물어봄/끔·런처, 고급: 모델·노력·승인 방식)', JSON.stringify(fields.filter((f) => !f.startsWith('merge-'))) === JSON.stringify(['setting-mergerMode', 'bot-launcher-merge', 'setting-mergerModel', 'setting-mergerEffort', 'setting-mergerPermission']), fields);
     check(l + ' 병합 다음 할 일 정리(P316)', JSON.stringify(agents) === JSON.stringify(['merge', 'todoTidy']), agents);
     await page.screenshot({ path: path.join(OUT, 'settings-agents-' + l + '.png'), clip: await boxOf(page, '[data-role=settings]') });
     await page.click('[data-action=settings-close]');
@@ -66,7 +67,7 @@ try {
   await page.click('[data-action=settings-close]');
   // 옛 탭 이름으로 열어도 에이전트 탭
   const opened = await page.evaluate(() => { const st = window.__mt.getState(); if (!st.openDialog) return false; st.openDialog({ kind: 'settings', tab: 'merger' }); return true; });
-  if (opened) { await sleep(500); const tab = await page.$eval('[data-role=settings]', (x) => x.dataset.tab).catch(() => null); check('옛 탭 이름(merger)으로 열면 에이전트 탭', tab === 'agents', tab); }
+  if (opened) { await sleep(500); const tab = await page.$eval('[data-role=settings]', (x) => x.dataset.tab).catch(() => null); check('옛 탭 이름(merger)으로 열면 봇 쪽', tab === 'bots', tab); }
 } catch (e) { check('예외 없이', false, e.message); }
 finally {
   fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify(results, null, 2));
