@@ -368,6 +368,7 @@ export class WorkUnits {
     let detail = null;
     if (unit && unit.status === 'open') { st.updateUnit(unit.id, { status: 'cancelled', closedAt: now }); detail = '다시 맡기려면 새 하위를 띄운다(atrium child)'; }
     if (sus) detail = detail ? `${badArgsText(sus)}. ${detail}` : badArgsText(sus);
+    if (exit.error) detail = detail ? `화면의 오류: ${exit.error}. ${detail}` : `화면의 오류: ${exit.error}`; // P337: 띄우자마자 끝난 에이전트의 끝 화면 문장(claude -w가 워크트리를 만들지 못함 등)
     this.stops.onExited(tr, unit, detail);
     return 'exited';
   }

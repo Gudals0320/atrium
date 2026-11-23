@@ -176,7 +176,13 @@ export function spawnsInLines(text) {
 }
 
 const keyOf = (p) => String(p || '').trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/+$/, '').toLowerCase();
-const isWorktreeOf = (cwd, name) => !!name && keyOf(cwd).endsWith(`/.claude/worktrees/${String(name).toLowerCase()}`);
+// claude -w <이름>의 폴더인가. 기본 자리는 <저장소>/.claude/worktrees/<이름>, 사용자 hook이 다른 곳(예: <드라이브>/worktrees/<리포 ID>/<이름>)에 만들 수도 있다(P337).
+//   대화 기록에는 폴더만 있어(브랜치 없음) 끝 마디가 그 이름이고 그 위 어딘가에 worktrees 마디가 있으면 그 워크트리로 본다
+const isWorktreeOf = (cwd, name) => {
+  if (!name) return false;
+  const s = keyOf(cwd).split('/');
+  return s.length > 2 && s[s.length - 1] === String(name).toLowerCase() && s.slice(0, -1).includes('worktrees');
+};
 
 // 띄움 맞추기. convos: [{ convId, cwd, startAt, promptKey, spawns: [...] }] → Map 자식 대화 ID → { parent, at, via, name, by: 'worktree' | 'cwd' | 'prompt' }
 // 띄움 하나에 자식 하나, 자식 하나에 부모 하나. 띄운 시각과 자식 시작이 가까운 쌍부터 정한다. 자기 자신은 자식이 될 수 없다

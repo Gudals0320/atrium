@@ -3,6 +3,7 @@
 // - 신뢰 질문과는 상관없다(신뢰는 지금처럼 대신 답하지 않는다).
 // b는 backend.mjs의 Backend(adapter, store, cfg를 쓴다).
 import { parseWorktreeExit } from './screen.mjs';
+import { claudeWtDirName } from './worktree-names.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -10,12 +11,17 @@ async function visible(b, s) {
   try { return await b.adapter.readScreen(s.paneId, { source: 'visible' }); } catch { return ''; }
 }
 
-// `claude -w`로 띄운 세션인가. 하위 세션의 --worktree(info), 또는 작업 폴더가 <저장소>/.claude/worktrees/<이름> 안. → { name } | null
+// `claude -w`로 띄운 세션인가. 하위 세션의 --worktree(info), 빠른 워크트리 세션(quickWorktree), 또는 작업 폴더가 <저장소>/.claude/worktrees/<이름> 안,
+//   또는 git이 본 지금 폴더가 브랜치 worktree-<이름>의 워크트리(P337: 사용자 hook이 다른 자리에 만든 claude -w 워크트리). → { name } | null
 export function worktreeOf(s, info = null) {
   if ((s.kind || 'claude') !== 'claude') return null;
   if (info && info.worktree) return { name: info.worktree };
-  const m = String((s.rt && s.rt.cwd) || s.cwd || '').match(/[\\/]\.claude[\\/]worktrees[\\/]([^\\/]+)/);
-  return m ? { name: m[1] } : null;
+  if (s.quickWorktree && s.quickWorktree.via === 'claude-w' && s.quickWorktree.name) return { name: s.quickWorktree.name };
+  const dir = claudeWtDirName((s.rt && s.rt.cwd) || s.cwd || '');
+  if (dir) return { name: dir };
+  const g = s.git;
+  const br = g && g.isWorktree ? String(g.branch || '') : '';
+  return br.startsWith('worktree-') && br.length > 9 ? { name: br.slice(9) } : null;
 }
 
 // 화면에 질문이 있으면 고른 답(keep|remove)의 번호를 보낸다. → 보낸 선택지 | null. screen을 주면 화면을 다시 읽지 않는다(P105)

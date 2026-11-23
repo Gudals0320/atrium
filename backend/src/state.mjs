@@ -262,7 +262,31 @@ export function applyAgentReleased(rt, now = Date.now(), { termStopping = false,
   const requested = !!(rt.exitRequested || rt.boardExit);
   const kind = exitKind({ reason, termStopping, before, hooked: rt.hooked, hooksSinceLaunch: rt.hooksSinceLaunch, launchPending: rt.term.launchPending, requested, exitCode });
   rt.exitRequested = false;
-  rt.exit = { kind, reason: reason || null, at: now, ...(exitCode != null ? { code: exitCode } : {}), ...(requested ? { requested: true } : {}) };
+  rt.exit = { kind, reason: reason || null, at: now, ...(exitCode != null ? { code: exitCode } : {}), ...(requested ? { requested: true } : {}), ...(kind === 'trust_declined' && before !== 'trust_wait' ? { guessed: true } : {}) }; // P337: 신뢰 질문을 보지 못하고 짐작한 신뢰 거부
+}
+
+// P337: 띄우자마자(hook 하나 없이) 끝난 에이전트의 마지막 화면에서 오류 문장 한 줄을 찾는다(claude -w의 "Cannot create worktree: … is a symlink" 등).
+//   오류 낱말(error, cannot, failed, fatal, not found, denied, invalid)이 든 줄 가운데 마지막 것. 셸 프롬프트·빈 줄·상자 테두리는 건너뛴다. 없으면 null
+const ERR_WORD = /\b(error|errors|cannot|can't|could not|couldn't|failed|failure|fatal|not found|denied|invalid|unable)\b/i;
+export function launchErrorOf(text) {
+  const lines = String(text || '').split(/\r?\n/).map((l) => l.replace(/[\u2500-\u257f\u2580-\u259f]+/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i];
+    if (/^(PS [^>]*>|[$#>%]\s*$)/.test(l)) continue;
+    if (ERR_WORD.test(l)) return l.length > 300 ? l.slice(0, 299) + '…' : l;
+  }
+  return null;
+}
+// 끝난 에이전트의 마지막 화면 글을 끝남에 붙인다. 띄운 뒤 hook이 하나도 오지 않은 끝남(짐작한 신뢰 거부, 까닭 모름)만 본다.
+//   오류 문장이 있으면 exit.error로 두고, 짐작한 신뢰 거부는 그 문장이 신뢰 얘기가 아니면 오류 끝남(other)으로 고친다. 바뀌면 true
+export function applyExitText(rt, text) {
+  const x = rt && rt.exit;
+  if (!x || x.error || x.requested || !['trust_declined', 'other'].includes(x.kind) || (x.kind === 'trust_declined' && !x.guessed) || rt.hooked === false || rt.hooksSinceLaunch > 0) return false;
+  const err = launchErrorOf(text);
+  if (!err) return false;
+  x.error = err;
+  if (x.kind === 'trust_declined' && !/trust/i.test(err)) { x.kind = 'other'; delete x.guessed; }
+  return true;
 }
 
 // P125: 놓임 뒤에 온 종료 코드(hc가 셸을 남기며 알림). 까닭을 몰라 other로 둔 끝남이 사람의 끝 코드면 user로 고친다. 바뀌면 true

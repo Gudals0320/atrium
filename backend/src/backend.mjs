@@ -30,7 +30,7 @@ import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, fillSessionHooks, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
-import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting, screenPermissionAsk } from './state.mjs';
+import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyExitText, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting, screenPermissionAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
@@ -949,7 +949,11 @@ export class Backend {
       const m = e.previousPaneId && this.sessionByPane(e.previousPaneId);
       // P125: 셸을 남기며 온 종료 코드(놓임이 먼저 풀려 코드가 없던 끝남을 고친다: 콘솔 Ctrl+C면 직접 종료)
       if (m && e.exitCode != null && applyExitCode(m.rt, e.exitCode)) { this.store.addEvent(m.sessionId, 'exit_code', { code: e.exitCode, exit: m.rt.exit }); this.store.saveRuntime(m.sessionId, m.rt); }
+      // P337: 띄우자마자 끝난 에이전트의 끝 화면에 오류 문장이 있으면 끝남에 붙인다(짐작한 신뢰 거부가 아니라 그 오류로). 카드·부모의 멈춤 알림이 그 문장을 보인다
+      const textFixed = !!(m && e.exitText && applyExitText(m.rt, e.exitText));
+      if (textFixed) { this.store.addEvent(m.sessionId, 'exit_error', { error: m.rt.exit.error, exit: m.rt.exit }); this.store.saveRuntime(m.sessionId, m.rt); this.log(`${m.name} exited right after launch: ${m.rt.exit.error}`); }
       if (m && e.paneId) this.setPane(m, e.paneId, e.workspaceId, 'pane moved', { quiet: !!(e.raw && e.raw.hc) }); // P117: hc가 같은 자리를 바꿔 띄운 것(에이전트 띄우기, 셸 남기기)은 알리지 않는다
+      if (textFixed && this.sessions.has(m.sessionId)) this.broadcastSession(m, { cause: 'exit:error' }); // P337: 고친 끝남(오류 문장)을 창과 일 멈춤 알림에
       return;
     } // P117: hc가 같은 자리를 바꿔 띄운 것(에이전트 띄우기, 셸 남기기)은 알리지 않는다
     // 작업 공간이 판 밖에서 닫혔다. 작업 공간을 닫아도 패널마다 pane_closed가 오지 않는다(P5에서 확인)

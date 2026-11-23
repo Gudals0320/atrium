@@ -1,11 +1,12 @@
 // P321: 빠른 워크트리 세션과 병합 맡기기(설계 P318 4절, 조각 S4·S5). 사람이 판에서 워크트리 세션을 띄우고, 다 되면 카드 메뉴로 병합을 merger에게 맡긴다.
 // - 띄우기(판 API session.worktree { workspace, name, launcher, peerOf?, prompt? }): 리포 워크스페이스에서만. 부모 세션이 없는 사람의 띄우기라
 //   atrium child가 아니라 Backend.spawn에 worktree 값을 더한 꼴이다.
-//   · Claude Code: claude -w <이름>(지금처럼. 워크트리 자리와 브랜치는 Claude Code가 .claude/worktrees/<이름>, worktree-<이름>으로 만든다).
+//   · Claude Code: claude -w <이름>(지금처럼. 브랜치는 Claude Code가 worktree-<이름>으로 만든다. 자리는 기본 .claude/worktrees/<이름>이고
+//     사용자의 WorktreeCreate hook이 다른 곳(다른 드라이브)에 만들 수 있다. P337: 판은 자리를 짐작하지 않고 git 워크트리 목록의 브랜치로 찾는다).
 //     신뢰를 받지 않은 리포면 리포 뿌리에서 먼저 띄워 신뢰 질문을 카드에 보이고, 사람이 답해 ready가 되면 같은 패널에서 claude -w로 다시 띄운다
 //     (하위의 신뢰 관문과 같은 길, branch.mjs relaunchInWorktree. 첫 지시는 다시 띄운 뒤에 넣는다). 신뢰는 대신 답하지 않는다.
 //   · 다른 하네스: 판이 git worktree add -b worktree-<이름> <리포>/.claude/worktrees/<이름> <리포의 지금 브랜치>로 만든 뒤 그 폴더(--cwd)에서 띄운다.
-//     자리와 브랜치 이름이 Claude Code와 같아 워크트리 상자(worktrees.mjs)·merger(mergeVerdict)·치우기가 하네스와 상관없이 같은 길을 쓴다.
+//     브랜치 이름이 Claude Code와 같아 워크트리 상자(worktrees.mjs)·merger(mergeVerdict)·치우기가 하네스와 상관없이 같은 길을 쓴다(사용자 hook은 Claude Code에만 걸린다).
 //     이것이 판의 첫 git 쓰기다(사람이 띄울 때만). 띄우기가 실패하면 만든 워크트리와 브랜치를 지운다.
 //   · 관계: peerOf(리포의 head, 창이 판정해 보낸다)가 있으면 사람이 정한 동료(relation peer, 출처 user)로 잇는다. 없으면 독립. 일 상위는 없다.
 //   · 첫 지시를 주면 앞에 판 알림 두 줄(관계, 끝내는 법)을 붙인다. 비우면 띄우기만 한다.
@@ -37,7 +38,8 @@ import { readMergeConfig, workCwd, short } from './merger.mjs';
 import { relaunchInWorktree } from './branch.mjs';
 import { clip } from './text.mjs';
 import { resolveLauncher } from './launchers.mjs';
-import { WT_NAME_RE, wtBranch, autoName } from './worktree-names.mjs';
+import { WT_NAME_RE, wtBranch, autoName, findClaudeWt, wtFolderTaken } from './worktree-names.mjs';
+import { parseWorktreeList } from './worktree-areas.mjs'; // P337
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
@@ -119,12 +121,20 @@ export class WorktreeSessions {
     peers.sort((a, b) => (b.p.source === 'user') - (a.p.source === 'user'));
     return peers.length ? peers[0].x : null;
   }
-  // 이름이 그 리포에서 비었는가 → null | 까닭
-  async nameProblem(root, name) {
+  // 그 리포의 살아 있는 워크트리 목록(판이 읽어 둔 것, 없으면 git으로 읽는다). P337: hook이 저장소 밖에 만든 워크트리도 든다
+  async liveOf(root, wsKey = null) {
+    const have = wsKey && this.b.worktrees && this.b.worktrees.live ? this.b.worktrees.live(wsKey) : null;
+    if (have) return have;
+    const r = await gitRun(['-C', root, 'worktree', 'list', '--porcelain'], 5000);
+    return r.ok ? parseWorktreeList(r.out).filter((w) => !w.main) : [];
+  }
+  // 이름이 그 리포에서 비었는가 → null | 까닭. dir_exists: 기본 자리의 폴더, 또는 같은 폴더 이름의 워크트리(P337: hook이 다른 곳에 만든 것. 같은 이름이면 hook이 그것을 다시 연다)
+  async nameProblem(root, name, wsKey = null) {
     if (!WT_NAME_RE.test(name)) return 'bad_name';
     const lower = name.toLowerCase();
     if ([...this.b.sessions.values()].some((x) => !x.closedAt && [x.name, x.label, x.agentName].some((n) => n && String(n).toLowerCase() === lower))) return 'name_taken';
     if (fs.existsSync(wtDir(root, name))) return 'dir_exists';
+    if (wtFolderTaken(await this.liveOf(root, wsKey), name)) return 'dir_exists';
     if (await revOf(root, 'refs/heads/' + wtBranch(name))) return 'branch_exists';
     return null;
   }
@@ -135,9 +145,10 @@ export class WorktreeSessions {
     const root = ws.root;
     const taken = [...this.b.sessions.values()].filter((x) => !x.closedAt).flatMap((x) => [x.name, x.label].filter(Boolean));
     try { for (const d of fs.readdirSync(path.join(root, '.claude', 'worktrees'))) taken.push(d); } catch {}
+    for (const w of await this.liveOf(root, ws.key)) { const n = String(w.path || '').split('/').filter(Boolean).pop(); if (n) taken.push(n); } // P337: 다른 자리의 워크트리 폴더 이름
     let name = p.name ? String(p.name) : autoName(new Date(), taken);
-    for (let i = 0; i < 30 && !p.name && (await this.nameProblem(root, name)); i++) { taken.push(name); name = autoName(new Date(), taken); }
-    const problem = await this.nameProblem(root, name);
+    for (let i = 0; i < 30 && !p.name && (await this.nameProblem(root, name, ws.key)); i++) { taken.push(name); name = autoName(new Date(), taken); }
+    const problem = await this.nameProblem(root, name, ws.key);
     return { workspace: ws.key, repo: true, root: slash(root), name, problem, branch: wtBranch(name), path: '.claude/worktrees/' + name, base: await branchOf(root).catch(() => null), hasCommit: repoHasCommit(root) };
   }
 
@@ -148,9 +159,9 @@ export class WorktreeSessions {
     if (ws.kind !== 'repo') throw apiError('not_repo', '워크트리 세션은 Git 저장소에서만 띄울 수 있습니다: ' + slash(ws.root));
     const root = ws.root;
     const name = String(p.name || '').trim();
-    const bad = await this.nameProblem(root, name);
+    const bad = await this.nameProblem(root, name, ws.key);
     if (bad === 'bad_name') throw apiError('bad_request', '이름은 영문 소문자로 시작하고 소문자, 숫자, -만 씁니다(32자까지): ' + name);
-    if (bad) throw apiError('name_taken', bad === 'name_taken' ? '이미 사용 중인 이름입니다: ' + name : bad === 'dir_exists' ? '워크트리 폴더가 이미 있습니다: .claude/worktrees/' + name : '브랜치가 이미 있습니다: ' + wtBranch(name), { why: bad });
+    if (bad) throw apiError('name_taken', bad === 'name_taken' ? '이미 사용 중인 이름입니다: ' + name : bad === 'dir_exists' ? '같은 이름의 워크트리 폴더가 이미 있습니다: ' + name : '브랜치가 이미 있습니다: ' + wtBranch(name), { why: bad });
     if (!repoHasCommit(root)) throw apiError('needs_commit', '이 저장소(' + slash(root) + ')에 커밋이 없어 워크트리를 만들 수 없습니다. 먼저 첫 커밋을 만드세요. 보드에서 대신 생성하지는 않습니다.');
     const head = p.peerOf ? b.resolve(p.peerOf) : null;
     if (head && head.workspaceKey !== ws.key) throw apiError('bad_request', '동료로 이을 세션(@' + shownName(head) + ')이 이 리포에 없습니다.');
@@ -182,28 +193,38 @@ export class WorktreeSessions {
     if (s) s.quickWorktree = { name, via: plan.via };
     if (gate && s) this.gates.set(s.sessionId, { worktree: name, at: Date.now(), prompt });
     if (head && s && b.branch) b.branch.setRelation(head, s, 'peer', { source: 'user', by: 'user', quiet: true });
-    if (plan.via === 'claude-w' && s && !gate) this.watchWorktree(s, wtDir(root, name));
+    if (plan.via === 'claude-w' && s && !gate) this.watchWorktree(s, root, name);
     this.store().addEvent(r.sessionId, 'worktree_session', { name, via: plan.via, kind, branch: wtBranch(name), base: plan.via === 'git' ? base : null, peerOf: head ? head.sessionId : null, gate: !!gate, prompt: !!prompt });
     b.log('worktree session ' + name + ' (' + plan.via + ', ' + kind + (head ? ', peer of ' + head.name : '') + (gate ? ', trust gate' : '') + ')');
     return { ...r, worktree: { name, branch: wtBranch(name), path: slash(plan.via === 'git' ? plan.cwd : wtDir(root, name)), via: plan.via, base: plan.via === 'git' ? base : null, gate: !!gate }, peer: head ? shownName(head) : null };
   }
   // claude -w는 첫 요청(hook) 전까지 판에 리포 뿌리에서 도는 것으로 보인다. 워크트리 폴더가 생기면 hook을 기다리지 않고 그 폴더를 세션의 폴더로 보고
   //   git을 다시 읽는다(카드가 노란 상자에 들고 병합 맡기기가 보인다. 하위의 --worktree 워커는 worktrees.mjs expectedWt가 같은 일을 한다). hook이 오면 hook을 따른다
-  watchWorktree(s, dir, { everyMs = 1000, maxMs = 90000 } = {}) {
+  // P337: 폴더는 기본 자리(<리포>/.claude/worktrees/<이름>)에 생기거나, 사용자 hook이 다른 곳에 만든다. 기본 자리에 없으면 git 워크트리 목록에서 브랜치 worktree-<이름>을 찾는다
+  async findWorktreeDir(root, name) {
+    const dir = wtDir(root, name);
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    const r = await gitRun(['-C', root, 'worktree', 'list', '--porcelain'], 5000);
+    const hit = r.ok ? findClaudeWt(parseWorktreeList(r.out).filter((w) => !w.main && !w.prunable), name) : null;
+    return hit && fs.existsSync(hit.path) ? hit.path : null;
+  }
+  watchWorktree(s, root, name, { everyMs = 1000, maxMs = 90000 } = {}) {
     const b = this.b; const t0 = Date.now();
-    const tick = () => {
+    const tick = async () => {
       if (!b.sessions.has(s.sessionId)) return;
       if (s.rt && s.rt.cwd && path.resolve(s.rt.cwd).toLowerCase() !== path.resolve(s.cwd).toLowerCase()) { if (b.worktrees) b.worktrees.kick('worktree session'); return; } // hook이 이미 알렸다
-      if (fs.existsSync(path.join(dir, '.git'))) {
+      const dir = await this.findWorktreeDir(root, name).catch(() => null);
+      if (!b.sessions.has(s.sessionId)) return;
+      if (dir) {
         if (s.rt) s.rt.cwd = slash(dir);
         if (b.probeGit) b.probeGit(s, dir);
         if (b.worktrees) b.worktrees.kick('worktree session');
         this.store().addEvent(s.sessionId, 'worktree_session_in', { dir: slash(dir), ms: Date.now() - t0 });
         return;
       }
-      if (Date.now() - t0 < maxMs) { const t = setTimeout(tick, everyMs); if (t.unref) t.unref(); }
+      if (Date.now() - t0 < maxMs) { const t = setTimeout(() => tick().catch(() => {}), everyMs); if (t.unref) t.unref(); }
     };
-    tick();
+    tick().catch(() => {});
   }
   // 신뢰 관문: 사람이 신뢰에 답해 ready(또는 그 사이 들어간 지시로 working·waiting)가 되면 claude -w로 다시 띄운다
   onSession(s, sum) {
@@ -218,7 +239,7 @@ export class WorktreeSessions {
         this.store().addEvent(s.sessionId, 'trust_gate_passed', { worktree: g.worktree, trusted: r.trusted, slipped: !!r.slipped, args: r.args, quick: true });
         this.b.log('worktree session trust gate passed ' + s.name + ': relaunch with -w ' + g.worktree);
         this.b.broadcastSession(s, { cause: 'trust_gate' });
-        this.watchWorktree(s, wtDir(s.cwd, g.worktree));
+        this.watchWorktree(s, s.cwd, g.worktree);
         const text = [g.prompt, r.slipped].filter(Boolean).join('\n\n');
         if (text) this.b.queue.enqueue(s.sessionId, text, { origin: { kind: 'human' } });
       })

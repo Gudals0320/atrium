@@ -266,7 +266,7 @@ async function main() {
     if (x.needsTrust) { trustLines(x); say(`응답 읽기: ${x.next.read}`); say(counts(x.counts)); return; }
     if (!w) say(`  상태: 기다리지 않음(--no-wait). 준비되면 보드가 첫 요청을 넣는다. 끝나기 기다리기: atrium wait ${x.name}`);
     else if (w.state === 'waiting') say('  상태: 승인을 기다린다. 사용자에게 보드의 승인 카드에 답해 달라고 알린다');
-    else if (['error', 'exited', 'closed'].includes(w.state)) say(`  상태: ${w.state}. 하위 세션이 제대로 뜨지 않았다${x.error ? `(${x.error.type}: ${x.error.message || ''})` : ''}`);
+    else if (['error', 'exited', 'closed'].includes(w.state)) { say(`  상태: ${w.state}. 하위 세션이 제대로 뜨지 않았다${x.error ? `(${x.error.type}: ${x.error.message || ''})` : ''}`); if (x.exit && x.exit.error) say(`  화면의 오류: ${x.exit.error}`); } // P337: 끝 화면의 오류 문장을 그대로
     else if (w.timeout) say(`  상태: ${w.state}(아직 준비 중). atrium wait ${x.name}으로 기다린다`);
     else say(`  상태: ${w.state}${x.firstPrompt ? `, 첫 요청 ${w.delivery || x.firstPrompt.status}` : ''} (${(w.ms / 1000).toFixed(1)}초)`);
     // P79: 첫 요청이 들어갔다고 확인하지 못했으면 그 사실과 다음 명령

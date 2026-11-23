@@ -16,7 +16,8 @@ import { writeSessionSettings, buildStartArgs, buildResumeArgs, buildResumeArgv,
 import { legacyFlavorLauncher } from './launcher-migrate.mjs'; // P115: P25 세션(flavor만 남음)의 연결
 import { newRuntime } from './state.mjs';
 import { canvasItems, slotFor, settleRegions, regions as areaRegions } from './canvas-ops.mjs';
-import { areaKey, parseArea } from './worktree-areas.mjs'; // P27: 워크트리 영역
+import { areaKey, parseArea, worktreeOfPath } from './worktree-areas.mjs'; // P27: 워크트리 영역
+import { claudeWtDirName, claudeWtName } from './worktree-names.mjs'; // P337
 import { NEW_NODE as NODE, NEW_NODE_STEP, OLD_DEFAULT, DEFAULT_ASPECT, SIZE_STEPS, overlaps, regionRect, regionsOf, slotInRegion } from './canvas.mjs'; // P73: 새 노드는 16:9 가로 보통
 import { pathKey, normPath, workspaceNames } from './workspaces.mjs';
 import { clip } from './text.mjs';
@@ -502,13 +503,20 @@ export class Recall {
 
   // ---------- P13: 캔버스의 대화 노드 ----------
   // 대화의 워크트리 블록 이름(w: 대화가 든 워크스페이스). 폴더가 .claude/worktrees/<이름> 아래면 그 이름(Claude Code 워크트리).
-  // 리포 워크스페이스에서 본 저장소 폴더 밖(다른 곳의 git 워크트리)이면 그 폴더 이름. 본 저장소면 ''
+  // 리포 워크스페이스에서 본 저장소 폴더 밖(다른 곳의 git 워크트리)이면 그 워크트리의 이름(P337: 살아 있는 워크트리 목록에서 그 폴더가 든 것.
+  // 브랜치 worktree-<이름>이면 그 이름, 아니면 워크트리 폴더 이름. 목록에 없으면 그 폴더 이름). 본 저장소면 ''
   blockOf(c, w) {
     if (!w || !c.cwd) return '';
     const rel = pathKey(c.cwd).startsWith(pathKey(w.root) + '/') ? normPath(c.cwd).slice(normPath(w.root).length) : null;
-    const m = /^\/\.claude\/worktrees\/([^/]+)/.exec(rel || '') || (rel == null ? /\/\.claude\/worktrees\/([^/]+)/.exec(normPath(c.cwd)) : null);
-    if (m) return m[1];
-    if (w.kind === 'repo' && rel == null && pathKey(c.cwd) !== pathKey(w.root)) return normPath(c.cwd).split('/').pop();
+    const dir = claudeWtDirName(rel != null ? rel : c.cwd);
+    if (dir) return dir;
+    if (w.kind === 'repo' && rel == null && pathKey(c.cwd) !== pathKey(w.root)) {
+      const live = this.b && this.b.worktrees && this.b.worktrees.live ? this.b.worktrees.live(w.key) : null;
+      const wt = live ? worktreeOfPath(c.cwd, live) : '';
+      const hit = wt ? live.find((x) => x.key === wt) : null;
+      if (hit) return claudeWtName(hit) || normPath(hit.path).split('/').pop();
+      return normPath(c.cwd).split('/').pop();
+    }
     return '';
   }
   // 캔버스에 올릴 대화(분류 board, 열린 워크스페이스, 영역마다 최근 CONVO_CAP개)의 자리를 정하고, 노드와 띄움 선을 만든다. 바뀌면 convo.nodes를 보낸다
