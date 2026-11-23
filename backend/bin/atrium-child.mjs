@@ -52,7 +52,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       누가 띄웠는지(계보)는 둘 다 남는다. 보드가 첫 요청 앞에 관계 한 줄을 붙이고, 응답 첫 줄에 관계를 쓴다.
       --model은 말로 한 이름도 받는다("glm flash", opus). 보드가 아는 목록에서 풀고, 여럿이 맞거나 없으면 띄우지 않고 후보를 돌려준다.
       --launcher는 그 런처(도구 모음의 단추)의 하네스·모델·옵션·환경 변수 그대로 띄운다.
-      --effort는 Codex면 -c model_reasoning_effort로 옮겨 런처 인자의 같은 값을 덮는다(low, medium, high, xhigh 등). Hermes면 준비된 뒤 보드가 /reasoning <값>을 넣는다(--tui가 --reasoning을 받지 않는다. 런처 인자의 --reasoning이 있으면 그 값을 따른다). 노력 수준을 받지 않는 종류면 무시했다고 알린다.
+      --effort는 Codex면 -c model_reasoning_effort로 옮겨 런처 인자의 같은 값을 덮는다(low, medium, high, xhigh 등). Hermes면 준비된 뒤 보드가 /reasoning <값>을 넣는다(--tui가 --reasoning을 받지 않는다. 런처 인자의 --reasoning이 있으면 그 값을 따른다). omo면 --thinking으로 넘긴다(off, minimal, low, medium, high, xhigh, max. 런처 인자의 --thinking이 있으면 그 값을 따른다). 노력 수준을 받지 않는 종류면 무시했다고 알린다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
       준비될 때까지 기다린 뒤 워커 이름과 일 맡기기·읽기 명령을 돌려준다. --prompt로 맡겼으면 턴을 끝낸다(보고는 보드가 가져다준다). 수와 깊이에 상한은 없다.
       --worktree는 claude -w로 워크트리를 만든다. 신뢰를 받지 않은 저장소면 신뢰 질문에서 멈추고(needs_trust) 사람에게 할 한 문장을 돌려준다.
@@ -257,7 +257,7 @@ async function main() {
       const base = H.base === 'bare' ? '런처 없음(맨 명령)' : `런처 ${H.launcher}${H.base === 'rail' ? '(보드 레일의 기본 설정)' : ''}`;
       const appr = { parent: `너의 승인 방식 ${H.parentPermissionMode}을 옮김`, launcher: '런처의 인자', harness: `${x.kind}의 사용자 설정(너의 승인 방식 ${H.parentPermissionMode}은 옮기지 않음)` }[H.approvalFrom] || '옮기지 않음';
       say(`  폴더 ${x.cwd}${x.model ? ` · 모델 ${x.model}` : ''} · ${base}`);
-      say(`  명령 ${[H.start || x.kind, ...H.argv].join(' ')} · 승인: ${appr}${H.effort ? ` · 노력 ${H.effort}${x.kind === 'hermes' ? `(준비되면 보드가 /reasoning ${H.effort}을 넣는다)` : '(런처 인자의 같은 값을 덮음)'}` : ''}`); // P208. P299: Hermes
+      say(`  명령 ${[H.start || x.kind, ...H.argv].join(' ')} · 승인: ${appr}${H.effort ? ` · 노력 ${H.effort}${x.kind === 'hermes' ? `(준비되면 보드가 /reasoning ${H.effort}을 넣는다)` : x.kind === 'omo' ? `(--thinking ${H.effort}로 넘긴다)` : '(런처 인자의 같은 값을 덮음)'}` : ''}`); // P208. P299: Hermes
       say(`  ${x.kind}는 hook이 없다. 보드가 화면으로 끝과 답을 보고, atrium wait가 같은 모양으로 돌려준다`);
     } else say(`  폴더 ${x.cwd}${x.worktree ? ` · 워크트리 ${x.worktree}(claude -w${x.gate ? ', 신뢰를 받은 뒤' : ''})` : ''}${x.model ? ` · 모델 ${x.model}` : ''}${x.effort ? ` · 노력 ${x.effort}` : ''} · 승인 방식 ${x.permissionMode}`);
     if (x.effortNote) say(`  ${x.effortNote}`); // P208: 노력 수준을 받지 않는 종류
@@ -687,6 +687,8 @@ function printModels(x) {
     ${e.command}`);
   }
   for (const f of x.freeModels || []) { // P299: 모델 목록을 판이 모르는 하네스(Hermes)
+    if (f.kind === 'omo') { say(`  ${f.label}: 위 목록(Codex 구독 chatgpt-subscription/…) 밖의 모델도 이름(제공자/모델)을 그대로 준다(--model). 노력 ${f.efforts.join(', ')}(--thinking으로 넘긴다)
+    ${f.command}`); continue; } // P329
     say(`  ${f.label}: 모델 목록은 보드가 모른다. 모델 이름을 그대로 준다(-m)${f.efforts.length ? `. 노력 ${f.efforts.join(', ')}(준비되면 보드가 /reasoning으로 넣는다)` : ''}
     ${f.command}`);
   }

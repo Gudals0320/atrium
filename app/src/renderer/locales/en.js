@@ -3116,6 +3116,7 @@ export default {
     source_opencode: 'opencode models (provider/model). The board puts it in the session config as model',
     source_dsh: '/model inside dsh (the board does not pass it)',
     source_hermes: 'your Hermes provider model names (hermes model, /model in Hermes)',
+    source_omo: 'omo --list-models (provider/model ID)',
     effort: 'Effort: {how} · accepts {values}',
     effortSlash: 'Effort: the board types {how} once it is ready · accepts {values}',
     effortInside: 'Effort: set with {how} inside the harness (the board does not pass it)',
@@ -3129,7 +3130,7 @@ export default {
     rejected_effortNotArg: '{arg} is not accepted by this screen (TUI). Move it to the effort field and the board types /reasoning',
     rejected_modelNotArg: '{arg} is not an argument this harness takes. Move it to the model field and the board passes it the right way',
     unknown: 'Not in this harness help: {args}',
-    agyTier: 'Model {model} already names an effort tier. With an effort ({effort}) AGY drops such a model, so the board passes {base}',
+    agyTier: 'Model {model} already names an effort tier. With an effort ({effort}) Antigravity drops such a model, so the board passes {base}',
     moveBtn: 'Move to fields',
     moved: 'Moved {n} argument(s) to fields. Save to apply.',
     convert: 'This command is a harness the board knows ({harness}{start}). As a harness launcher it gets the model, effort and resume fields.',
@@ -3150,5 +3151,15 @@ export default {
     err_notFound: '{cmd} was not found (PATH)',
     err_timeout: '{cmd} did not answer in time',
     err_failed: 'Could not check: {cmd}',
+  },
+  // P331: session map to-do badge and the answer-in-place mini window (MapTodo.jsx)
+  mapTodo: {
+    badge: 'To do',
+    badgeTitle: 'To do {n}',
+    head: 'To do',
+    popTitle: 'To do for @{name}',
+    prev: 'Previous to do',
+    next: 'Next to do',
+    closeTitle: 'Close (Esc)',
   },
 };

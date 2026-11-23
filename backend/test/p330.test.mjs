@@ -167,6 +167,18 @@ test('P330 AGY 단계 붙은 모델 ID: 노력 인자가 있으면 단계를 떼
   assert.deepEqual(modelArgsFor('agy', 'gemini-4-neon-xhigh', '', ['--effort', 'low']), ['--model', 'gemini-4-neon']);
 });
 
+test('P330 omo(P329) 계약: --model, 생각 수준은 어댑터가 --thinking, 명령 한 줄 omo는 하네스 런처로', () => {
+  assert.equal(contractOf('omo').effort.flag, '--thinking');
+  assert.deepEqual(modelArgsFor('omo', 'a/b'), ['--model', 'a/b']);
+  assert.deepEqual(harnessOfCommand('omo'), { harness: 'omo', startCommand: '' });
+  const l = N({ name: 'O', harness: 'omo', args: '--thinking high --model x/y' });
+  const m = fixLauncher(l, 'fields').launcher;
+  assert.deepEqual([m.model, m.effort, m.args], ['x/y', 'high', '']);
+  assert.equal(previewLauncher(N(m)).line, 'omo --model x/y --thinking high');
+  assert.deepEqual(checkPlanOf(N(m)).flags, [], 'omo 도움말은 짧아 판 줄만 본다');
+  assert.deepEqual(fixLauncher(N({ name: 'C', harness: 'command', command: 'omo' }), 'harness').launcher.harness, 'omo');
+});
+
 test('P330 계약 표: 명령 이름 → 하네스, omh는 hermes 계열', () => {
   assert.deepEqual(harnessOfCommand('C:/x/dsh-tui.cmd'), { harness: 'dsh', startCommand: '' });
   assert.deepEqual(harnessOfCommand('dst'), { harness: 'dsh', startCommand: 'dst' });
@@ -175,6 +187,6 @@ test('P330 계약 표: 명령 이름 → 하네스, omh는 hermes 계열', () =>
   assert.equal(contractOf('hermes', 'omh').id, 'omh'); assert.equal(contractOf('hermes', '').id, 'hermes');
   assert.deepEqual(approvalArgsFor('agy', 'plan'), ['--mode', 'plan']);
   assert.deepEqual(argOverlaps('codex', ['-mgpt-x']).items.map((x) => x.value), ['gpt-x']);
-  for (const c of Object.values(CONTRACTS)) assert.ok(c.boardFlags.length && c.command, c.id);
+  for (const c of Object.values(CONTRACTS)) assert.ok((c.boardFlags.length || c.helpPartial) && c.command, c.id);
   assert.deepEqual(harnessOptionArgs('pi', { effort: 'low' }, ['--thinking', 'high']), [], '추가 인자의 --thinking이 이긴다');
 });

@@ -15,7 +15,9 @@
 //   그래서 proctree·cpu는 아무것도 보지 못한다.
 // P298: Hermes는 상태 파일의 고친 때 대신 그 세션만 보는 읽개(hermes.mjs hermesBusyOf: state.db의 도는 하위 에이전트·턴 임대)를 쓴다(공용 파일의 고친 때는 사람이 따로 쓰는 Hermes도 바쁨으로 보였다).
 //   보고는 atrium done(세션별 감싸개로 닿는다)이 먼저이고, done 없이 턴이 끝나면 마지막 답으로 닫는다(reportFallback, 하위가 도는 동안은 기다린다)
-export const ORCH_DEFAULTS = { hermes: { orchestrates: true, reportFallback: 'last_answer', busy: [{ reader: 'hermes' }] } };
+// P329: omo(OmO)도 안에서 하위 에이전트(task 도구의 분류별 에이전트, ulw·DAG)를 스스로 돌린다. 하위 에이전트는 omo 프로세스 안(in-process)에서 돌고
+//   셸 도구는 omo 프로세스 나무에 붙으므로 기본 바쁨 신호(proctree·cpu)가 닿는다. 보고는 atrium done(판 env가 셸 도구까지 간다)이 먼저, 없으면 마지막 답
+export const ORCH_DEFAULTS = { hermes: { orchestrates: true, reportFallback: 'last_answer', busy: [{ reader: 'hermes' }] }, omo: { orchestrates: true, reportFallback: 'last_answer' } };
 export const REPORT_FALLBACKS = ['last_answer', 'none']; // P298: none = 종류의 기본(hermes last_answer)을 런처에서 끈다
 export const BUSY_SIGNALS = ['proctree', 'cpu'];
 export const DEFAULT_BUSY = Object.freeze(['proctree', 'cpu']);

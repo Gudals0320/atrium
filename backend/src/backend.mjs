@@ -52,7 +52,7 @@ import { resolveLauncher, checkGateway, checkCommand, splitArgs, startWords, sta
 import { takesModel, modelIgnoredLine } from './harness-contract.mjs'; // P330 // P33: 호출자. P97: 실행 명령
 import { humanPrompt } from './decisions.mjs'; // P284: 터미널에 직접 친 글
 import { orchOf, orchPromptLines } from './orchestration.mjs'; // P296: 자체 오케스트레이션
-import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir, hermesReasoningOf, reasoningIn } from './harness.mjs'; // P299: Hermes 노력 수준
+import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir, hermesReasoningOf, reasoningIn, omoEffortOf, thinkingIn, piLike } from './harness.mjs'; // P299: Hermes 노력 수준. P329: omo 생각 수준·pi 계열
 import { hermesHomeOf, hermesSessionOf, hermesLastAnswer, hermesUsageOf, hermesBusyOf, hermesProgressOf, omhHomeOf } from './hermes.mjs'; // P298: Hermes(+OMH) state.db 읽기 전용
 import { registerInnerReader } from './inner-work.mjs'; // P298: Hermes 바쁨 읽개
 import { registerProgressReader, registerKindProgress, ProgressWatcher } from './inner-progress.mjs'; // P300: 안 진행 읽개와 감시
@@ -526,7 +526,7 @@ export class Backend {
   // 제출(Enter)할 때까지 판은 Ctrl+S를 쓰지 않는다(치워 둔 사람의 글을 덮는다)
   noteDraftKeys(s, data) {
     if (terminalReportsOnly(data)) return;
-    s.draftEdit = draftEdit(s.draftEdit, data, { newlineKey: s.kind === 'opencode' || s.kind === 'pi' }); // P131: opencode·pi의 Ctrl+J는 줄바꿈
+    s.draftEdit = draftEdit(s.draftEdit, data, { newlineKey: s.kind === 'opencode' || piLike(s.kind) }); // P131: opencode·pi의 Ctrl+J는 줄바꿈. P329: omo(pi 계열)도
     const t = String(data || '');
     if (t.includes('\x13')) s.userStash = true;
     else if (t.includes('\r') && !t.includes('\x1b[200~')) s.userStash = false;
@@ -790,6 +790,7 @@ export class Backend {
     try {
       if (kind === 'codex') { const id = this.harnessSessionIdOf(s); file = id ? findCodexRollout(this.cfg.codexConvoHome || codexHomeOf(), id) : null; }
       else if (kind === 'pi') { const id = (s.harnessPlan || {}).harnessSessionId; file = id ? findPiSession(this.cfg.piSessionsDir || path.join(os.homedir(), '.pi', 'agent', 'sessions'), id) : null; }
+      else if (kind === 'omo') { const id = (s.harnessPlan || {}).harnessSessionId; file = id ? findPiSession(this.cfg.omoSessionsDir || path.join(os.homedir(), '.omo', 'agent', 'sessions'), id) : null; } // P329: pi와 같은 꼴, 폴더만 다르다
       else if (kind === 'dsh') { const id = this.harnessSessionIdOf(s); file = id ? findDshSession(this.cfg.dshHome || dshHomeOf(), id) : null; } // P270
     } catch { file = null; }
     s._modelFind = { file, at: Date.now() };
@@ -799,7 +800,7 @@ export class Backend {
   // P227: asleep이면 패널이 없어도(잠든 세션, 다시 열 닫힌 세션) 읽는다. 바뀐 값은 판 DB(runtime)에 바로 남긴다(판이 다시 떠도 이어 갈 때 쓴다)
   refreshModelNow(s, { asleep = false } = {}) {
     const kind = s.kind || 'claude';
-    if (!['claude', 'codex', 'pi', 'dsh', 'hermes'].includes(kind) || (!s.paneId && !asleep)) return false; // P270: dsh는 기록(zstd 프레임)의 request/header
+    if (!['claude', 'codex', 'pi', 'omo', 'dsh', 'hermes'].includes(kind) || (!s.paneId && !asleep)) return false; // P329: omo // P270: dsh는 기록(zstd 프레임)의 request/header
     let st;
     try { if (kind === 'hermes') { const id = this.harnessSessionIdOf(s); const u = id ? hermesUsageOf({ id, home: this.hermesHome() }) : null; if (!u || !u.model) return false; st = { model: u.model, effort: null }; } else { const file = this.modelFileOf(s); if (!file) return false; st = kind === 'dsh' ? refreshDshModel(file, s._modelSt || null) : refreshModel(kind, file, s._modelSt || null); } } catch (e) { this.log('model read error', e.message); return false; }
     if (!st) return false;
@@ -1190,7 +1191,7 @@ export class Backend {
     const hf = this.harnessFiles || {};
     // P227: 같은 대화를 이어 갈 때(Codex는 대화 ID를 알 때) 모델·노력 수준은 그 대화가 마지막으로 쓰던 값. 처음 띄울 때는 띄운 값(plan.model)
     const hsid = resume ? this.harnessSessionIdOf(s) : null;
-    const rm = resume && (s.kind === 'pi' || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
+    const rm = resume && (piLike(s.kind) || (s.kind === 'codex' && hsid)) ? resumeModel(s.kind, { model: plan.model || null }, this.modelNowFor(s)) : null;
     const orchP = s.orch ? this.orchPrompt(s) : null; // P296: 오케스트레이션 세션은 그 세션의 안내문(허용 동사만)
     return harnessLaunch({ kind: s.kind, startWords: startWords(s.startCommand), sessionId: s.sessionId, resume, harnessSessionId: hsid, model: rm ? rm.model : plan.model || null, ...(rm && rm.effort ? { effort: rm.effort } : plan.effort ? { effort: plan.effort } : {}), /* P299: Hermes 띄운 노력 수준 */ launcherArgs: plan.args || [], instructions: orchP ? { file: orchP.file, text: orchP.text } : hf.promptFile ? { file: hf.promptFile, text: HARNESS_PROMPT } : null, boardEnv: br ? br.envFor(s.sessionId, { token: false }) : {}, binDir: hf.binDir || null, filesDir: path.join(this.cfg.dataDir || this.cfg.sessionsDir || '.', 'harness'), wrapper: hf.binDir ? { node: process.execPath, script: path.join(hf.binDir, 'lib', 'bin', 'atrium-child.mjs') } : null, forkFrom: plan.forkFrom && !plan.launchedAt ? plan.forkFrom : null, statusLine: this.usage ? (u) => this.usage.agyStatusLine(u) : null }); // P133: 갈라 열기는 처음 한 번만. P211: AGY 상태 줄 명령
   }
@@ -1304,7 +1305,7 @@ export class Backend {
   }
   // P116: 200줄(전에는 60줄). hc의 terminal.read는 화면의 빈 줄까지 세어서, 입력 칸이 아래에 붙은 Codex 화면은 60줄 안에 그 턴이 없었다(atrium wait의 답이 상태 줄이 됐다)
   async readScreenAnswer(s) {
-    if (s.kind === 'pi' && await this.readPiAnswer(s)) return; // P201
+    if (piLike(s.kind) && await this.readPiAnswer(s)) return; // P201. P329: omo도 세션 파일
     if (s.kind === 'dsh' && await this.readDshAnswer(s)) return; // P270
     if (s.kind === 'hermes' && await this.readHermesAnswer(s)) return; // P298
     try {
@@ -1676,7 +1677,11 @@ export class Backend {
       const hermesOwn = kind === 'hermes' ? reasoningIn(plan.args || []) : null;
       const hermesEffort = kind === 'hermes' ? hermesReasoningOf(plan.effort, plan.args || []) : null;
       if (kind === 'hermes' && (hermesOwn != null || plan.effort) && !hermesEffort) this.log(`hermes effort dropped: ${String(hermesOwn != null ? hermesOwn : plan.effort).slice(0, 20)} (Hermes --reasoning 값이 아니다)`);
-      const effort = claude ? plan.effort || null : kind === 'hermes' ? hermesEffort || null : null;
+      // P329: omo는 노력 수준을 세션에 남기고 어댑터가 --thinking으로 넘긴다(이어 가기에도). 런처 추가 인자의 --thinking이 이긴다(그 값을 보인다)
+      const omoOwn = kind === 'omo' ? thinkingIn(plan.args || []) : null;
+      const omoEffort = kind === 'omo' && omoOwn == null ? omoEffortOf(plan.effort) : null;
+      if (kind === 'omo' && omoOwn == null && plan.effort && !omoEffort) this.log(`omo effort dropped: ${String(plan.effort).slice(0, 20)} (omo --thinking 값이 아니다)`);
+      const effort = claude ? plan.effort || null : kind === 'hermes' ? hermesEffort || null : kind === 'omo' ? omoEffort || omoEffortOf(omoOwn) || null : null;
       const extraArgs = claude ? plan.extraArgs || [] : [];
       // P97: 실행 명령(호출자의 startCommand, 예: mywrap claude). 정하지 않은 하위 세션(atrium child의 물려받기·모델 풀기)은 부모 claude의 실행 명령을 물려받는다
       const parentS = p.parentSessionId ? this.sessions.get(p.parentSessionId) : null;
@@ -1714,7 +1719,7 @@ export class Backend {
         resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, startCommand, ...launch });
       }
       // P115: 다른 종류는 하네스 어댑터(harness.mjs)가 판의 env·안내문·세션 ID를 더한다. 다시 띄울 값(모델, 호출자 추가 인자, 호출자)은 세션에 남긴다
-      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, harnessSessionId: null, ...(hermesEffort && hermesOwn == null ? { effort: hermesEffort } : {}) } : null; // P299: Hermes 노력 수준(런처 인자의 --reasoning은 args에서 읽는다)
+      const harnessPlan = harness ? { model, args: (plan.args || []).map(String), launcher: plan.launcher || null, launcherId: plan.launcherId || null, harnessSessionId: null, ...(hermesEffort && hermesOwn == null ? { effort: hermesEffort } : {}), ...(omoEffort ? { effort: omoEffort } : {}) } : null; // P329: omo 노력 수준. P299: Hermes 노력 수준(런처 인자의 --reasoning은 args에서 읽는다)
 
       this.ensureWorkspace(ws, `spawn ${name}`);
       const rt = newRuntime({ trustPredicted: !!trust.needsTrust, kind, hooked: claude });

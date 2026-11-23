@@ -3,7 +3,7 @@
 // 하위 세션(branch.mjs)·atrium models가 이 표를 본다.
 // 이 모듈은 하네스 설정·로그인 파일을 열지 않는다. 점검(runCheck)은 실행 명령에 --version·--help만 붙여 돌린다(모델을 부르지 않는다).
 import { execFile } from 'node:child_process';
-import { AGY_APPROVAL, HERMES_EFFORTS, hermesEffortOf, wrapperOf, agyModelArg } from './harness.mjs';
+import { AGY_APPROVAL, HERMES_EFFORTS, hermesEffortOf, wrapperOf, agyModelArg, OMO_EFFORTS, omoEffortOf, adapterOf } from './harness.mjs';
 
 const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions']; // settings.mjs와 같다
 export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']; // claude --effort
@@ -48,6 +48,9 @@ export const CONTRACTS = {
   opencode: { id: 'opencode', command: 'opencode', model: { via: 'config', flags: ['-m', '--model'], source: 'opencode' }, effort: { via: 'none' }, approval: OPENCODE_APPROVAL, boardFlags: ['--standalone', '-s'], known: KNOWN.opencode },
   dsh: { id: 'dsh', command: 'dsh-tui', aliases: ['dst'], model: { via: 'slash', flags: [], source: 'dsh' }, effort: { via: 'slash', slash: '/effort' }, approval: null, boardFlags: ['--patch', '--resume'], known: KNOWN.dsh },
   hermes: { id: 'hermes', command: 'hermes', model: { via: 'arg', flags: ['-m', '--model'], source: 'hermes' }, effort: { via: 'slash', flag: '--reasoning', slash: '/reasoning', values: HERMES_EFFORTS, argRejected: true }, approval: HERMES_APPROVAL, boardFlags: ['--tui', '-m', '--resume'], known: KNOWN.hermes },
+  // P329: omo(OmO, 엔진 senpi = pi 계열). 모델 --model, 생각 수준은 어댑터가 --thinking으로 붙인다(via adapter). 승인 체계 없음.
+  //   omo --help는 짧아(--model·--thinking·--session-id를 적지 않는다) 점검은 판 줄만 본다(helpPartial). 모르는 인자 경고도 하지 않는다(known 없음)
+  omo: { id: 'omo', command: 'omo', model: { via: 'arg', flags: ['--model'], source: 'omo' }, effort: { via: 'adapter', flag: '--thinking', values: OMO_EFFORTS }, approval: null, boardFlags: [], helpPartial: true, known: null },
   // P309: omh(Hermes + OMH Native TUI). bare 실행은 -r/-c/-p/--onboard/--new만 받는다: 모델은 env HERMES_MODEL, 노력은 /reasoning, 승인 인자는 없다
   omh: { id: 'omh', family: 'hermes', command: 'omh', model: { via: 'env', env: 'HERMES_MODEL', flags: ['-m', '--model'], source: 'hermes' }, effort: { via: 'slash', flag: '--reasoning', slash: '/reasoning', values: HERMES_EFFORTS, argRejected: true }, approval: null, boardFlags: ['--new', '--resume'], known: KNOWN.omh },
 };
@@ -106,7 +109,7 @@ export function hasEffortArg(kind, args = []) {
 export function modelArgsFor(kind, model, startCommand = '', args = []) {
   const c = contractOf(kind, startCommand);
   if (!model) return [];
-  if (!c) return ['-m', model];
+  if (!c) { const a = adapterOf(kind); const m = a ? a.modelArgs(model) : []; return m.length ? m : ['-m', model]; } // P329: 표에 없는 종류는 어댑터 모양
   return c.model.via === 'arg' ? [c.model.flags[0], kind === 'agy' ? agyModelArg(model, args) : model] : []; // P330: AGY 단계 붙은 ID + --effort
 }
 // 판이 넘기지 못하는 모델(하네스 안 /model로만 정한다)
@@ -154,7 +157,7 @@ export function argOverlaps(harness, words = [], startCommand = '') {
     }
     if (c.effort.flag && c.effort.via !== 'config' && flag === c.effort.flag) {
       const t = val(); const raw = unq(t.v);
-      const v = c.effort.flag === '--reasoning' ? hermesEffortOf(raw) || raw : raw;
+      const v = c.effort.flag === '--reasoning' ? hermesEffortOf(raw) || raw : c.id === 'omo' ? omoEffortOf(raw) || raw : raw;
       add(i, t.n, 'effort', v, (c.effort.values || []).includes(v));
       if (c.effort.argRejected) out.rejected.push({ arg: w, why: 'effortNotArg' });
       i += t.n; continue;
@@ -220,7 +223,7 @@ export function contractHint(harness, { startCommand = '', permissionMode = '' }
   const c = contractOf(harness, startCommand);
   if (!c) return null;
   const approval = c.approval === 'permission-mode' ? ['--permission-mode', permissionMode || 'manual'] : c.approval ? [...(c.approval[permissionMode || 'manual'] || [])] : null;
-  const effortHow = c.effort.via === 'config' ? c.effort.flag + ' ' + c.effort.key + '="<v>"' : c.effort.via === 'arg' ? c.effort.flag + ' <v>' : c.effort.via === 'slash' ? c.effort.slash + (c.effort.values ? ' <v>' : '') : '';
+  const effortHow = c.effort.via === 'config' ? c.effort.flag + ' ' + c.effort.key + '="<v>"' : c.effort.via === 'arg' || c.effort.via === 'adapter' ? c.effort.flag + ' <v>' : c.effort.via === 'slash' ? c.effort.slash + (c.effort.values ? ' <v>' : '') : '';
   const modelHow = c.model.via === 'arg' ? c.model.flags[0] + ' <model>' : c.model.via === 'config' ? 'OPENCODE_CONFIG_CONTENT {model}' : c.model.via === 'env' ? c.model.env + '=<model>' : '/model';
   return { id: c.id, source: c.model.source, modelVia: c.model.via, modelHow, effortVia: c.effort.via, effortHow, efforts: c.effort.values || [], approval, approvalVia: c.approval === 'permission-mode' ? 'mode' : c.approval ? 'table' : 'none' };
 }

@@ -3120,6 +3120,7 @@ export default {
     source_opencode: 'opencode models(제공자/모델). 보드가 세션 설정의 model로 넣습니다',
     source_dsh: 'dsh 안 /model에서 고릅니다(보드가 넘기지 않음)',
     source_hermes: 'Hermes 제공자의 모델 이름(hermes model, Hermes 안 /model)',
+    source_omo: 'omo --list-models(제공자/모델 ID)',
     effort: '추론 수준: {how} · 받는 값 {values}',
     effortSlash: '추론 수준: 준비되면 보드가 {how}을(를) 넣습니다 · 받는 값 {values}',
     effortInside: '추론 수준: 하네스 안 {how}에서 정합니다(보드가 넘기지 않음)',
@@ -3133,7 +3134,7 @@ export default {
     rejected_effortNotArg: '{arg}은(는) 이 화면(TUI)이 받지 않습니다. 추론 수준 칸으로 옮기면 보드가 /reasoning으로 넣습니다',
     rejected_modelNotArg: '{arg}은(는) 이 하네스가 인자로 받지 않습니다. 모델 칸으로 옮기면 보드가 맞는 길로 넘깁니다',
     unknown: '이 하네스 도움말에 없는 인자: {args}',
-    agyTier: '모델 {model}에는 추론 단계가 붙어 있습니다. 추론 수준({effort})을 함께 주면 AGY가 모델을 버리므로 보드가 {base}(으)로 넘깁니다',
+    agyTier: '모델 {model}에는 추론 단계가 붙어 있습니다. 추론 수준({effort})을 함께 주면 Antigravity가 모델을 버리므로 보드가 {base}(으)로 넘깁니다',
     moveBtn: '칸으로 옮기기',
     moved: '인자 {n}개를 칸으로 옮겼습니다. 저장해야 적용됩니다.',
     convert: '이 명령은 보드가 아는 하네스({harness}{start})입니다. 하네스 런처로 바꾸면 모델·추론 수준·이어 가기 칸을 씁니다.',
@@ -3154,5 +3155,15 @@ export default {
     err_notFound: '{cmd}을(를) 찾을 수 없습니다(PATH)',
     err_timeout: '{cmd}이(가) 제한 시간 안에 답하지 않았습니다',
     err_failed: '점검하지 못했습니다: {cmd}',
+  },
+  // P331: 세션 맵 할 일 배지·그 자리 답하기 미니 창(MapTodo.jsx)
+  mapTodo: {
+    badge: '할 일',
+    badgeTitle: '할 일 {n}',
+    head: '할 일',
+    popTitle: '@{name}의 할 일',
+    prev: '앞 할 일',
+    next: '다음 할 일',
+    closeTitle: '닫기(Esc)',
   },
 };

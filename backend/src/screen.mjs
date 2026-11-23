@@ -415,6 +415,14 @@ export function piInputBox(text) {
   return { found: true, text: t, rows: t ? body.length : 0, above: lines.slice(0, top), ...(clipped ? { clipped: true } : {}), ...(/\[paste #\d+( \+\d+ lines| \d+ chars)?\]/.test(t) ? { folded: true } : {}) };
 }
 
+// P329: omo(OmO 5.1.x, 엔진 senpi) 입력 칸. pi와 같은 두 가로줄 사이지만 첫 줄 앞에 "❯ "가 붙는다(빈 칸은 "❯" 하나). 그 기호만 떼고 pi 읽개와 같다
+export function omoInputBox(text) {
+  const box = piInputBox(text);
+  if (!box.found) return box;
+  const t = box.text.replace(/^❯\s?/, '').trim();
+  return { ...box, text: t, rows: t ? box.rows : 0 };
+}
+
 // P139: ANSI 화면(hc 관찰 붙기로 받은 지금 화면, adapter._paint)을 줄마다 글자와 그 글자의 흐림(SGR 2)·뒤집힘(SGR 7)으로 푼다.
 // 커서 옮기기 같은 다른 이스케이프는 버린다(hc는 지금 화면을 줄 단위로 그려 준다). → [{ text, cells: [{ ch, dim, inv }] }]
 export function ansiRows(ansi) {

@@ -13,11 +13,12 @@
 //   다음 글에 실려 갈 답(riding)은 "@이름: 다음 메시지와 함께 갈 답 n · 지금 보내기" 줄로, 그 세션의 카드가 없어도 목록 맨 위에 보인다.
 //   세션 카드·맵 카드 표식 옆에 "실어 보낼 답 n"(RideMark).
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useStore, getState, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
+import { useStore, getState, setMissionOpen, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago } from './lib/labels.js';
 import { usePlanCards, PlanCardRow, PlanMoreLine } from './Plan.jsx'; // P306: 목표 레인의 가상 "실행" 카드
 import { planCountFor, planCards } from './lib/plans.js';
+import { goSession } from './lib/go-session.js'; // P328: 세션 맵에서 누르면 맵을 닫고 한 번에
 import { answerReady, firstCardIds, allAuto, activeCards, laterCards, actionOf, snoozeTimes, pickedTime, pickDefault, whenText, sendsAnswer, timingOf, flipTiming, heldOnly, heldTotal } from './lib/decisions.js';
 
 function useNow(ms = 15000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
@@ -233,7 +234,7 @@ function CheckBody({ d, t, busy, setBusy, timing = null }) {
   );
 }
 
-function DecisionRow({ d, onGo, now, t }) {
+export function DecisionRow({ d, onGo, now, t }) { // P331: 세션 맵 미니 창(MapTodo.jsx)도 같은 카드를 쓴다
   const [busy, setBusy] = useState(false);
   const [timing, setTiming] = useState(null); // P295: 사람이 바꾼 보내는 때(답할 때 넘긴다)
   const act = actionOf(d);
@@ -327,7 +328,7 @@ export function DecisionPill() {
   }, [open]);
   useEffect(() => { if (!total) setOpen(false); }, [total]);
   if (!total) return null;
-  const go = (id) => { setOpen(false); const nav = getState().navigateTo; if (nav) nav(id); };
+  const go = (id) => { setOpen(false); goSession(id, { st: getState(), closeMap: () => setMissionOpen(false) }); };
   return (
     <div className="mt-drop" ref={ref}>
       <button className={`mt-cp decision${open ? ' on' : ''}${n ? '' : ' quiet'}`} data-role="decisions" data-count={n} data-total={total} title={t('userTasks.title')} onClick={() => setOpen((o) => !o)}>
@@ -344,13 +345,13 @@ export function DecisionPill() {
 }
 
 // 세션 카드·세션 맵 카드의 작은 표식(지금 목록에 카드가 있을 때만, 종류 구별 없이 센다)
-export function DecisionMark({ sessionId, className = 'mt-dc-mark' }) {
+export function DecisionMark({ sessionId, className = 'mt-dc-mark', rideOnly = false }) { // P331: rideOnly = 세션 맵 카드(수는 왼쪽 위 배지 MapTodo.jsx TodoBadge가 보인다)
   const t = useT();
   const n = useStore((st) => { let k = 0; for (const d of st.decisions) if (d.sessionId === sessionId && !d.deferred) k++; return k; }) + useStore((st) => planCountFor([...st.plans.values()], sessionId)); // P306: 관리하는 레인의 사용자 항목
   const auto = useStore((st) => allAuto(activeCards(st.decisions), sessionId));
   const ride = useStore((st) => (st.decisionRiding && st.decisionRiding[sessionId]) || 0); // P295
   const rideEl = ride ? <span className={`${className} mt-dc-ride`} data-role="decision-ride" data-count={ride} title={t('riding.markTitle', { n: ride })}>{t('riding.mark', { n: ride })}</span> : null;
-  if (!n) return rideEl;
+  if (!n || rideOnly) return rideEl;
   if (rideEl) return <>{rideEl}<span className={`${className}${auto ? ' auto' : ''}`} data-role="decision-mark" data-count={n} data-auto={auto ? '1' : undefined} title={auto ? t('autoDecisions.markTitle', { n }) : t('userTasks.markTitle', { n })}>{n > 1 ? t('userTasks.markN', { n }) : t('userTasks.mark')}</span></>;
   return <span className={`${className}${auto ? ' auto' : ''}`} data-role="decision-mark" data-count={n} data-auto={auto ? '1' : undefined} title={auto ? t('autoDecisions.markTitle', { n }) : t('userTasks.markTitle', { n })}>{n > 1 ? t('userTasks.markN', { n }) : t('userTasks.mark')}</span>;
 }

@@ -18,6 +18,7 @@ import { Launchers, HARNESSES } from './launchers.mjs'; // P33: 호출자
 import { CodexModels } from './codex-models.mjs'; // P72: Codex 모델 목록
 import { AgyModels, runAgyModels } from './agy-models.mjs'; // P192: AGY 모델 목록
 import { piModels } from './pi-models.mjs'; // P201: pi 모델 목록
+import { omoModels } from './omo-models.mjs'; // P329: omo(Codex 구독) 모델 목록
 export const PI_PREFETCH_MS = 1500; // P205: 판이 켜진 뒤 pi 목록을 미리 받기까지
 import { placeItem } from './canvas-ops.mjs';
 
@@ -54,7 +55,9 @@ export function attachFeatures(b, { timers = true } = {}) {
   // P205: 판이 켜질 때 pi 목록을 한 번 미리 받는다(pi는 1초 안에 끝난다. 처음 연 호출자 틀이 빈 목록이 아니게). 켜기를 늦추지 않게 조금 뒤에
   f.piPrefetch = f.piModels ? setTimeout(() => f.piModels.refresh().catch(() => {}), PI_PREFETCH_MS) : null;
   if (f.piPrefetch && f.piPrefetch.unref) f.piPrefetch.unref();
-  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, piModels: f.piModels, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록을 옮긴다. P255: 모델 연결은 걷어 냈다(옛 meta connections는 읽지 않는다)
+  // P329: omo 모델 목록(Codex 구독 제공자만). 명령을 주지 않은 판(ATRIUM_OMO=none)은 빈 목록. 목록은 런처 틀을 열거나 atrium models를 부를 때 받는다
+  f.omoModels = b.cfg.omoCommand ? omoModels({ command: b.cfg.omoCommand, fallback: HARNESSES.omo.models }) : null;
+  f.launchers = new Launchers({ store, broadcast, gateway: b.cfg.legacyGateway || {}, codexModels: f.codexModels, agyModels: f.agyModels, piModels: f.piModels, omoModels: f.omoModels, log: (m) => b.log(m) }); // 처음 켤 때 옛 새 세션 기본값과 옛 목록을 옮긴다. P255: 모델 연결은 걷어 냈다(옛 meta connections는 읽지 않는다)
   if (f.launchers.migrated) b.log(`launchers migrated to v2 (${f.launchers.migrated.oldBoard ? 'old board' : 'new board'}): favorites ${f.launchers.migrated.favorites.join(',')}`);
   f.outputs = new Outputs({ cfg: b.cfg, store, resolve: (r) => b.resolve(r), hooked: (s) => b.hooked(s), transcriptOf, readMessages, workspaceName: wsName, apiError });
   f.thread = new ThreadLog({
