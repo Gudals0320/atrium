@@ -24,6 +24,7 @@ import { settingsTabOf } from './lib/agents.js'; // P313
 import { botsOf } from './lib/bots.js'; // P338
 import { navOf, pagesOf, pageOf, pageLabel, groupLabel, pageDesc, PAGE_ICON, searchItems, rowState } from './lib/settings-nav.js';
 import { Icon } from './lib/icons.jsx'; // P338: 왼쪽 목록·찾기·딸린 칸
+import { ResourcesTab } from './Guard.jsx'; // P341: 세션 › 자원
 
 // 한 줄: 이름, 값, 풀이(짧은 글). 이름을 누르면 값 칸의 입력에 초점이 간다(label)
 // P338: id(찾기가 데려가는 자리), info(ⓘ를 누르면 아래에 펼치는 긴 글), child·dim(딸린 칸의 들여쓰기·흐려짐). as='div'는 단추 묶음 줄(label이면 첫 단추가 눌린다)
@@ -329,6 +330,7 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
             {cur === 'general' && <GeneralTab settings={settings} />}
             {cur === 'launchers' && <LaunchersTab startNew={newLauncher} />}
             {settings && cur === 'sleep' && <SleepSetting settings={settings} schema={schema} />}
+            {settings && cur === 'resources' && <ResourcesTab settings={settings} schema={schema} />}
             {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
             {settings && cur === 'alerts' && <AlertsTab settings={settings} />}
             {settings && cur === 'bots' && <BotsTab settings={settings} table={agents} onClose={onClose} />}

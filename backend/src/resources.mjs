@@ -5,6 +5,9 @@
 // 프로세스 표는 PowerShell의 Win32_Process 한 번으로 읽는다(읽기만 한다). 프로세스를 끄지 않는다.
 // P255: CPU 사용률. 같은 표에서 프로세스마다 CPU 시간(KernelModeTime + UserModeTime, 100ns)을 읽고, 앞 측정과의 차이를 지난 시간과 코어 수로 나눈다
 //   (세션마다, 판이 띄운 세션 모두). PC 전체는 os.cpus()의 두 측정 차이. 첫 측정은 앞 값이 없어 모른다(null). 측정 주기는 메모리와 같다
+// P341: 표에 우선순위(Win32_Process Priority, 기본 우선순위: 보통 8, 보통 이하 6, 낮음 4, 보통 이상 10, 높음 13)도 읽는다(resource-guard.mjs 낮추기).
+//   세션 줄에 나무 안에서 CPU를 가장 많이 쓴 프로세스(topCpu)와 메모리가 가장 큰 프로세스(topMem)를 싣는다(폭주 카드·배지). 나무 자체는 창에 보내지 않고
+//   this.trees(세션 → 나무)에 둔다. 다음 측정까지의 간격은 nextDelay()가 정한다(폭주 의심 후보가 있으면 짧게)
 // P168: Windows는 부모가 끝나도 ParentProcessId를 남기고, 그 PID를 새 프로세스가 다시 받는다. 부모 PID만 따라가면 셸이 받은 PID를
 // 부모로 적은 오래된 프로세스(부팅 때의 wininit 등)와 그 아래 시스템 전체가 한 세션으로 들어간다. 그래서 생성 시각을 함께 읽고,
 // 부모보다 먼저 생긴 "자식"은 따라가지 않는다
@@ -16,7 +19,7 @@ const PS_CREATED = 'c = $(if ($_.CreationDate) { [int64]([DateTimeOffset]$_.Crea
 
 const PS_SCRIPT = [
   "$ErrorActionPreference = 'SilentlyContinue'",
-  `$p = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,WorkingSetSize,Name,CreationDate,KernelModeTime,UserModeTime | ForEach-Object { [pscustomobject]@{ i = $_.ProcessId; p = $_.ParentProcessId; w = [int64]$_.WorkingSetSize; n = $_.Name; t = [int64]$_.KernelModeTime + [int64]$_.UserModeTime; ${PS_CREATED} } }`,
+  `$p = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,WorkingSetSize,Name,CreationDate,KernelModeTime,UserModeTime,Priority | ForEach-Object { [pscustomobject]@{ i = $_.ProcessId; p = $_.ParentProcessId; w = [int64]$_.WorkingSetSize; n = $_.Name; r = $_.Priority; t = [int64]$_.KernelModeTime + [int64]$_.UserModeTime; ${PS_CREATED} } }`,
   '[pscustomobject]@{ p = @($p) } | ConvertTo-Json -Compress -Depth 3',
 ].join('; ');
 
@@ -49,7 +52,7 @@ export function readProcessTable() {
       try {
         const j = JSON.parse(out);
         const procs = new Map();
-        for (const x of [].concat(j.p || [])) procs.set(x.i, { pid: x.i, ppid: x.p, ws: x.w, name: x.n, created: toMs(x.c), cpu: toMs(x.t) });
+        for (const x of [].concat(j.p || [])) procs.set(x.i, { pid: x.i, ppid: x.p, ws: x.w, name: x.n, created: toMs(x.c), cpu: toMs(x.t), prio: toMs(x.r) }); // P341: prio
         resolve({ procs, at: Date.now() });
       } catch { resolve(null); }
     });
@@ -144,6 +147,26 @@ export function treeCpu(tree, prev, prevAt) {
   }
   return sum;
 }
+// P341: 프로세스 하나가 앞 측정 뒤에 쓴 CPU 시간(100ns) | null. 순수 함수
+export function procCpu(p, prev, prevAt) {
+  if (!prev || !p || !Number.isFinite(p.cpu)) return null;
+  const before = prev.get(cpuKey(p));
+  if (before != null) return Math.max(0, p.cpu - before);
+  return Number.isFinite(p.created) && Number.isFinite(prevAt) && p.created >= prevAt ? p.cpu : null;
+}
+// P341: 나무에서 CPU를 가장 많이 쓴 프로세스(topCpu)와 작업 집합이 가장 큰 프로세스(topMem). 줄: { pid, created, name, cpuPct(PC 전체 대비), memMB }.
+//   CPU를 모르면(첫 측정) topCpu는 null. 순수 함수
+export function treeTops(tree, prev, prevAt, ms, cores) {
+  if (!tree || !tree.length) return { topCpu: null, topMem: null };
+  const row = (p, ticks) => ({ pid: p.pid, created: Number.isFinite(p.created) ? p.created : null, name: p.name || '?', cpuPct: cpuPct(ticks, ms, cores), memMB: mb(p.ws || 0) });
+  let best = null, bestT = -1, big = null;
+  for (const p of tree) {
+    const t = procCpu(p, prev, prevAt);
+    if (t != null && t > bestT) { best = p; bestT = t; }
+    if (!big || (p.ws || 0) > (big.ws || 0)) big = p;
+  }
+  return { topCpu: best ? row(best, bestT) : null, topMem: big ? row(big, procCpu(big, prev, prevAt)) : null };
+}
 // CPU 시간(100ns)을 지난 시간(ms)과 코어 수로 나눈 PC 전체 대비 사용률(%, 소수 한 자리). 모르면 null. 순수 함수
 export function cpuPct(ticks, ms, cores) {
   if (ticks == null || !(ms > 0) || !(cores > 0)) return null;
@@ -165,18 +188,22 @@ export const mb = (bytes) => Math.round((bytes / 1048576) * 10) / 10;
 
 export class ResourceMonitor {
   // sample()이 부를 함수들을 받는다. 시험에서 바꿔 넣는다.
-  constructor({ sessions, processInfo, controllers, serverPid = () => null, readTable = readProcessTable, intervalMs = 30000, log = null, cpus = () => os.cpus() }) {
-    Object.assign(this, { sessions, processInfo, controllers, serverPid, readTable, intervalMs, cpus });
+  constructor({ sessions, processInfo, controllers, serverPid = () => null, readTable = readProcessTable, intervalMs = 30000, log = null, cpus = () => os.cpus(), nextDelay = null }) {
+    Object.assign(this, { sessions, processInfo, controllers, serverPid, readTable, intervalMs, cpus, nextDelay });
+    this.trees = new Map(); // P341: 세션 → 마지막 측정의 나무(셸 아래 모든 프로세스, 이상한 나무는 빠짐). 창에 보내지 않는다
+    this.after = []; // P341: 측정마다 부를 함수(snap, monitor)
     this.prevCpu = null; // P255: { times(cpuTimes), at, cpus } 앞 측정
     this.warn = logOnce(log);
     this.last = null;
   }
   start(onSample) {
     this.onSample = onSample; this.stopped = false;
-    this.timer = setInterval(() => this.sample().catch(() => {}), this.intervalMs);
-    this.firstTimer = setTimeout(() => this.sample().catch(() => {}), 3000); // 첫 측정도 stop()에서 취소한다(이슈 #1-10)
+    // P341: 고정 주기 대신 측정이 끝날 때마다 다음 측정을 건다(nextDelay가 있으면 그 간격, 폭주 의심 후보가 있을 때 짧게)
+    const loop = (ms) => { this.timer = setTimeout(() => this.sample().catch(() => {}).finally(() => { if (!this.stopped) loop(this.delay()); }), ms); };
+    loop(3000); // 첫 측정도 stop()에서 취소한다(이슈 #1-10)
   }
-  stop() { this.stopped = true; clearInterval(this.timer); clearTimeout(this.firstTimer); }
+  delay() { let d = null; try { d = this.nextDelay ? this.nextDelay() : null; } catch {} return Number.isFinite(d) && d > 0 ? Math.min(d, this.intervalMs) : this.intervalMs; }
+  stop() { this.stopped = true; clearTimeout(this.timer); }
 
   async sample() {
     const t0 = Date.now();
@@ -190,6 +217,7 @@ export class ResourceMonitor {
     const cores = (Array.isArray(cpusNow) && cpusNow.length) || 1;
     let cpuSum = prev ? 0 : null; // 판이 띄운 세션들의 CPU 시간 합
     const rows = [], infos = [];
+    const trees = new Map(); // P341
     for (const s of list) {
       let info = null; // 에이전트 없는 셸 세션도 패널이 있으면 잰다(이슈 #1-11). 실패는 null
       if (s.paneId) info = await this.processInfo(s.paneId).catch(() => null);
@@ -205,12 +233,15 @@ export class ResourceMonitor {
       const others = shells.filter((p, m) => p && m !== n);
       const bad = suspectTree(tree, others) || suspectTree(claudeTree, others);
       if (bad) { this.warn(`${s.sessionId}:${bad}`, `resources: dropped memory of ${s.name} (shell ${shell}): ${bad}, ${tree.length} procs`); tree = null; claudeTree = null; }
+      if (tree && tree.length) trees.set(s.sessionId, tree); // P341
       const ticks = tree && tree.length ? treeCpu(tree, prev && prev.times, prev && prev.at) : prev ? 0 : null;
       if (cpuSum != null && ticks != null) cpuSum += ticks;
       rows.push({
         sessionId: s.sessionId, name: s.name, state: s.state, shellPid: shell || null, claudePid: claude ? claude.pid : null,
         memMB: tree ? mb(tree.reduce((a, p) => a + p.ws, 0)) : null, claudeMB: claudeTree ? mb(claudeTree.reduce((a, p) => a + p.ws, 0)) : null, procs: tree ? tree.length : 0,
         cpuPct: cpuPct(ticks, dt, cores),
+        kind: s.kind || null, // P341: 셸 패널(shell)인가
+        ...(tree && tree.length ? treeTops(tree, prev && prev.times, prev && prev.at, dt, cores) : { topCpu: null, topMem: null }), // P341
         ...(bad ? { suspect: bad } : {}),
       });
     });
@@ -230,6 +261,8 @@ export class ResourceMonitor {
       cpu: { sessionsPct: cpuPct(cpuSum, dt, cores), systemPct: prev ? systemCpuPct(prev.cpus, cpusNow) : null, cores, spanMs: prev ? dt : null }, // P255
     };
     this.prevCpu = { times: cpuTimes(table.procs), at: tAt, cpus: cpusNow };
+    this.trees = trees; // P341
+    for (const f of this.after) { try { await f(snap, this); } catch (e) { this.warn(`after:${e && e.message}`, `resources: after-sample error ${e && e.stack}`); } } // P341: 폭주 감시·우선순위(창에 보내기 전에 줄에 guard를 싣는다)
     this.last = snap;
     if (this.onSample && !this.stopped) this.onSample(snap); // 멈춘 뒤 끝난 측정은 알리지 않는다
     return snap;

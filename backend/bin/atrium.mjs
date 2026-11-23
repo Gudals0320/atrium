@@ -29,6 +29,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   spawn <폴더> [--launcher 런처] [--name n] [--prompt 글] [--model m] [--effort e] [--mode 권한모드] [--kind 종류|shell] [--args "인자"]   --launcher면 그 런처로 띄우고 준 값이 덮는다(P33)
   launchers                               런처 목록 (즐겨찾기 순서, 에이전트 종류, 실행 명령 미리보기)
   ls [--ws 프로젝트]                          프로젝트별 세션 목록과 상태
+  resources [--days 7]                     폭주 감시 기록 모음(경보 수·종류·가장 무거운 프로세스·사람의 선택, P341)
   ws                                      프로젝트 목록과 세션·작업 중·응답 필요·작업 완료 수
   ws open <폴더> | ws close <이름|키> [--yes] [--after archive|delete] | ws select <이름|키>   빈 프로젝트 만들기, 보드에서 지우기(세션이 있으면 --after로 모두 보관·삭제), 지금 프로젝트 고르기
   get <이름>                                세션 상세 (질문, 마지막 응답, 최근 터미널 화면, Git, 요청 전달 상태)
@@ -207,6 +208,17 @@ async function main() {
         if (JSONOUT) return out(r);
         console.log(`시작: ${r.name} (${r.kind}${r.flavor ? `/${r.flavor}` : ''}, ${r.sessionId}) 패널 ${r.paneId}${r.command ? `
   친 명령: ${r.command}` : ''}\n  신뢰 대화상자 예상: ${r.trust.needsTrust == null ? '예상하지 않음' : r.trust.needsTrust ? '뜬다' : `안 뜬다(신뢰한 폴더 ${r.trust.trustedBy})`}\n  실행: ${(r.argv || []).join(' ')}${r.resumeArgv ? `\n  이어 가기 등록: ${r.resumeArgv.join(' ')}` : ''}`);
+        return;
+      }
+      case 'resources': { // P341: 폭주 감시 기록 모음(기준 다듬기용)
+        const r = await c.call('guard.report', { days: Number(flags.days) || 7 });
+        if (JSONOUT) return out(r);
+        const kv = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') || '-';
+        console.log(`최근 ${r.days}일: 경보 ${r.alerts}번(${kv(r.byKind)}), 기준별 ${kv(r.byType)}, 끝난 경보 ${r.ends}번(가운데 길이 ${r.medianEndMs != null ? Math.round(r.medianEndMs / 1000) + '초' : '-'})`);
+        console.log(`  기준: CPU 코어 하나의 ${r.cfg.cpuPct}% ${r.cfg.cpuMs / 60000}분, 메모리 ${r.cfg.memMB / 1024}GB, 증가 ${r.cfg.growMs / 60000}분${r.cfg.detect ? '' : ' (감지 꺼짐)'}`);
+        console.log(`  가장 무거운 프로세스: ${kv(r.top)}`);
+        console.log(`  사람의 선택: ${kv(r.actions)}`);
+        for (const x of r.rows.slice(-30)) console.log(`  ${new Date(x.t).toISOString().slice(5, 16).replace('T', ' ')} @${x.session} ${x.kind} ${(x.types || []).join('+')} cpu=${x.cpuPct ?? '-'}% mem=${x.memMB ?? '-'}MB${x.growMB ? ` +${x.growMB}MB` : ''} ${x.top || ''} (${x.state || '?'})`);
         return;
       }
       case 'launchers': {

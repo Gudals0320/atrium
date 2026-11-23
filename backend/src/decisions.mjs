@@ -174,7 +174,7 @@ export class Decisions {
   create(caller, c, verb) {
     const open = this.store().openDecisions(caller.sessionId);
     const later = c.kind === 'later';
-    const mine = open.filter((d) => (d.kind === 'later') === later);
+    const mine = open.filter((d) => d.kind !== 'guard' && (d.kind === 'later') === later); // P341: 판의 폭주 카드는 에이전트 상한에 세지 않는다
     const max = later ? TODO_LATER_MAX : ASK_OPEN_MAX;
     if (mine.length >= max) {
       const how = verb === 'ask' ? 'atrium ask --done <번호>로 닫는다(목록: atrium ask --list)' : 'atrium todo --done <번호>로 닫는다(목록: atrium todo --list)';
@@ -544,7 +544,7 @@ export class Decisions {
     const now = this.now();
     const active = this.store().openDecisions(sid).filter((d) => !this.isDeferred(d, now));
     if (active.some((d) => !d.auto && (d.kind === 'decide' || d.kind === 'check'))) return true; // 열린 손 결정·확인 카드가 있다(P292: 할 일·나중에는 오래 남으니 막지 않는다)
-    if (this.store().decisionsSince(sid, since).some((d) => !d.auto)) return true; // 이 턴에 손 카드를 만들었다
+    if (this.store().decisionsSince(sid, since).some((d) => !d.auto && d.kind !== 'guard')) return true; // 이 턴에 손 카드를 만들었다(P341: 판의 폭주 카드는 손 카드가 아니다)
     return false;
   }
   // 마지막 답에서 질문을 찾아 자동 카드를 만든다(규칙만) → 만든 첫 카드 | null
