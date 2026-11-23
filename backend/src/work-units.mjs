@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { UnitStops, launchArgsSuspect, badArgsText } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
+import { checkRecordFiles, copyRecords, recordFolder, recordLines, recordBrief, mainCheckoutOf, readRecord } from './records.mjs'; // P334: done --record
 
 // P216: 에이전트만 끝나고 셸 패널이 남은 것을 멈춤(exited)으로 보는가. 판이 끄라고 한 것(잠재우기·끄기·child-kill·옮기기·다시 띄우기: normal),
 //   사람이 끝낸 것(/exit·Ctrl+C·종료 코드 0·130: user), 신뢰 거부(trust_declined), 터미널 서버가 꺼짐(terminal_stopped, 판이 되살린다)은 아니다.
@@ -33,10 +34,12 @@ export const FALLBACK_MARK = '[판이 마지막 답으로 닫음]';
 export const PS_DONE_TAIL = '여러 줄이나 큰따옴표가 든 보고는 파일에 쓰고 `atrium done ok --file <경로>`로 준다.';
 // P257: docs = 문서가 있는 워크스페이스면 셋째 줄 끝에 "문서는 고치지 않고 보고만"(doc-check.mjs workerTail)
 // P267: merge = 브랜치에서 일하는 하위면 셋째 줄 끝에 합치기 한 마디(merger.mjs MERGE_CHILD_TAIL)
+// P334: 둘째 줄 끝 한 마디(일 결과 파일은 커밋하지 않고 --record)
+export const RECORD_TAIL = '조사·감사·제안·측정·인계 결과 파일은 커밋하지 않고 `--record <파일>`로 붙인다.';
 export function unitHeader({ parent, unitId, kind = null, docs = null, merge = null }) {
   return [
     `[Atrium 보드] 관계: 너는 @${parent}의 하위 워커다. 아래 일은 @${parent}가 맡긴 일 ${unitId}이다(지금 일 보기: \`atrium item\`).`,
-    `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다.${kind === 'codex' ? ` ${PS_DONE_TAIL}` : ''}`,
+    `[Atrium 보드] 끝나면 \`atrium done ok "<보고>"\`(못 했으면 \`atrium done failed "<까닭>"\`)로 닫고 쉰다. 일이 보고하라는 것은 done 글에 넣고 다른 길로 따로 보내지 않는다. ${RECORD_TAIL}${kind === 'codex' ? ` ${PS_DONE_TAIL}` : ''}`,
     `[Atrium 보드] 사람이 직접 다르게 시키면 그것을 따른다.${docs ? ` ${docs}` : ''}${merge ? ` ${merge}` : ''}`, // 판 줄은 세 줄 이하라 덧붙임은 셋째 줄 끝에
   ].join('\n');
 }
@@ -135,7 +138,7 @@ export class WorkUnits {
   }
   view(tr, { alreadyDelivered = false } = {}) {
     const u = this.store().getUnit(tr.unitId) || {};
-    return { id: tr.unitId, tryId: tr.id, status: u.status || null, result: tr.result, text: tr.doneText, at: tr.endedAt, claimedBy: tr.claimedBy, alreadyDelivered };
+    return { id: tr.unitId, tryId: tr.id, status: u.status || null, result: tr.result, text: tr.doneText, at: tr.endedAt, claimedBy: tr.claimedBy, alreadyDelivered, ...(u.records ? { records: recordLines(u.records) } : {}) }; // P334
   }
   // 위 세션이 atrium wait를 칠 때(기다리는 중 done이 오지 않았으면): 그 하위에게서 마지막으로 done이 닫은 시도.
   // 대기열 것이 아직 들어가지 않았으면 취소하고 기다림이 가져간다. 이미 들어갔거나 기다림이 가져갔으면 "이미 전함"
@@ -163,7 +166,7 @@ export class WorkUnits {
     const b = this.b; const st = this.store();
     const tr = st.getTry(tryId); const unit = tr ? st.getUnit(tr.unitId) : null;
     if (!tr || !unit || tr.claimedBy !== 'wait' || !b.sessions.has(unit.from)) return null;
-    const d = b.queue.enqueue(unit.from, doneNotice({ child: this.nameOf(unit.to), unitId: unit.id, result: tr.result, text: tr.doneText, spec: unitTitle(unit) }));
+    const d = b.queue.enqueue(unit.from, doneNotice({ child: this.nameOf(unit.to), unitId: unit.id, result: tr.result, text: tr.doneText, spec: unitTitle(unit), extra: recordLines(unit.records) })); // P334: 기록 줄
     st.updateTry(tr.id, { claimedBy: 'queue', noticeDeliveryId: d.deliveryId });
     st.addEvent(unit.from, 'unit_claim', { unitId: unit.id, tryId: tr.id, by: 'queue', why: 'wait aborted' });
     return d;
@@ -189,7 +192,12 @@ export class WorkUnits {
   }
   // 명령(/branch/done)의 길. P267: ok면 먼저 git을 읽어 합치기 갈래(merger.mjs planFor)를 본다
   async doneVerb(caller, o = {}) {
-    let merge = null, mergeCheck = null;
+    let merge = null, mergeCheck = null, records = null;
+    { // P334: --record 파일을 검사해 주 체크아웃의 .atrium/records/로 복사한다(일을 닫기 전에. 거절이면 닫지 않는다)
+      const { tr } = this.doneCheck(caller, o);
+      const paths = Array.isArray(o.records) ? o.records : o.records != null ? [o.records] : [];
+      if (paths.length) records = this.saveRecords(caller, this.store().getUnit(tr.unitId), paths);
+    }
     if (this.b.merger) {
       const { result, tr } = this.doneCheck(caller, o);
       const unit = this.store().getUnit(tr.unitId);
@@ -200,9 +208,41 @@ export class WorkUnits {
         try { merge = await this.b.merger.planFor(caller, unit); } catch (e) { this.b.log('merge plan error', e.stack); merge = null; }
       }
     }
-    return this.done(caller, o, { merge, mergeCheck });
+    return this.done(caller, o, { merge, mergeCheck, records });
   }
-  done(caller, o = {}, { merge = null, mergeCheck = null } = {}) {
+  // P334: 기록을 받는 폴더(그 세션의 작업 폴더, 워크스페이스 뿌리, 주 체크아웃)와 주 체크아웃
+  recordPlaces(s) {
+    const st = this.store();
+    const w = s.workspaceKey && st.getWorkspace ? st.getWorkspace(s.workspaceKey) : null;
+    const cwd = (s.rt && s.rt.cwd) || s.cwd || null;
+    const root = (w && w.root) || cwd;
+    const main = root ? mainCheckoutOf(root) : null;
+    return { roots: [s.cwd, s.rt && s.rt.cwd, w && w.root, main].filter(Boolean), main };
+  }
+  saveRecords(caller, unit, paths) {
+    const { roots, main } = this.recordPlaces(caller);
+    if (!main) throw apiError('bad_request', '이 세션의 워크스페이스를 몰라 기록을 둘 곳이 없다.');
+    const files = checkRecordFiles(paths, roots);
+    let rec;
+    try { rec = copyRecords(files, main, recordFolder(this.nameOf(caller.sessionId), unit.id)); } catch (e) { throw apiError('record_failed', `기록을 복사하지 못했다: ${e.message}`); }
+    this.store().addEvent(caller.sessionId, 'unit_records', { unitId: unit.id, dir: rec.dir, files: rec.files });
+    this.b.log(`unit ${unit.id} records ${rec.files.length} → ${rec.dir}`);
+    return rec;
+  }
+  // P334: 창 요약의 기록(그 세션이 맡아 기록을 남긴 마지막 일). 판이 다시 떠도 표에서 읽는다
+  recordsOf(sessionId) {
+    if (!this.recCache) this.recCache = new Map();
+    if (!this.recCache.has(sessionId)) { let u = null; try { u = this.store().lastRecordUnitTo ? this.store().lastRecordUnitTo(sessionId) : null; } catch {} this.recCache.set(sessionId, u ? recordBrief(u.id, u.records) : null); }
+    return this.recCache.get(sessionId);
+  }
+  // P334: 창의 기록 보기(records.read { session?, unit?, file? }) → { unitId, session, dir, files, doc }
+  readRecords(p = {}) {
+    const st = this.store();
+    const u = p.unit ? st.getUnit(String(p.unit)) : p.session ? st.lastRecordUnitTo(String(p.session)) : null;
+    if (!u || !u.records) throw apiError('not_found', '남긴 기록이 없다.');
+    return { unitId: u.id, session: this.nameOf(u.to), spec: clip(unitTitle(u).replace(/\s+/g, ' '), 120), dir: u.records.dir, files: u.records.files, at: u.records.at, doc: readRecord(u.records, p.file || null) };
+  }
+  done(caller, o = {}, { merge = null, mergeCheck = null, records = null } = {}) {
     const b = this.b; const st = this.store();
     const { result: said, text, tr } = this.doneCheck(caller, o);
     const unit = st.getUnit(tr.unitId);
@@ -214,13 +254,15 @@ export class WorkUnits {
     const result = mergeDone && mergeDone.result ? mergeDone.result : said;
     const now = Date.now();
     st.updateTry(tr.id, { result, doneText: text, endedAt: now });
-    st.updateUnit(unit.id, { status: result === 'failed' ? 'failed' : 'done', closedAt: now });
+    st.updateUnit(unit.id, { status: result === 'failed' ? 'failed' : 'done', closedAt: now, ...(records ? { records } : {}) });
+    const recLines = recordLines(records); // P334: 위 세션이 받는 글 끝 "기록 <경로>"
+    if (records) { if (!this.recCache) this.recCache = new Map(); this.recCache.set(caller.sessionId, recordBrief(unit.id, records)); }
     const parent = b.sessions.get(unit.from) || null;
-    const val = { result, text, ...(mergeDone && mergeDone.unverified ? { extra: mergeDone.extra } : {}) };
+    const val = { result, text, ...(mergeDone && mergeDone.unverified ? { extra: mergeDone.extra } : {}), ...(recLines.length ? { records: recLines } : {}) };
     let claimedBy, noticeDeliveryId = null;
     const ws = this.waiters.get(`${unit.from}>${unit.to}`);
     // P267: 브랜치에서 일한 하위의 done ok → 부모 대신 merger에게 합치기 일로
-    const taken = merge && merge.route && b.merger && unit.origin !== 'merge' ? b.merger.take(merge, caller, unit, text) : null;
+    const taken = merge && merge.route && b.merger && unit.origin !== 'merge' ? b.merger.take(merge, caller, unit, recLines.length ? `${text}\n\n${recLines.join('\n')}` : text) : null; // P334: merger도 기록 줄을 본다
     const human = !!(unit.meta && unit.meta.human); // P321: 사람이 맡긴 병합(worktree-session.mjs). 부모 대신 사람에게 결정 카드로
     if (taken) { claimedBy = 'merger'; if (ws && ws.size) for (const w of ws) w.got = { ...val, tryId: tr.id, merge: taken }; }
     else if (human && unit.origin === 'merge' && result === 'failed') { claimedBy = 'record'; if (b.wtSessions) b.wtSessions.onMergeFailed(unit, text, mergeDone ? mergeDone.extra : []); }
@@ -228,7 +270,7 @@ export class WorkUnits {
     else if (!parent || unit.from === unit.to || (mergeDone && result === 'ok')) claimedBy = 'record';
     else if (ws && ws.size) { claimedBy = 'wait'; for (const w of ws) w.got = { ...val, tryId: tr.id }; }
     else {
-      const extra = [...(mergeDone ? mergeDone.extra : []), ...(b.docs ? b.docs.doneLines(parent) : [])]; // P257: 지휘 세션이면 문서 규칙 한 줄(점검 경고는 전달 직전에 붙는다)
+      const extra = [...recLines, ...(mergeDone ? mergeDone.extra : []), ...(b.docs ? b.docs.doneLines(parent) : [])]; // P334: 기록 줄이 먼저 // P257: 지휘 세션이면 문서 규칙 한 줄(점검 경고는 전달 직전에 붙는다)
       const d = b.queue.enqueue(parent.sessionId, doneNotice({ child: this.nameOf(caller.sessionId), unitId: unit.id, result, text, spec: unitTitle(unit), extra }));
       claimedBy = 'queue'; noticeDeliveryId = d.deliveryId;
     }
@@ -236,11 +278,12 @@ export class WorkUnits {
     // 연결 기록: 위 → 하위 선에 보고(답)로
     const l = parent && unit.from !== unit.to ? (st.linkByPair(unit.from, unit.to) || null) : null;
     if (l && !l.removedAt) b.linkEvent(l, 'reply', text, { via: 'atrium', verb: 'done', result, unitId: unit.id, claimedBy, ...(noticeDeliveryId ? { deliveryId: noticeDeliveryId } : {}) });
-    st.addEvent(caller.sessionId, 'unit_done', { unitId: unit.id, tryId: tr.id, result, chars: text.length, claimedBy, noticeDeliveryId });
+    st.addEvent(caller.sessionId, 'unit_done', { unitId: unit.id, tryId: tr.id, result, chars: text.length, claimedBy, noticeDeliveryId, ...(records ? { records: records.files.length } : {}) });
+    if (records && b.broadcastSession) try { b.broadcastSession(caller, { cause: 'records' }); } catch {} // P334: 카드의 기록 단추
     b.log(`unit ${unit.id} done ${result} by ${caller.name} → ${parent ? parent.name : '(closed)'} via ${claimedBy}`);
     if (this.branch && this.branch.news && !(mergeDone && result === 'ok')) this.branch.news.onDone(caller, unit, result, text); // P204: 동료 소식에 done 한 줄. P267: 합침은 merger.mjs가 "합침 <해시>" 한 줄로
     const next = mergeDone && mergeDone.retire ? null : this.pump(caller.sessionId); // P267: 다섯 번을 채운 merger에게는 더 넣지 않는다(새 merger가 받는다)
-    return { unit: unit.id, result, parent: this.nameOf(unit.from), parentOpen: !!parent, claimedBy, next: next ? { unit: next.tryRow.unitId } : null, queued: st.queuedUnitsOf(caller.sessionId).length, ...(taken ? { merge: taken } : {}), ...(merge && merge.ask ? { mergeAsk: true } : {}), ...(mergeDone ? { retire: !!mergeDone.retire } : {}) };
+    return { unit: unit.id, result, parent: this.nameOf(unit.from), parentOpen: !!parent, claimedBy, next: next ? { unit: next.tryRow.unitId } : null, queued: st.queuedUnitsOf(caller.sessionId).length, ...(taken ? { merge: taken } : {}), ...(merge && merge.ask ? { mergeAsk: true } : {}), ...(mergeDone ? { retire: !!mergeDone.retire } : {}), ...(records ? { records: { dir: records.dir, files: records.files } } : {}) };
   }
 
   // ---------- atrium item | items ----------
@@ -260,6 +303,7 @@ export class WorkUnits {
       const tr = st.lastTryOfUnit(u.id);
       return { id: u.id, to: u.to ? this.nameOf(u.to) : null, status: u.status, origin: u.origin, spec: clip(unitTitle(u).replace(/\s+/g, ' '), 120), // P267: 합치기 일은 첫 줄 createdAt: u.createdAt, closedAt: u.closedAt,
         queued: !tr && u.status === 'open', result: tr ? tr.result : null, text: tr && tr.doneText ? clip(tr.doneText, 1500) : null, stopReason: tr ? tr.stopReason : null, claimedBy: tr ? tr.claimedBy : null,
+        ...(u.records ? { records: { dir: u.records.dir, files: u.records.files.map((f) => f.name) } } : {}), // P334
         ...(this.b.merger ? { merge: this.b.merger.itemMerge(u) } : {}) }; // P267: 합치기 상태(queued·merging·merged·failed·cancelled)
     });
     return { items: rows, open: rows.filter((r) => r.status === 'open').length };

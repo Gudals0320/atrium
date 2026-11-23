@@ -785,3 +785,8 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-pmap .mt-ta-full .c1.tight2 .mt-plan-mgr.map .mt-plan-ring { display: none; }
 .mt-pmap .mt-ta-full .c1.tight2 .cst { font-size: 0; gap: 0; }
 .mt-pmap .mt-ta-full .c1.tight2 .cname { min-width: 50%; }
+
+/* P334: 휴대폰의 일 기록 보기는 화면 가득, 맵 카드 단추는 누르기 쉽게 */
+.mt-app.phone .mt-record { left: 0; right: 0; top: env(safe-area-inset-top, 0px); bottom: 0; width: auto; border-radius: 0; }
+.mt-app.phone .mt-record-head .mt-x { min-width: 40px; min-height: 40px; font-size: 22px; }
+.mt-app.phone .mt-rec-chip.map { height: 20px; padding: 0 7px; font-size: 11.5px; }

@@ -18,7 +18,7 @@ import { CONTRACT_VERSION, VERB_NAMES } from '../src/cli-contract.mjs';
 import { ORCH_SUB_VERBS } from '../src/orchestration.mjs';
 import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { HARNESS_PROMPT } from '../src/harness.mjs';
-import { NOTICE_HEAD, VERB_SINCE, stampOf, assumedStamp, sameStamp, newVerbs, noticeLine, boardPromptOf, promptHash } from '../src/verbs-notice.mjs';
+import { NOTICE_HEAD, VERB_SINCE, stampOf, assumedStamp, sameStamp, newVerbs, noticeLine, boardPromptOf, promptHash, NEWS_IDS } from '../src/verbs-notice.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p317-'));
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
@@ -95,7 +95,7 @@ function idle(s) { s.rt.term.present = true; s.rt.phase = 'running'; applyTermSt
 const events = (b, kind) => b.store.db.prepare('SELECT * FROM events WHERE kind = ? ORDER BY id').all(kind).map((e) => ({ ...e, data: JSON.parse(e.data || 'null') }));
 const rowStamp = (b, s) => { const r = b.store.db.prepare('SELECT brief FROM sessions WHERE session_id = ?').get(s.sessionId); return r && r.brief ? JSON.parse(r.brief) : null; };
 // 옛 판 흉내: 그 동사들을 모르는 판(계약 번호를 낮춘다)
-const OLD = (without, contract = 6) => ({ contract, verbs: VERB_NAMES.filter((v) => !without.includes(v)), hash: 'old000000000', at: 1, why: 'start' });
+const OLD = (without, contract = 6) => ({ contract, verbs: VERB_NAMES.filter((v) => !without.includes(v)), hash: 'old000000000', at: 1, why: 'start', news: NEWS_IDS }); // P334: 동사 시험이라 새 안내는 안다고 둔다(새 안내는 p334 시험)
 const lower = (b, s, st) => { s.briefStamp = st; b.store.updateSession(s.sessionId, { briefStamp: st }); };
 const send = (b, s, text, o = {}) => b.queue.enqueue(s.sessionId, text, { origin: { kind: 'human' }, ...o });
 

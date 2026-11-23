@@ -238,6 +238,8 @@ export function summaryLine(u) {
   const dev = devBuildOf(said); if (dev) parts.push(dev);
   const gain = gainOf(childDoneOf(u.spec)); if (gain) parts.push('사용자가 얻는 것: ' + gain);
   const rv = reviewOf(said); if (rv) parts.push('검토 ' + rv);
+  const rec = u.records; // P334: 하위가 done --record로 남긴 기록(원래 일의 records, summarize가 붙인다)
+  if (rec && rec.files && rec.files.length) parts.push('기록 ' + rec.dir + '/' + (rec.files.length === 1 ? rec.files[0].name : ' (' + rec.files.length + '개)'));
   return '- ' + child + ': ok, ' + parts.join(' · ');
 }
 // 부모 하나에게 가는 정리 알림(순수). extra: 문서 규칙 꼬리 줄
@@ -705,7 +707,8 @@ export class Merger {
       let deliveryId = null;
       if (parent && !parent.closedAt && b.queue && !units.every((u) => u.meta && u.meta.human)) { // P321: 사람이 맡긴 병합은 정리 알림을 보내지 않는다(실패는 결정 카드, 합침은 소식)
         const extra = b.docs ? b.docs.doneLines(parent) : []; // P257 문서 규칙 꼬리(한 번)
-        const d = b.queue.enqueue(parent.sessionId, mergeSummaryText({ merger: name, units, extra }));
+        const withRec = units.map((u) => { let src = null; try { src = u.source ? st.getUnit(u.source) : null; } catch {} return src && src.records ? { ...u, records: src.records } : u; }); // P334
+        const d = b.queue.enqueue(parent.sessionId, mergeSummaryText({ merger: name, units: withRec, extra }));
         deliveryId = d ? d.deliveryId : null;
       }
       for (const u of units) st.updateUnit(u.id, { meta: { ...u.meta, summary: deliveryId ? 'sent' : 'dropped', summaryAt: Date.now(), ...(deliveryId ? { summaryDelivery: deliveryId } : {}) } });

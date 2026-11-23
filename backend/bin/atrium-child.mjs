@@ -12,7 +12,7 @@
 //       atrium children [--all] [--json]
 //       atrium child-kill <이름> [--only] [--json]
 //       atrium wake <이름> [--json]   (P21: 잠든 세션 깨우기, P24: 그 리포째, P111: 혼자 잠든 세션은 그 세션만)
-//       atrium done ok|failed "<보고>" [--file 경로] [--json]   (P180: 보드가 맡긴 지금 일을 닫는다)
+//       atrium done ok|failed "<보고>" [--file 경로] [--record 파일]… [--json]   (P180: 보드가 맡긴 지금 일을 닫는다. P334: 기록 파일)
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 //       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
 //       atrium guide [merger] [--json]   (P182: 자세한 사용법. P267: merger 안내)
@@ -66,10 +66,11 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium models                 띄울 수 있는 런처와 모델(하네스 모델, 별칭, 게이트웨이 모델)과 각각을 띄우는 atrium child 명령
   atrium child-kill <이름> [--only]   너의 하위 세션을 끈다(하위 관계로만 그 아래도 함께. --only면 그것만). 동료·독립은 끄지 않고 남긴 이름을 적는다. 사람이 끄라고 할 때만 쓴다
   atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만 쓴다
-  atrium done ok|failed "<보고>" [--file 경로]
+  atrium done ok|failed "<보고>" [--file 경로] [--record 파일]…
       보드가 맡긴 지금 일(첫 요청 앞에 "[Atrium 보드] … 맡긴 일 u…" 머리가 붙은 일)을 닫는다. ok는 끝냈다, failed는 못 했다.
       값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 atrium wait로 기다리는 중이면 그 기다림이 받고, 아니면 보드가 그 세션 차례에 넣는다).
       일이 보고하라는 것은 이 글에 넣고 다른 길로 따로 보내지 않는다. 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1
+      --record: 조사·감사·제안·측정·인계 같은 일의 결과 파일(여럿이면 되풀이)은 커밋하지 않고 붙인다. 보드가 주 체크아웃의 .atrium/records/<이름>-<일>/(git 밖)로 복사하고 보고에 경로를 붙인다(저장소 안 파일만, 파일 2MB·20개까지, 비밀 같은 이름은 거절)
   atrium item                   너의 지금 일(맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수)
   atrium log "<한 줄>"          동료 소식에 너의 한 줄을 남긴다(${NEWS_LOG_MAX}자까지). 누구에게도 보내지 않고 누구도 깨우지 않는다. 동료가 알아 둘 결정·변경·상태를 남길 때
   atrium news [<이름>] [--all]  동료 소식: 보드가 남긴 동료의 턴 끝 한 줄(받은 일 + 답 첫 줄), done, atrium log.
@@ -104,7 +105,7 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
 ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
-const MULTI = new Set(['option', 'cmd']); // P284: ask --option 여럿. P292: todo --cmd 여럿
+const MULTI = new Set(['option', 'cmd', 'record']); // P284: ask --option 여럿. P292: todo --cmd 여럿. P334: done --record 여럿
 const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list', 'check', 'tell']); // P292: todo --check·--tell // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
@@ -428,7 +429,10 @@ async function unitVerb(cmd) {
     let text = rest.slice(1).join(' ');
     if (flags.file) { if (text) fail('글은 인자나 --file 가운데 하나로 준다', 2); try { text = fs.readFileSync(path.resolve(String(flags.file)), 'utf8'); } catch (e) { fail(`--file을 읽지 못했다: ${e.message}`, 2); } }
     if (!text.trim()) fail('보고 글을 준다: atrium done ok|failed "<보고>"', 2);
-    r = await call('done', { result, text }, 30000);
+    // P334: --record 파일(여럿)은 절대 경로로 보낸다. 보드가 검사해 주 체크아웃의 .atrium/records/로 복사한다
+    const records = (flags.record || []).filter((x) => x != null && x !== true && String(x).trim()).map((x) => path.resolve(String(x)));
+    if (flags.record && flags.record.some((x) => x == null)) fail('--record 뒤에 파일 경로를 준다: atrium done ok "<보고>" --record <파일>', 2);
+    r = await call('done', { result, text, ...(records.length ? { records } : {}) }, 30000);
   } else r = await call(cmd, {}, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
@@ -438,6 +442,7 @@ async function unitVerb(cmd) {
     // P267: merger = 브랜치에서 일한 결과라 보드가 합치기를 merger에게 맡겼다. 합치기 일의 ok(retire 칸이 있음)는 부모를 깨우지 않는다
     const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, merger: `보드가 병합을 ${x.merge && x.merge.merger ? '@' + x.merge.merger : 'merger'}에게 맡겼다(일 ${x.merge ? x.merge.unit : '?'}). 너는 이 턴이 끝나면 보드가 재운다`, record: x.retire != null && x.result === 'ok' ? `병합을 보드가 소식에 남기고 @${x.parent}의 items에 보인다(@${x.parent}를 깨우지 않는다)` : x.parentOpen ? '네가 너에게 맡긴 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
     say(`일 ${x.unit}을 닫았다(${x.result}). ${how}. 다른 길로 따로 보고하지 않는다.`);
+    if (x.records) say(`기록 ${x.records.files.length}개를 보드가 ${x.records.dir}/에 두었다(git 밖, 보고에 경로가 붙는다).`); // P334
     if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else if (x.retire) say('다섯 번째 병합 일이다. 이제 쉰다: 보드가 너를 닫고 남은 일은 새 merger가 받는다.'); else say('이제 쉰다.');
     return;
   }
@@ -558,7 +563,7 @@ function printTurn(x, t) {
   // P180: done 값. 기다림이 받았으면 그것이 보고다. 이미 전한 값이면 그렇다고 적는다
   if (t.unit && t.unit.result) {
     if (t.unit.alreadyDelivered) say(`@${n}가 마지막으로 닫은 일 ${t.unit.id}: ${t.unit.result}(이미 전함. 앞서 받은 보고와 같다).`);
-    else { say(`@${n}가 일 ${t.unit.id}을 닫았다: ${t.unit.result}(${secs(t.ms)} 기다림).`); say(`--- @${n}의 보고(atrium done) ---`); say(String(t.unit.text || '').replace(/\s+$/, '')); say('---'); }
+    else { say(`@${n}가 일 ${t.unit.id}을 닫았다: ${t.unit.result}(${secs(t.ms)} 기다림).`); say(`--- @${n}의 보고(atrium done) ---`); say(String(t.unit.text || '').replace(/\s+$/, '')); for (const l of t.unit.records || []) say(l); say('---'); } // P334: 기록 줄
     if (t.status === 'done' && !t.unit.alreadyDelivered) return;
   }
   switch (t.status) {

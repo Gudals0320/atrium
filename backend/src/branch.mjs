@@ -300,6 +300,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 
 - 명령은 위 모양 그대로 한 줄씩 친다. \`$변수\`, \`$(…)\`, 파이프, \`&&\`, \`;\`를 섞지 않는다(섞으면 사람의 승인을 기다린다).
 - 다른 에이전트에게는 \`atrium prompt\`로만 보낸다(보드가 선과 기록을 남긴다).
+- 문서는 지금 상태만 고친다. 조사·감사·제안·인계 결과는 커밋하지 않고 \`atrium done ok "<보고>" --record <파일>\`로 붙인다(보드가 \`.atrium/records/\`(git 밖)에 두고 보고에 경로를 붙인다). 날짜별 결정 로그는 만들지 않는다.
 - 브랜치에서 일한 워커가 \`atrium done ok\`로 닫으면 보드가 그 워커를 재우고 병합을 merger에게 맡긴다. 합쳐지면 보드가 그 워커를 닫고 보관한다. 병합이 실패했거나 고침이 필요하면 보드가 너에게 알리고 워커는 재운 채 둔다: 고칠 것을 그 워커에게 \`atrium prompt\`로 다시 시킨다. 그 밖의 끝난 워커는 끄지 않고 둔다(사람이 끄라고 할 때만 \`atrium child-kill <이름>\`. 하위 관계로 그 아래도 함께, 자기 하위만. 동료·독립은 남는다).
 - 워커가 권한이나 질문으로 멈추면(보드의 멈춤 알림, \`atrium wait\`의 waiting) 대신 답하지 않는다. 사용자에게 "보드에서 @이름에 답해 주세요"라고 알린다.
 - 오래 쉰 워커는 혼자 잠든다. 미리 깨우려면 \`atrium wake <이름>\`.
@@ -491,7 +492,8 @@ export class Branch {
     return { branch: { depth: this.workDepth(s.sessionId, idx), parentSessionId: wp, parentName: shownName(parent), // P66: 보이는 이름
       parentAddress: parent ? parent.name : null, parentOpen: !!(wp && this.b.sessions.has(wp)), child, role: child ? this.workRole(s, wp, idx) : null, order: child && info && wp === (s.parentSessionId || null) ? this.orderOf(s.sessionId) : null, worktree: info ? info.worktree || null : null, gate: info && info.gate ? info.gate : null, children: this.workChildren(s.sessionId, idx).length,
       ...this.relationSummary(s, idx) }, // P156: 일 부모(workParentSessionId), 계보 부모와의 관계(parentRelation), 동료(peers)
-      ...(s.orch ? { orch: this.orchSummary(s, idx) } : {}) }; // P296: 자체 오케스트레이션(카드 표·세션 맵)
+      ...(s.orch ? { orch: this.orchSummary(s, idx) } : {}), // P296: 자체 오케스트레이션(카드 표·세션 맵)
+      ...(() => { const r = this.units && this.units.recordsOf ? this.units.recordsOf(s.sessionId) : null; return r ? { records: r } : {}; })() }; // P334: 마지막 일 기록(카드의 기록 단추)
   }
 
   // ---------- P296: 자체 오케스트레이션 세션의 권한 ----------

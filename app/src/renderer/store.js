@@ -65,6 +65,7 @@ const state = {
   settings: null, // { tray, language, … }. language를 받으면 화면 언어를 바꾼다(P16)
   launchers: null, // P33 호출자: { launchers: [{ id, name, harness, …, favorite, preview }], favorites: [id], harnesses }
   outputView: null, // { sessionId, turn } 출력 보기 창
+  recordView: null, // P334: { sessionId, unitId, file } 일 기록 보기 창
   missionOpen: false, // 미션 맵 덮개
   itemSelected: null, // 캔버스에서 고른 메모·칸반 노드 id(memo:…, kanban:…)
   memoEdit: null, // P50(#6): 편집을 열 메모 id(메모 노드가 받아 편집을 열고 지운다)
@@ -280,6 +281,7 @@ export function setConvoLocal(id, f) { const c = state.convoNodes.get(id); if (!
 export function setKanbanLocal(id, f) { const k = state.kanbans.get(id); if (!k) return; state.kanbans = new Map(state.kanbans); state.kanbans.set(id, { ...k, ...f }); changed(); }
 export function setThreadOpen(v) { state.threadOpen = v; changed(); }
 export function setOutputView(v) { state.outputView = v; changed(); }
+export function setRecordView(v) { state.recordView = v; changed(); } // P334
 // P107: 덮개를 연 동안 문서 뿌리 data-mm-open(뒤의 판 노드 둘레를 멈춘다)
 export function setMissionOpen(v) { state.missionOpen = v; applyMissionOpen(v); changed(); }
 // 검색으로 간 칸반 카드를 2초 동안 빛낸다

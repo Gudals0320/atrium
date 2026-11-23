@@ -12,6 +12,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { countRender } from './perf-trace.js'; // P146
 import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow/react';
+import { RecordChip } from './Records.jsx'; // P334
 import { useStore, getState, matesNow, saveNode, setNodeLocal, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
 import { MergeMenuRows } from './QuickWorktree.jsx'; // P321
 import { shellLine } from './Workspaces.jsx';
@@ -147,6 +148,7 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
       {/* 표시들은 좁으면 먼저 잘린다(이름이 먼저 보이게) */}
       <span className="mt-head-badges"><Badges s={s} /><Origin s={s} /><BranchBadge s={s} /><LoopBadge s={s} onClick={onLoops} /></span>
       <span className="mt-node-sp" />
+      <RecordChip sessionId={s.sessionId} /> {/* P334: 일 기록 */}
       {s.output && s.output.long && <button className="mt-btn small nodrag mt-output-btn" data-action="output-open" title={t('node.outputTitle', { n: s.output.chars })} onClick={() => setOutputView({ sessionId: s.sessionId, turn: null })}>{t('node.output')}</button>}
       {mem != null && mem >= 1 && <span className="mt-node-meta" data-role="mem" title={t('node.memTitle')}>{mem >= 1024 ? `${(mem / 1024).toFixed(1)}GB` : `${Math.round(mem)}MB`}</span>}
       {s.model && <span className="mt-node-meta" title={s.cwd}>{s.model}</span>}

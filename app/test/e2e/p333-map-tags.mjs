@@ -1,4 +1,4 @@
-// P333 창 시험: 세션 맵 카드의 할 일 배지와 작업 완료 꼬리표를 오른쪽 위 한 무리로 쌓는다(.mt-sm-tags).
+// P333 창 시험: 세션 맵 카드의 할 일 배지와 작업 완료 꼬리표를 오른쪽 위 한 무리로 쌓는다(.mt-sm-tags). P335부터 세로(판정도 세로·22px·14px, 큰 판은 p335-map-tags.mjs).
 // 판·세션·카드는 P331 창 시험(p331-map-todo.mjs)과 같은 꼴: haiku 둘(lead, w1)과 셸 하나(sh3), haiku가 atrium ask·todo로 진짜 카드를 남긴다.
 // shots: 100%·맞춤·멀리에서 둘 다 있는 카드·하나만 있는 카드를 찍고 꼬리표 자리·크기를 잰다(전·후·v0.2.2는 app/dist를 바꿔 끼워 같은 판으로).
 // 판: 따로 띄운 개발용 판(atrium-dev-p333, 48083, backend/.dev)만. 창의 원격 디버깅 포트 9564. 한 번에 한 창만.
@@ -135,12 +135,13 @@ async function shots() {
           if (!v || v === 'nocard') continue;
           const { todo, done } = v;
           if (todo && done) {
-            check(`${z} ${n}: 할 일이 작업 완료 왼쪽에 붙고 겹치지 않음`, todo.l + todo.w <= done.l + 1 && done.l - (todo.l + todo.w) <= 8 * (z === 'far' ? 4 : 1) && Math.abs(todo.t - done.t) <= 2, v);
+            // P335: 세로로 쌓는다(할 일이 작업 완료 바로 위, 오른쪽 끝 맞춤)
+            check(`${z} ${n}: 할 일이 작업 완료 바로 위에 붙고 겹치지 않음`, todo.t + todo.h <= done.t + 1 && done.t - (todo.t + todo.h) <= 8 * (z === 'far' ? 5 : 1) && Math.abs(todo.r - done.r) <= 1, v);
           }
           const right = done || todo;
           if (right) check(`${z} ${n}: 맨 오른쪽 꼬리표가 카드 오른쪽 위(위 테두리에 걸침)`, right.r >= 0 && right.t < 0 && right.t + right.h > 0, v);
           if (todo && z !== 'far') check(`${z} ${n}: 할 일 배지가 오른쪽 위(왼쪽 아님)`, todo.r < v.card.w / 2, v); // 배지 오른쪽 끝이 카드 오른쪽 절반에
-          if (z === 'z100') for (const x of [todo, done].filter(Boolean)) check(`100% ${n}: 꼬리표 높이 ${x.cssH}·글 ${x.font}`, parseFloat(x.cssH) >= 18 && parseFloat(x.font) >= 11.5, x);
+          if (z === 'z100') for (const x of [todo, done].filter(Boolean)) check(`100% ${n}: 꼬리표 높이 ${x.cssH}·글 ${x.font}`, parseFloat(x.cssH) >= 22 && parseFloat(x.font) >= 14, x);
         }
       }
       if (ROUND === 'after') check('둘 다 있는 카드를 보았다', Object.values(seen.z100).some((v) => v && v.todo && v.done), seen.z100);

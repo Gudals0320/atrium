@@ -2338,6 +2338,7 @@ export class Backend {
       'session.send': (p) => this.send(p),
       ...docHandlers(this), // P257: docs.status·docs.enable·docs.disable
       ...mergerHandlers(this), // P267: 합치기 merger(창 쪽 계약: merger.status, merger.asks, merger.answer)
+      'records.read': (p) => this.branch.units.readRecords(p || {}), // P334: 일 기록 보기(카드의 기록 단추)
       'session.rename': (p) => renameSession(this, p), // P66: 판의 이름 바꾸기(name, clear, by: human|cli)
       'delivery.cancel': (p) => this.queue.cancelWait(p.deliveryId), // P106: 막혀 다시 보내는 중(sending)인 전달도 취소한다
       // P158: 판 칩의 수정. hold = 붙잡고 전체 글을 돌려준다, update = 고친 글로 바꾸고 놓는다(차례 그대로), release = 고치지 않고 놓는다
