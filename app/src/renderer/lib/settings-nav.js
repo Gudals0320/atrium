@@ -4,12 +4,12 @@
 // P338(검토 뒤): 모든 쪽을 묶음 머리 아래에 둔다(맨 쪽과 머리 섞지 않음). 쪽마다 작은 아이콘(lib/icons.jsx 이름)
 export const NAV = [
   { group: 'basics', pages: ['general', 'alerts'] },
-  { group: 'session', pages: ['launchers', 'sleep', 'recall'] },
+  { group: 'session', pages: ['launchers', 'sleep', 'resources', 'recall'] }, // P341: 자원(우선순위 낮추기·폭주 감지)
   { group: 'automation', pages: ['bots'] },
   { group: 'connect', pages: ['devices', 'terminal'] },
   { group: 'advanced', pages: ['dev'] },
 ];
-export const PAGE_ICON = { general: 'gear', alerts: 'bell', launchers: 'play', sleep: 'moon', recall: 'archive', bots: 'bot', devices: 'device', terminal: 'terminal', dev: 'code' };
+export const PAGE_ICON = { general: 'gear', alerts: 'bell', launchers: 'play', sleep: 'moon', resources: 'gauge', recall: 'archive', bots: 'bot', devices: 'device', terminal: 'terminal', dev: 'code' };
 export const pageDesc = (p) => 'setNav.desc.' + p;
 // 쪽이 보일 때(옛 판이면 그 키가 없어 빠진다). s = 설정 값, l = 런처 자료, bots = 보일 봇이 있나
 const PAGE_HAS = {
@@ -17,6 +17,7 @@ const PAGE_HAS = {
   launchers: (s, l) => !!l,
   sleep: (s) => !!s && s.sleepAfterMin != null,
   recall: (s) => !!s && s.archiveDays != null,
+  resources: (s) => !!s && 'guardDetect' in s, // P341
   alerts: (s) => !!s && ('usageAlerts' in s || 'usageProbe' in s || 'planNotify' in s),
   bots: (s, l, bots) => !!bots,
   devices: () => true,
@@ -46,6 +47,13 @@ export const ITEMS = [
   { id: 'launchers', page: 'launchers', name: 'launchers.tab', hint: 'launchers.note' },
   { id: 'sleepAfterMin', page: 'sleep', name: 'sleep.afterLabel', hint: 'sleep.afterHint', note: 'sleep.afterNote' },
   { id: 'sessionSleepAfterMin', page: 'sleep', name: 'sessionSleep.afterLabel', hint: 'sessionSleep.afterHint', note: 'sessionSleep.afterNote' },
+  { id: 'guardLowerPriority', page: 'resources', name: 'guard.set.lowerName', hint: 'guard.set.lowerHint', note: 'guard.set.lowerNote' }, // P341
+  { id: 'guardDetect', page: 'resources', name: 'guard.set.detectName', hint: 'guard.set.detectHint', note: 'guard.set.detectNote' },
+  { id: 'guardCpuPct', page: 'resources', name: 'guard.set.cpuPct', hint: 'guard.set.cpuPctHint', parent: 'guardDetect' },
+  { id: 'guardCpuMin', page: 'resources', name: 'guard.set.cpuMin', hint: 'guard.set.cpuMinHint', parent: 'guardDetect' },
+  { id: 'guardMemGB', page: 'resources', name: 'guard.set.memGB', hint: 'guard.set.memGBHint', parent: 'guardDetect' },
+  { id: 'guardGrowMin', page: 'resources', name: 'guard.set.growMin', hint: 'guard.set.growMinHint', parent: 'guardDetect' },
+  { id: 'guardBgCpuMin', page: 'resources', name: 'guard.set.bgCpuMin', hint: 'guard.set.bgCpuMinHint', parent: 'guardDetect' },
   { id: 'archiveDays', page: 'recall', name: 'settings.archiveDays', hint: 'settings.archiveDaysHint', note: 'settings.archiveDaysNote' },
   { id: 'autoOpenRepos', page: 'recall', name: 'settings.autoOpenName', hint: 'settings.autoOpen', note: 'settings.autoOpenNote' },
   { id: 'usageAlerts', page: 'alerts', name: 'usage.alertsName', hint: 'usage.alertsHint' },
@@ -70,6 +78,7 @@ const PARENT_ON = {
   updateCheck: (s) => s.updateCheck !== false,
   'bot-merge': (s) => s.mergerMode !== 'off',
   'bot-todoTidy': (s) => s.todoTidyMode !== 'off',
+  guardDetect: (s) => s.guardDetect !== false, // P341
 };
 export function parentOn(parent, settings) {
   if (!parent || !settings || !PARENT_ON[parent]) return true;

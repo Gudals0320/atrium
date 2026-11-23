@@ -769,6 +769,7 @@ export class Sleeper {
   }
   async _sleep(s, by, mode, scope = 'repo') {
     const b = this.b, rt = s.rt, t0 = Date.now();
+    if (b.guard) await b.guard.beforeSleep(s); // P341: 멈춘(일시정지) 세션은 먼저 다시 돌린다(멈춘 에이전트는 /exit를 받지 못한다)
     b.killing.add(s.sessionId); // 판이 닫는 패널: pane_closed·workspace_closed를 "판 밖에서 닫음"으로 보지 않는다
     try {
       const mem = await this.measure(s);

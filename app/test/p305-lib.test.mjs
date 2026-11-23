@@ -10,8 +10,8 @@ test('P305 이름: 목록 "할 일"/"To do", 종류 결정·실행·확인·나�
   const k = ko.default || ko; const e = en.default || en;
   assert.equal(k.userTasks.pill, '할 일'); assert.equal(k.userTasks.head, '할 일');
   assert.equal(e.userTasks.pill, 'To do'); assert.equal(e.userTasks.head, 'To do');
-  assert.deepEqual(k.userTasks.kind, { decide: '결정', do: '실행', check: '확인', later: '나중에' });
-  assert.deepEqual(e.userTasks.kind, { decide: 'Decide', do: 'Action', check: 'Check', later: 'Later' });
+  assert.deepEqual(k.userTasks.kind, { decide: '결정', do: '실행', check: '확인', later: '나중에', guard: '폭주' }); // P341: guard(판의 폭주 카드)
+  assert.deepEqual(e.userTasks.kind, { decide: 'Decide', do: 'Action', check: 'Check', later: 'Later', guard: 'Runaway' });
   assert.equal(k.userTasks.markN, '할 일 {n}'); assert.equal(e.userTasks.markN, 'to do {n}');
   // 응답 필요 알약과 다른 이름
   assert.notEqual(k.userTasks.pill, k.p302 && k.p302.working);

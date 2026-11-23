@@ -36,7 +36,7 @@ export const answerReady = (text) => typeof text === 'string' && text.trim().len
 export const withoutCard = (cards, id) => (cards || []).filter((d) => d.id !== id);
 
 // ---------- P292: 사용자 몫 ----------
-export const KINDS = ['decide', 'do', 'check', 'later'];
+export const KINDS = ['decide', 'do', 'check', 'later', 'guard']; // P341: guard = 판이 만든 폭주 카드(Guard.jsx GuardBody)
 // 지금 목록(나중 줄이 아닌 카드)과 나중 줄(때가 이른 것 먼저, 조건 글은 끝)
 export const activeCards = (cards) => (cards || []).filter((d) => !d.deferred);
 export function laterCards(cards) {

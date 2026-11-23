@@ -13,6 +13,7 @@
 //   다음 글에 실려 갈 답(riding)은 "@이름: 다음 메시지와 함께 갈 답 n · 지금 보내기" 줄로, 그 세션의 카드가 없어도 목록 맨 위에 보인다.
 //   세션 카드·맵 카드 표식 옆에 "실어 보낼 답 n"(RideMark).
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { GuardBody } from './Guard.jsx'; // P341: 폭주 카드
 import { useStore, getState, setMissionOpen, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago } from './lib/labels.js';
@@ -241,11 +242,11 @@ export function DecisionRow({ d, onGo, now, t }) { // P331: 세션 맵 미니 �
   return (
     <div className={`mt-dc-row k-${d.kind}${d.auto ? ' auto' : ''}`} data-role="decision" data-id={d.id} data-session={d.sessionId} data-kind={d.kind} data-auto={d.auto ? '1' : undefined}>
       <CardHead d={d} onGo={onGo} now={now} t={t} timing={timing} onTiming={setTiming} />
-      <div className="mt-dc-q" data-role="decision-question">{d.question}</div>
+      <div className="mt-dc-q" data-role="decision-question">{d.kind === 'guard' ? t('guard.cardQ') : d.question}</div>{/* P341: 폭주 카드는 창 언어의 머리 + 몸통(지금 값) */}
       {d.why ? <div className="mt-dc-why" data-role="decision-why">{d.why}</div> : null}
       {d.kind === 'later' && d.later ? <div className="mt-ut-when-line" data-role="decision-later">{t('userTasks.laterWas', { text: d.later })}</div> : null}
       <Cmds d={d} t={t} />
-      {act === 'decide' ? <DecideBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} /> : act === 'check' ? <CheckBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} /> : <DoBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} />}
+      {d.kind === 'guard' ? <GuardBody d={d} t={t} /> : act === 'decide' ? <DecideBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} /> : act === 'check' ? <CheckBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} /> : <DoBody d={d} t={t} busy={busy} setBusy={setBusy} timing={timing} />}
     </div>
   );
 }

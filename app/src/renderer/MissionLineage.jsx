@@ -28,6 +28,7 @@ import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위
 import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩(작게)
 import { useRowFit } from './lib/row-fit.js'; // P307: 휴대폰 맵 카드 첫 줄에서 이름이 밀려나지 않게
+import { GuardBadge } from './Guard.jsx'; // P341: 폭주 배지(오른쪽 위 무리)
 import { TodoBadge, TodoPop } from './MapTodo.jsx'; // P331: 할 일 배지·그 자리 답하기 미니 창(P333: 배지는 오른쪽 위 작업 완료 꼬리표와 한 무리)
 import { todoCount, opensTodo, todoPlace } from './lib/map-todo.js';
 import { planCountFor } from './lib/plans.js';
@@ -141,7 +142,7 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
         {b.thin ? <span className="mt-sm-thin" data-role="ta-thin"><i /><span className="cname" data-role="ta-name">{n.name}</span>{f.age ? <span className="cago">{f.age}</span> : null}</span> : null}
         {tier === 'work' && <MissionLight role="ta-light" />}
         {todo ? (
-          <span className="mt-sm-tags" data-role="map-tags"><TodoBadge sessionId={n.sessionId} />{done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}</span>
+          <span className="mt-sm-tags" data-role="map-tags"><GuardBadge sessionId={n.sessionId} where="map" /><TodoBadge sessionId={n.sessionId} />{done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}</span>
         ) : done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
         {!b.thin && !lite && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}<DecisionMark sessionId={n.sessionId} className="mt-dc-mark map tile" rideOnly={todo} /></span><span className="ts">{b.merger ? <span className="mt-sm-merger-tile" data-role="ta-merger-tile">{t('merger.tag')}</span> : null}{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}{f.prog ? <span className={`mt-prog-chip tile${f.prog.finished ? ' finished' : ''}${f.prog.failed ? ' failed' : ''}${f.prog.running ? ' running' : ''}`} data-role="ta-progress-tile">{f.prog.short}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">

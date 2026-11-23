@@ -35,6 +35,8 @@ import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentR
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses } from './resources.mjs';
+import { ResourceGuard } from './resource-guard.mjs'; // P341: 폭주 감시·우선순위 낮추기
+import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { probeCodex, probeClaude, probeHermes, probeBalance, sameAccount, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
@@ -418,12 +420,20 @@ export class Backend {
     // D1: 자원 감시
     this.resources = new ResourceMonitor({
       intervalMs: cfg.resourcesIntervalMs,
-      sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.term.present, state: deriveState(s.rt).state })),
+      sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.term.present, state: deriveState(s.rt).state, kind: s.kind || null, bgOnly: (() => { try { return !!this.deliveryView(s.sessionId).bgOnly; } catch { return false; } })() })), // P341: kind(셸 패널은 무거움으로만), bgOnly(턴은 끝났고 뒤 일만 돈다 = 쉬는 세션으로 본다)
       processInfo: (paneId) => this.adapter.processInfo(paneId),
       controllers: () => this.relay.stats(),
       serverPid: () => this.adapter.serverPid(),
       log: (m) => this.log(m), // P168: 버린 이상한 값
     });
+    // P341: 폭주 감시와 우선순위 낮추기. 측정이 끝날 때마다(창에 보내기 전) 줄에 guard를 싣고 카드·우선순위를 다룬다
+    this.proc = new ProcControl({ dir: path.join(cfg.dataDir, 'bin'), log: (m) => this.log(m) });
+    this.guard = new ResourceGuard(this, { monitor: this.resources, proc: this.proc, settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}) });
+    this.resources.nextDelay = () => this.guard.nextDelay();
+    this.resources.after.push(async (snap, mon) => { await this.guard.step(snap, mon); snap.guard = this.guard.status(); });
+    Object.assign(this.api.handlers, this.guard.handlers());
+    if (!process.env.NODE_TEST_CONTEXT) this.proc.ensure().catch(() => {}); // 도우미 빌드(글이 바뀌었을 때만). 단위 시험 판에서는 누를 때 빌드한다
+    { const set0 = this.api.handlers['settings.set']; if (set0) this.api.handlers['settings.set'] = async (p, c) => { const r = await set0(p, c); try { this.guard.onSettings(); } catch {} return r; }; } // 우선순위 끔 → 곧바로 되돌린다
     this.resources.start((snap) => this.api.broadcast('resources', snap));
     this.usage.start(); // P211
     this.store.addEvent(null, 'backend_started', { pid: process.pid, previousRun: this.previousRun });
@@ -947,6 +957,7 @@ export class Backend {
 
   // ---------- 터미널 이벤트 ----------
   async onTermEvent(e) {
+    if ((e.type === 'pane_moved' || e.type === 'pane_created') && e.paneId && this.guard) this.guard.onPane(e.paneId).catch(() => {}); // P341: 새 뿌리 프로세스를 곧바로 보통 이하로
     if (e.type === 'pane_moved') {
       const m = e.previousPaneId && this.sessionByPane(e.previousPaneId);
       // P125: 셸을 남기며 온 종료 코드(놓임이 먼저 풀려 코드가 없던 끝남을 고친다: 콘솔 Ctrl+C면 직접 종료)

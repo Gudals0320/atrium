@@ -10,6 +10,7 @@
 // P22: 그룹 표시와 한 줄 메모 단추를 뺐다. 노드를 고르고 Delete를 누르면 X와 같은 닫기 확인을 연다(main.jsx가 store.killAsk로 알린다)
 // P28: 닫기 확인에서 Delete를 한 번 더 누르면 삭제 단추에 초점과 표시가 가고 Enter로 확정한다. Esc는 취소. 멀리·아이콘 얼굴은 흐리게 하지 않는다(styles.css)
 import { memo, useEffect, useRef, useState } from 'react';
+import { GuardBadge } from './Guard.jsx'; // P341: 폭주 배지
 import { countRender } from './perf-trace.js'; // P146
 import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow/react';
 import { RecordChip } from './Records.jsx'; // P334
@@ -150,6 +151,7 @@ ${t('rename.dblHint')}`} onDoubleClick={(e) => { e.stopPropagation(); setRenamin
       <span className="mt-node-sp" />
       <RecordChip sessionId={s.sessionId} /> {/* P334: 일 기록 */}
       {s.output && s.output.long && <button className="mt-btn small nodrag mt-output-btn" data-action="output-open" title={t('node.outputTitle', { n: s.output.chars })} onClick={() => setOutputView({ sessionId: s.sessionId, turn: null })}>{t('node.output')}</button>}
+      <GuardBadge sessionId={s.sessionId} where="node" />
       {mem != null && mem >= 1 && <span className="mt-node-meta" data-role="mem" title={t('node.memTitle')}>{mem >= 1024 ? `${(mem / 1024).toFixed(1)}GB` : `${Math.round(mem)}MB`}</span>}
       {s.model && <span className="mt-node-meta" title={s.cwd}>{s.model}</span>}
       {waiting && since && <span className="mt-waited">{ago(since)}</span>}

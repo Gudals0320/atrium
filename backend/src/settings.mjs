@@ -68,6 +68,14 @@ export const SETTINGS = {
   // P287: merger의 승인 방식. 빈 값·inherit는 그 합치기를 맡긴 부모의 방식(전과 같음). 목록은 세션 띄우기 창의 승인 방식(PERMISSION_MODES).
   //   고른 종류가 받지 않는 값이면 부모 따름으로 되돌린다(merger.mjs mergerPermissionOf)
   mergerPermission: { type: 'choice', default: '', options: ['', 'inherit', ...PERMISSION_MODES], label: 'merger 세션의 승인 방식입니다 (빈 값: 병합을 맡긴 세션의 방식을 따름).' },
+  // P341: 자원 감시(resource-guard.mjs). 판이 띄운 세션의 우선순위 낮추기(자동, 되돌릴 수 있음)와 폭주 감지(배지·할 일 카드)와 그 기준값
+  guardLowerPriority: { type: 'boolean', default: true, label: '보드에서 띄운 세션의 프로세스 우선순위를 "보통 이하"로 낮춰 PC의 다른 프로그램이 먼저 돌게 합니다. 끄면 되돌립니다.' },
+  guardDetect: { type: 'boolean', default: true, label: '폭주 감지: 세션이 CPU를 오래 많이 쓰거나 메모리가 크거나 계속 늘면 배지를 달고, 쉬는 세션이면 할 일 카드로 알립니다.' },
+  guardCpuPct: { type: 'number', default: 90, min: 10, max: 100, label: '폭주 감지 CPU 기준: 코어 하나의 이 비율(%) 이상을 쓰는 시간이 아래 분 이상 이어지면 봅니다.' },
+  guardCpuMin: { type: 'number', default: 3, min: 1, max: 120, label: '폭주 감지 CPU 시간(분).' },
+  guardMemGB: { type: 'number', default: 3, min: 1, max: 256, label: '폭주 감지 메모리 기준(GB): 세션 하나의 메모리가 이 값 이상이면 봅니다.' },
+  guardGrowMin: { type: 'number', default: 10, min: 0, max: 240, label: '폭주 감지 메모리 증가 시간(분): 이 시간 내내 메모리가 늘면 봅니다 (0: 사용 안 함).' },
+  guardBgCpuMin: { type: 'number', default: 15, min: 1, max: 240, label: '뒤 작업 CPU 시간(분): 턴이 끝나고 에이전트가 띄운 뒤 작업만 도는 세션은 CPU가 이 시간 동안 기준을 넘어야 폭주 카드를 만듭니다(그 전에는 노란 배지만).' },
   // P114의 숨은 설정 terminalBackend는 P117에서 없앴다. P129·P132: 터미널 백엔드는 herdr-core(hc) 하나다. 판 기록(meta terminalBackend)은 옛 판 옮기기(herdr-migrate)만 쓴다
 };
 // P313: 보조 에이전트 표(설정 › 에이전트 탭). 판이 쓰는 보조 에이전트마다 이름(id), 사전 묶음(dict), 칸 → 설정 키 묶음.
