@@ -27,6 +27,23 @@ export function paneMenuItems(ws) {
 }
 // 병합 맡기기를 보일 세션인가(워크트리 브랜치에서 일하는 에이전트, merger 아님)
 export const canAskMerge = (s, mergerIds = new Set()) => !!s && (s.kind || 'claude') !== 'shell' && isWt(s) && !!s.git.branch && !mergerIds.has(s.sessionId);
+// P325: 워크트리 치우기를 보일 세션인가(병합 맡기기와 같은 세션)
+export const canDiscard = canAskMerge;
+// P325: 치우기 확인 상자의 값(순수). v: 판 API worktree.discard dryRun 값
+//   risky: 지우면 되돌릴 수 없는 것이 있다(앞선 커밋이나 커밋 안 한 변경). keepBranch: "브랜치는 남기기" 기본값(risky면 켬). needForce: 변경이 있어 --force를 골라야 한다
+export function discardChoices(v) {
+  const ahead = (v && v.ahead) || 0; const dirty = (v && v.dirty) || 0;
+  const risky = ahead > 0 || dirty > 0;
+  return { risky, keepBranch: risky, hasBranch: !!(v && v.branch), needForce: dirty > 0 };
+}
+// 치우기 단추를 막을 까닭 → null | 'loading' | 'not_worktree' | 'same_branch' | 'force'
+export function discardBlock(v, force = false) {
+  if (!v) return 'loading';
+  if (!v.worktree || !v.path) return 'not_worktree';
+  if (v.branch && v.branch === v.target) return 'same_branch';
+  if ((v.dirty || 0) > 0 && !force) return 'force';
+  return null;
+}
 // merger 세션 ID 모음(창의 merger.status 상태)
 export const mergerIdsOf = (merger) => new Set(((merger && merger.mergers) || []).map((m) => m.sessionId).filter(Boolean));
 // 빠른 창의 이름 칸 검사 → null | 'bad' | 'taken'
