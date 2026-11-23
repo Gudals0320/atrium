@@ -53,6 +53,7 @@ test('설정: 세션 묶음에 자원 쪽(설정 키가 있을 때), 기준값�
   assert.equal(PAGE_ICON.resources, 'gauge');
   assert.deepEqual(rowState('guardCpuPct', { guardDetect: false }), { child: true, dim: true });
   assert.deepEqual(rowState('guardCpuPct', { guardDetect: true }), { child: true, dim: false });
+  assert.deepEqual(rowState('guardBgCpuMin', { guardDetect: false }), { child: true, dim: true });
   const pages = pagesOf(navOf(st, { launchers: [] }, false));
   assert.equal(searchItems('폭주', lookup(ko), pages)[0].id, 'guardDetect');
   assert.equal(searchItems('priority', lookup(en), pages)[0].id, 'guardLowerPriority');

@@ -51,7 +51,7 @@ async function setup() {
   for (const d of Object.values(DIRS)) { fs.writeFileSync(path.join(d, 'busy.js'), BUSY); fs.writeFileSync(path.join(d, 'grow.js'), GROW); }
   fs.writeFileSync(path.join(DIRS.a, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { allow: ['Bash(node busy.js)', 'Bash(node grow.js)', 'Bash(node:*)'] } }, null, 2));
   log(atrium('backend', 'start').trim().slice(0, 300));
-  for (const [key, value] of [['language', 'en'], ['guardCpuMin', 1], ['guardGrowMin', 1], ['guardDetect', true], ['guardLowerPriority', true], ['mergerMode', 'off'], ['todoTidyMode', 'off'], ['sleepAfterMin', 0], ['sessionSleepAfterMin', 0]]) call('settings.set', { key, value });
+  for (const [key, value] of [['language', 'en'], ['guardCpuMin', 1], ['guardGrowMin', 1], ['guardBgCpuMin', 2], ['guardDetect', true], ['guardLowerPriority', true], ['mergerMode', 'off'], ['todoTidyMode', 'off'], ['sleepAfterMin', 0], ['sessionSleepAfterMin', 0]]) call('settings.set', { key, value });
   if (!sess('p341-agent')) log(atrium('--json', 'spawn', DIRS.a, '--kind', 'claude', '--model', 'haiku', '--name', 'p341-agent').slice(0, 300));
   if (!sess('p341-sh')) log(atrium('--json', 'spawn', DIRS.b, '--kind', 'shell', '--name', 'p341-sh').slice(0, 200));
   for (let i = 0; i < 60; i++) { const s = sess('p341-agent'); if (s && s.state === 'ready') break; await sleep(2000); }

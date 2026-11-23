@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
-import { judge, classify, guardConfig, sampleOf, nearAlert, topOf, mayCard, verifyTarget, priorityTargets, reportOf, cardText, ResourceGuard, FAST_MS } from '../src/resource-guard.mjs';
+import { judge, classify, kindOf, guardConfig, sampleOf, nearAlert, topOf, mayCard, verifyTarget, priorityTargets, reportOf, cardText, ResourceGuard, FAST_MS } from '../src/resource-guard.mjs';
 import { treeTops, procCpu, cpuKey } from '../src/resources.mjs';
 import { parseProcOut, procArgs, ProcControl } from '../src/proc-control.mjs';
 import { Store } from '../src/store.mjs';
@@ -17,9 +17,9 @@ const MIN = 60_000;
 const hist = (n, f, now = 10_000_000, step = 30_000) => Array.from({ length: n }, (_, i) => ({ at: now - (n - 1 - i) * step, spanMs: step, ...f(i) }));
 
 test('기본 기준: CPU 90% 3분, 메모리 3GB, 증가 10분, 둘 다 켬', () => {
-  assert.deepEqual(cfg, { detect: true, lower: true, cpuPct: 90, cpuMs: 3 * MIN, memMB: 3072, growMs: 10 * MIN });
+  assert.deepEqual(cfg, { detect: true, lower: true, cpuPct: 90, cpuMs: 3 * MIN, memMB: 3072, growMs: 10 * MIN, bgCpuMs: 15 * MIN });
   const c = guardConfig({ guardDetect: false, guardLowerPriority: false, guardCpuPct: 50, guardCpuMin: 1, guardMemGB: 2, guardGrowMin: 0 });
-  assert.deepEqual(c, { detect: false, lower: false, cpuPct: 50, cpuMs: MIN, memMB: 2048, growMs: 0 });
+  assert.deepEqual(c, { detect: false, lower: false, cpuPct: 50, cpuMs: MIN, memMB: 2048, growMs: 0, bgCpuMs: 15 * MIN });
   assert.equal(DEFAULTS.guardLowerPriority, true);
   assert.throws(() => normalizePatch({ guardCpuPct: 5 }));
   assert.equal(normalizePatch({ guardMemGB: '4' }).guardMemGB, 4);
@@ -73,6 +73,25 @@ test('종류: 쉼·기다림·잠듦·끝남은 폭주 의심, 일하는 중과 
   assert.equal(classify(false, 'shell_running'), 'heavy');
   assert.equal(classify(false, 'working', true), 'suspect'); // 턴은 끝났고 뒤 일만 돈다(P240)
   assert.equal(classify(true, 'working', true), 'heavy');
+  // 뒤 일만 도는 세션: 먼저 무거움, CPU가 bgCpuMin(15분) 넘게 이어져야 의심. 메모리만이면 무거움
+  assert.equal(kindOf(false, 'working', true, [{ type: 'cpu', ms: 5 * MIN }], cfg), 'heavy');
+  assert.equal(kindOf(false, 'working', true, [{ type: 'cpu', ms: 15 * MIN }], cfg), 'suspect');
+  assert.equal(kindOf(false, 'working', true, [{ type: 'mem', memMB: 4000 }], cfg), 'heavy');
+  assert.equal(kindOf(false, 'ready', false, [{ type: 'cpu', ms: 3 * MIN }], cfg), 'suspect');
+  assert.equal(kindOf(false, 'working', false, [{ type: 'cpu', ms: 30 * MIN }], cfg), 'heavy');
+});
+
+test('흐름: 뒤 일만 도는 세션은 노란 배지로 시작하고 15분 뒤에야 카드', async () => {
+  const { b, store } = fakeBoard();
+  const g = new ResourceGuard(b, { monitor: { trees: new Map() }, proc: { available: () => false } });
+  let t = 10_000_000, last = null;
+  for (let i = 0; i < 20; i++) { t += 30_000; last = snapOf(t, [row('s1', 'working', 98, 300, { bgOnly: true })]); await g.step(last); }
+  assert.equal(last.sessions[0].guard.kind, 'heavy');
+  assert.equal(store.openDecisions().length, 0);
+  for (let i = 0; i < 12; i++) { t += 30_000; last = snapOf(t, [row('s1', 'working', 98, 300, { bgOnly: true })]); await g.step(last); }
+  assert.equal(last.sessions[0].guard.kind, 'suspect');
+  assert.equal(store.openDecisions().length, 1);
+  assert.equal(store.openDecisions()[0].guard.bgOnly, true);
 });
 
 test('가장 무거운 프로세스: CPU가 걸리면 CPU 맨 위, 뿌리·에이전트면 agent', () => {

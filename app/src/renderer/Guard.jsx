@@ -20,7 +20,7 @@ export function GuardBadge({ sessionId, where = 'node' }) {
   const parts = badgeParts(g);
   if (!parts.length) return null;
   const text = parts.map((p) => t(p.key, p.vars)).join(' · ');
-  const title = g.paused ? t('guard.pausedTitle', { time: fmtClock(g.paused.at) }) : t(g.kind === 'suspect' ? 'guard.suspectTitle' : 'guard.heavyTitle', { what: text, top: g.top ? `${g.top.name} (PID ${g.top.pid})` : '?' });
+  const title = g.paused ? t('guard.pausedTitle', { time: fmtClock(g.paused.at) }) : t(g.kind === 'suspect' ? 'guard.suspectTitle' : g.bgOnly ? 'guard.heavyBgTitle' : 'guard.heavyTitle', { what: text, top: g.top ? `${g.top.name} (PID ${g.top.pid})` : '?' });
   const resume = async (e) => { e.stopPropagation(); e.preventDefault(); setBusy(true); try { await act({ session: sessionId, action: 'resume' }); toast(t('guard.resumed')); } catch (err) { toast(t('guard.fail', { error: errText(err) }), 'error'); } setBusy(false); };
   return (
     <span className={`mt-guard-badge ${where} k-${g.kind}${g.paused ? ' paused' : ''}`} data-role="guard-badge" data-kind={g.kind} data-paused={g.paused ? '1' : undefined} title={title} aria-label={title}>
@@ -112,6 +112,7 @@ export function ResourcesTab({ settings, schema }) {
         <GuardNum k="guardCpuMin" settings={settings} schema={schema} label="guard.set.cpuMin" hint="guard.set.cpuMinHint" dim={off} />
         <GuardNum k="guardMemGB" settings={settings} schema={schema} label="guard.set.memGB" hint="guard.set.memGBHint" dim={off} />
         <GuardNum k="guardGrowMin" settings={settings} schema={schema} label="guard.set.growMin" hint="guard.set.growMinHint" dim={off} />
+        {settings.guardBgCpuMin != null && <GuardNum k="guardBgCpuMin" settings={settings} schema={schema} label="guard.set.bgCpuMin" hint="guard.set.bgCpuMinHint" dim={off} />}
       </>}
     </div>
   );

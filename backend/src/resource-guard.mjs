@@ -6,8 +6,8 @@
 //   - mem: 나무 메모리가 기준(기본 3GB) 이상
 //   - grow: 기준 시간(기본 10분, 0이면 끔) 내내 측정마다 줄지 않고 그동안 GROW_MIN_MB 이상 늘었다
 //   종류(classify): 셸 패널은 늘 무거움(heavy, 표시만), 에이전트가 일하는 중(working·starting)이면 무거움, 쉼·기다림·잠듦·끝남이면 폭주 의심(suspect).
-//   턴은 끝났고 뒤 일(뒤 셸·뒤 하위 에이전트)만 도는 세션(P240 bgOnly, 판 상태는 working)도 쉬는 세션으로 본다: 에이전트가 뒤에 띄워 두고 잊은 프로세스가
-//   폭주하는 일이 이 경우다(실시험: 뒤 셸이 도는 동안 Claude Code는 working을 알린다).
+//   턴은 끝났고 뒤 일(뒤 셸·뒤 하위 에이전트)만 도는 세션(P240 bgOnly, 판 상태는 working)은 먼저 무거움이고, CPU가 더 긴 시간(guardBgCpuMin, 기본 15분)
+//   기준을 넘으면 의심이 된다(kindOf): 에이전트가 뒤에 띄워 두고 잊은 프로세스의 폭주는 잡되, 일부러 띄운 긴 빌드·시험마다 카드를 내지 않는다.
 //   후보(어느 기준이든 80%를 넘음)가 있으면 다음 측정을 FAST_MS로 당긴다(보통 때는 그대로 30초).
 // 표시: 측정 줄(snap.sessions[i])에 guard { kind, reasons, since, top, paused?, card? }를 싣는다(창의 배지·메모리 알약 강조·카드 실시간 값).
 // 할 일 카드(kind guard): 폭주 의심이 되면 세션마다 한 장(한 번의 폭주 동안 다시 만들지 않는다. 사람이 무시해도 같은 폭주 동안은 다시 띄우지 않는다).
@@ -25,7 +25,7 @@
 import { descendants, suspectTree } from './resources.mjs';
 import { PRIO, setPrio, getPrio } from './proc-control.mjs';
 
-export const GUARD_DEFAULTS = { cpuPct: 90, cpuMin: 3, memGB: 3, growMin: 10 };
+export const GUARD_DEFAULTS = { cpuPct: 90, cpuMin: 3, memGB: 3, growMin: 10, bgCpuMin: 15 }; // P341(검토 뒤): bgCpuMin = 뒤 일만 도는 세션이 의심이 되는 CPU 시간
 export const GROW_MIN_MB = 200; // grow: 그 시간 동안 적어도 이만큼은 늘어야
 export const FAST_MS = 10_000; // 후보가 있을 때 측정 간격
 export const NEAR = 0.8; // 후보: 기준의 이만큼
@@ -45,6 +45,7 @@ export function guardConfig(st = {}) {
     cpuMs: n(st.guardCpuMin, GUARD_DEFAULTS.cpuMin) * 60_000,
     memMB: n(st.guardMemGB, GUARD_DEFAULTS.memGB) * 1024,
     growMs: n(st.guardGrowMin, GUARD_DEFAULTS.growMin) * 60_000,
+    bgCpuMs: n(st.guardBgCpuMin, GUARD_DEFAULTS.bgCpuMin) * 60_000,
   };
 }
 
@@ -92,6 +93,14 @@ export function classify(shell, state, bgOnly = false) {
   if (shell || state === 'shell_running' || state === 'shell_idle') return 'heavy';
   if (bgOnly) return 'suspect';
   return BUSY.has(state) ? 'heavy' : 'suspect';
+}
+// 검토 뒤(지휘 세션 2026-11-23): 뒤 일만 도는 세션은 먼저 무거움(노란 배지). 에이전트가 긴 빌드·시험을 일부러 뒤에 띄우고 턴을 끝내는 일이 잦아서,
+//   CPU가 더 긴 시간(guardBgCpuMin, 기본 15분) 기준을 넘을 때만 의심(카드)이 된다. 메모리 기준만 걸리면 무거움 그대로. 순수 함수
+export function kindOf(shell, state, bgOnly, reasons, cfg) {
+  const k = classify(shell, state, bgOnly);
+  if (k !== 'suspect' || !bgOnly) return k;
+  const c = (reasons || []).find((r) => r.type === 'cpu');
+  return c && c.ms >= cfg.bgCpuMs ? 'suspect' : 'heavy';
 }
 // 카드에 보일 가장 무거운 프로세스: CPU가 걸렸으면 CPU 맨 위, 아니면 메모리 맨 위. agent: 패널 뿌리이거나 에이전트 본체(끄기 대신 재우기). 순수 함수
 export function topOf(row, reasons) {
@@ -201,7 +210,7 @@ export class ResourceGuard {
       if (!cfg.detect || row.suspect) { this.endAlert(sid, row.suspect ? 'suspect_tree' : 'off'); continue; }
       const reasons = judge(h, cfg, now);
       if (!reasons.length) { this.endAlert(sid, 'resolved'); continue; }
-      const kind = classify(row.kind === SHELL || (s && s.kind === SHELL), row.state, !!row.bgOnly);
+      const kind = kindOf(row.kind === SHELL || (s && s.kind === SHELL), row.state, !!row.bgOnly, reasons, cfg);
       let a = this.alerts.get(sid);
       const fresh = !a;
       const was = a ? a.kind : null;
