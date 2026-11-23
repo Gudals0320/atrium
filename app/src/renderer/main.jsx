@@ -32,6 +32,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { api } from './api.js';
 import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin, ensureThread } from './store.js';
 import { OutputPanel } from './Output.jsx';
+import { RecordPanel } from './Records.jsx'; // P334: 일 기록 보기
 import { LoopDialog } from './Loops.jsx';
 import { MissionMap } from './Mission.jsx';
 import { SettingsDialog } from './Settings.jsx';
@@ -212,6 +213,7 @@ function App() {
   if (phone) return (
     <div className="mt-app phone">
       {loaded && <AppBoundary><PhoneApp /></AppBoundary>}
+      {loaded && <RecordPanel />}
       <RemoteBar />
       {splash !== 'off' && <Splash error={!loaded && conn === 'error' ? t('app.backendFailed', { detail }) : null} leaving={splash === 'leaving'} />}
       <div className="mt-toasts">{toasts.map((t) => <div key={t.id} className={`mt-toast ${t.kind}`}>{t.text}</div>)}</div>
@@ -238,6 +240,7 @@ function App() {
           <CommandBar ref={cmd} />
           {loaded && <ZoomPill />}
           {loaded && <OutputPanel />}
+          {loaded && <RecordPanel />}
           {loaded && <MissionMap />}
         </div>
       </div>

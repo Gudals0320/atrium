@@ -3166,4 +3166,15 @@ export default {
     next: '다음 할 일',
     closeTitle: '닫기(Esc)',
   },
+  // P334: 일 기록(atrium done --record) 보기
+  records: {
+    chip: '기록 {n}',
+    chipTitle: '이 세션이 마지막 일에 남긴 기록 {n}개를 엽니다. 저장 위치: {dir} (Git 밖)',
+    title: '@{name}의 일 기록',
+    close: '닫기(Esc)',
+    copyPath: '경로 복사',
+    copied: '경로를 복사했습니다.',
+    binary: '글이 아닌 파일이라 보여 줄 수 없습니다({bytes}바이트).',
+    clipped: '파일이 커서 앞부분만 보입니다.',
+  },
 };

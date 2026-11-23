@@ -21,17 +21,18 @@ CREATE INDEX IF NOT EXISTS unit_tries_unit ON unit_tries(unit_id);
 
 // P182: 옛 board.db의 unit_tries에 더하는 열. quiet_at: 나무 전체가 쉼(tree_quiet)을 알린 때(나무에 움직임이 생기면 지운다. 다시 떠도 되풀이하지 않게)
 // P267: work_units의 source_unit(합치기 일이 나온 원래 일)과 meta(합치기 일의 git 값과 결과, JSON)
-export const UNITS_COLUMNS = { unit_tries: { quiet_at: 'INTEGER' }, work_units: { source_unit: 'TEXT', meta: 'TEXT' } };
+// P334: work_units의 records(done --record로 남긴 기록 { dir, files: [{ name, bytes }], at }, JSON)
+export const UNITS_COLUMNS = { unit_tries: { quiet_at: 'INTEGER' }, work_units: { source_unit: 'TEXT', meta: 'TEXT', records: 'TEXT' } };
 
 const J = (s) => { if (s == null) return null; try { return JSON.parse(s); } catch { return null; } };
-const unitRow = (r) => (r ? { id: r.id, from: r.from_session, to: r.to_session, origin: r.origin, spec: r.spec, status: r.status, createdAt: r.created_at, closedAt: r.closed_at ?? null, source: r.source_unit ?? null, meta: J(r.meta) } : null);
+const unitRow = (r) => (r ? { id: r.id, from: r.from_session, to: r.to_session, origin: r.origin, spec: r.spec, status: r.status, createdAt: r.created_at, closedAt: r.closed_at ?? null, source: r.source_unit ?? null, meta: J(r.meta), records: J(r.records) } : null);
 const tryRow = (r) => (r ? { id: r.id, unitId: r.unit_id, sessionId: r.session_id, header: !!r.header, deliveryId: r.delivery_id ?? null, startedAt: r.started_at, endedAt: r.ended_at ?? null, result: r.result ?? null, doneText: r.done_text ?? null, stopReason: r.stop_reason ?? null, notifiedAt: r.notified_at ?? null, claimedBy: r.claimed_by ?? null, noticeDeliveryId: r.notice_delivery_id ?? null, quietAt: r.quiet_at ?? null } : null);
 const TRY_COLS = { endedAt: 'ended_at', result: 'result', doneText: 'done_text', stopReason: 'stop_reason', notifiedAt: 'notified_at', claimedBy: 'claimed_by', noticeDeliveryId: 'notice_delivery_id', deliveryId: 'delivery_id', startedAt: 'started_at', quietAt: 'quiet_at' };
-const UNIT_COLS = { status: 'status', closedAt: 'closed_at', to: 'to_session', meta: 'meta' }; // P267: to(합치기 일을 다른 merger로), meta
+const UNIT_COLS = { status: 'status', closedAt: 'closed_at', to: 'to_session', meta: 'meta', records: 'records' }; // P334: records // P267: to(합치기 일을 다른 merger로), meta
 
 function setter(table, cols, store, id, fields) {
   const sets = []; const vals = [];
-  for (const [k, v] of Object.entries(fields)) { if (!cols[k]) throw new Error('unknown field ' + k); sets.push(`${cols[k]} = ?`); vals.push(k === 'meta' && v != null ? JSON.stringify(v) : k === 'to' ? v ?? '' : v ?? null); }
+  for (const [k, v] of Object.entries(fields)) { if (!cols[k]) throw new Error('unknown field ' + k); sets.push(`${cols[k]} = ?`); vals.push((k === 'meta' || k === 'records') && v != null ? JSON.stringify(v) : k === 'to' ? v ?? '' : v ?? null); }
   if (sets.length) store.st(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
 }
 
@@ -67,6 +68,8 @@ export function installUnits(Store) {
     unassignedMergeUnits() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status = 'open' AND to_session = '' ORDER BY created_at").all().map(unitRow); },
     // P290: 끝난 합치기 일 가운데 정리 알림을 아직 보내지 않은 것(meta.summary pending), 먼저 닫힌 것부터
     pendingMergeSummaries() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status IN ('done', 'failed') ORDER BY closed_at").all().map(unitRow).filter((u) => u.meta && u.meta.summary === 'pending'); },
+    // P334: 그 세션이 맡아 기록을 남긴 마지막 일
+    lastRecordUnitTo(sessionId) { return unitRow(this.st('SELECT * FROM work_units WHERE to_session = ? AND records IS NOT NULL ORDER BY closed_at DESC LIMIT 1').get(sessionId)); },
     lastTryOfUnit(unitId) { return tryRow(this.st('SELECT * FROM unit_tries WHERE unit_id = ? ORDER BY started_at DESC LIMIT 1').get(unitId)); },
   });
 }
