@@ -329,6 +329,7 @@ export function codexSessionOf({ cwd, since = 0, home = codexHomeOf(), now = Dat
       const idm = /"payload":\{[^]*?"id":"([0-9a-f-]{36})"/.exec(head);
       const cwdm = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(head);
       if (!idm || !cwdm) continue;
+      if (/"thread_source":"(?:subagent|guardian_review)"/.test(head)) continue; // P326: 하위 스레드(spawn_agent·guardian)는 같은 폴더에서 나중에 생기지만 판 세션의 스레드가 아니다
       let c; try { c = JSON.parse(`"${cwdm[1]}"`); } catch { continue; }
       if (path.resolve(c).toLowerCase().replace(/[\\/]+$/, '') !== want) continue;
       if (exclude.some((x) => String(x).toLowerCase() === idm[1].toLowerCase())) continue;
