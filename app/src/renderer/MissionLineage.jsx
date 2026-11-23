@@ -28,6 +28,9 @@ import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위
 import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩(작게)
 import { useRowFit } from './lib/row-fit.js'; // P307: 휴대폰 맵 카드 첫 줄에서 이름이 밀려나지 않게
+import { TodoBadge, TodoPop } from './MapTodo.jsx'; // P331: 할 일 배지(왼쪽 위)·그 자리 답하기 미니 창
+import { todoCount, opensTodo, todoPlace } from './lib/map-todo.js';
+import { planCountFor } from './lib/plans.js';
 
 const TOPH = 52; // 위 줄(세션 맵 머리) 높이(보기 칸 기준)
 const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같이 쓴다)
@@ -118,7 +121,8 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
 // P157: 카드에는 브라우저 풍선(title)을 달지 않는다. 마우스를 올리면 미리 보기(Peek) 하나만 뜬다(전에는 둘이 함께 떴다). 같은 사실은 aria-label에
 // P293: lite = 휴대폰 맵 가볍게 열림(먼 타일·결정 표식을 그리지 않는다. 멀리 단계에서도 보통 사실을 보인다, phone.css)
-export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null, lite = false, fit = false }) {
+// P331: todo = PC 세션 맵(왼쪽 위 할 일 배지, 이름 옆 할 일 표식 대신). 휴대폰 맵은 그대로
+export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null, lite = false, fit = false, todo = false }) {
   noteMap('cards');
   const rowRef = useRef(null), nameRef = useRef(null);
   useRowFit(rowRef, nameRef, fit && !b.thin); // P307: 휴대폰 맵(fit)에서만
@@ -135,9 +139,10 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
         {b.thin ? <span className="mt-sm-thin" data-role="ta-thin"><i /><span className="cname" data-role="ta-name">{n.name}</span>{f.age ? <span className="cago">{f.age}</span> : null}</span> : null}
         {tier === 'work' && <MissionLight role="ta-light" />}
         {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        {!b.thin && !lite && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}<DecisionMark sessionId={n.sessionId} className="mt-dc-mark map tile" /></span><span className="ts">{b.merger ? <span className="mt-sm-merger-tile" data-role="ta-merger-tile">{t('merger.tag')}</span> : null}{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}{f.prog ? <span className={`mt-prog-chip tile${f.prog.finished ? ' finished' : ''}${f.prog.failed ? ' failed' : ''}${f.prog.running ? ' running' : ''}`} data-role="ta-progress-tile">{f.prog.short}</span> : null}</span></span>}
+        {todo && <TodoBadge sessionId={n.sessionId} />}
+        {!b.thin && !lite && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}<DecisionMark sessionId={n.sessionId} className="mt-dc-mark map tile" rideOnly={todo} /></span><span className="ts">{b.merger ? <span className="mt-sm-merger-tile" data-role="ta-merger-tile">{t('merger.tag')}</span> : null}{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}{f.prog ? <span className={`mt-prog-chip tile${f.prog.finished ? ' finished' : ''}${f.prog.failed ? ' failed' : ''}${f.prog.running ? ' running' : ''}`} data-role="ta-progress-tile">{f.prog.short}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
-          <span className="c1" ref={rowRef}>{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name" ref={nameRef}>{n.name}</span>{lite ? null : <DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" />}{lite ? null : <ManagerChip sessionId={n.sessionId} map />}<span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" />{f.orch ? <span className={`mt-orch-tag map${f.orch.busy ? ' busy' : ''}`} data-role="ta-orch" data-busy={f.orch.busy ? '1' : '0'}>{f.orch.text}</span> : null}</span>
+          <span className="c1" ref={rowRef}>{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name" ref={nameRef}>{n.name}</span>{lite ? null : <DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" rideOnly={todo} />}{lite ? null : <ManagerChip sessionId={n.sessionId} map />}<span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" />{f.orch ? <span className={`mt-orch-tag map${f.orch.busy ? ' busy' : ''}`} data-role="ta-orch" data-busy={f.orch.busy ? '1' : '0'}>{f.orch.text}</span> : null}</span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.model ? <><span className="dotsep">/</span><span className={f.prog ? 'cmodel' : undefined}>{f.model}</span></> : null}{f.prog ? <span className={`mt-prog-chip map${f.prog.finished ? ' finished' : ''}${f.prog.failed ? ' failed' : ''}${f.prog.running ? ' running' : ''}`} data-role="ta-progress" data-done={f.progress.done} data-total={f.progress.total} data-finished={f.prog.finished ? '1' : '0'}>{f.prog.text}</span> : null}</span>
           <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
@@ -232,6 +237,10 @@ export function LineageMap() {
   const [pv, setPv] = useState(null); // 미리 보기 { id, x, y, w }(덮개 기준)
   const pvRef = useRef(null), hoverTimer = useRef(0);
   pvRef.current = pv;
+  // P331: 그 자리 답하기 미니 창 { id(맵 카드), sid, name }. 자리는 paint가 DOM에 바로 쓴다(끌기·확대를 따라간다)
+  const [todo, setTodo] = useState(null);
+  const todoRef = useRef(null), popRef = useRef(null), placeRef = useRef(null), tagSetRef = useRef(new Set());
+  todoRef.current = todo;
   const rootRef = useRef(null), vpRef = useRef(null), worldRef = useRef(null), pctRef = useRef(null), bgRef = useRef(null);
   const view = useRef(null); // { k, x, y }
   const fitted = useRef(false);
@@ -315,6 +324,7 @@ export function LineageMap() {
     return keepFacts(id, cardFacts({ ...n, _rel: relOfChild.get(id) }, liveOf(n), m, tiers.get(id), t, now, { parentName: p ? p.name : null, parentWs: p ? (pws ? wsName(pws) : t('mmapGroup.noWorkspace')) : null, cross: !!p && pws !== (n.workspaceKey || ''), kids: (lay.tree.kids.get(id) || []).length, mergerFor: mergerHead(b, lay) }));
   }, [lay, roles, tiers, sessions, t, relOfChild]); // eslint-disable-line react-hooks/exhaustive-deps
   const tagSet = useMemo(() => new Set(tags.map((x) => x.toLowerCase())), [tags]);
+  tagSetRef.current = tagSet; // P331: 누르기가 태그를 넣는지 빼는지(빼는 누르기는 미니 창을 열지 않는다)
 
   // ---- 보기 쓰기(DOM에 바로) ----
   const paint = useCallback((v, { glide = false } = {}) => {
@@ -344,6 +354,7 @@ export function LineageMap() {
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
     if (root && !glide) { if (root.dataset.moving !== '1') { root.dataset.moving = '1'; holdLights(root, true); } clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); checkStep(); holdLights(root, false); }, 160); }
+    if (placeRef.current) placeRef.current(glide); // P331: 미니 창이 카드를 따라간다
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // P178: 움직임이 멈춘 뒤 이름표 계단이 바뀌었으면 배치를 다시 센다. 화면 가운데에 가장 가까운 카드를 닻으로 남겨, 새 배치에서도 그 카드가 같은 화면 자리에 있게 한다
   function checkStep() {
@@ -451,6 +462,7 @@ export function LineageMap() {
   const onHover = useCallback((id, el) => {
     clearTimeout(hoverTimer.current);
     if (!id || !el) { if (pvRef.current) setPv(null); return; }
+    if (todoRef.current && todoRef.current.id === id) return; // P331: 미니 창이 떠 있는 카드에는 미리 보기를 띄우지 않는다
     hoverTimer.current = setTimeout(() => {
       const root = rootRef.current; if (!root || !el.isConnected) return;
       const r = el.getBoundingClientRect(), R = root.getBoundingClientRect(), w = 380;
@@ -475,8 +487,15 @@ export function LineageMap() {
   }, []);
   const tag = useCallback((id, e) => {
     const L = layRef.current, b = L && L.cards.get(id);
-    if (!b || justDragged.current || b.node.agentKind === 'shell') return; // 셸은 메시지를 받지 않는다
+    if (!b || justDragged.current) return;
     if (e && e.detail > 1) return; // 더블클릭의 둘째 클릭은 태그를 바꾸지 않는다(첫 클릭은 go가 되돌린다)
+    // P331: 열린 할 일이 있으면 카드 옆에 미니 창(태그를 빼는 누르기는 아니다). 셸도 할 일이 있으면 연다
+    const sid = b.node.sessionId, st = getState();
+    const wasTagged = tagSetRef.current.has(String(b.node.name).toLowerCase());
+    const count = todoCount(st.decisions, sid, sid && st.plans ? planCountFor([...st.plans.values()], sid) : 0);
+    if (opensTodo({ count, wasTagged })) { clearTimeout(hoverTimer.current); if (pvRef.current) setPv(null); setTodo({ id, sid, name: b.node.name }); }
+    else if (todoRef.current && todoRef.current.id === id) setTodo(null);
+    if (b.node.agentKind === 'shell') return; // 셸은 메시지를 받지 않는다
     lastTag.current = { id, at: Date.now() };
     commandDraft.dispatchEvent(new CustomEvent('tag', { detail: b.node.name }));
   }, []);
@@ -688,6 +707,29 @@ export function LineageMap() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, flyTo, paint]);
+  // P331: 미니 창 자리. 카드 상자(세계) × 보기 = 보기 칸 좌표, 덮개 좌표는 보기 칸의 offsetTop을 더한다. 미끄러지는 보기(glide)는 같은 박자로 따라간다
+  placeRef.current = (glide = false) => {
+    const el = popRef.current, cur = todoRef.current, L = layRef.current, v = view.current, s = sizeRef.current, vp = vpRef.current;
+    if (!el || !cur || !L || !v || !s) return;
+    const b = L.cards.get(cur.id);
+    if (!b || b.folded) { el.style.visibility = 'hidden'; return; }
+    const p = todoPlace({ x: b.x * v.k + v.x, y: b.y * v.k + v.y, w: b.w * v.k, h: b.h * v.k }, { w: el.offsetWidth, h: el.offsetHeight }, { w: s.w, h: s.h, top: TOPH, bottom: BOTTOM, right: sumW() });
+    el.style.transition = glide ? 'left 0.45s cubic-bezier(0.2, 0.7, 0.2, 1), top 0.45s cubic-bezier(0.2, 0.7, 0.2, 1)' : ''; // 세계 .mt-ta-world.glide와 같은 박자
+    el.style.visibility = p.hidden ? 'hidden' : '';
+    el.style.left = `${Math.round(p.x)}px`; el.style.top = `${Math.round(p.y + (vp ? vp.offsetTop : 0))}px`;
+    el.dataset.side = p.side;
+  };
+  useEffect(() => { if (!open) setTodo(null); }, [open]);
+  // P331: Esc·다른 곳 누르기로 닫는다(창 안 누르기·끌기 끝의 누르기는 아니다). Esc는 세션 맵 닫기보다 먼저 받는다
+  const todoOn = !!todo;
+  useEffect(() => {
+    if (!todoOn) return undefined;
+    const onKey = (e) => { if (e.key !== 'Escape' || getState().dialog) return; e.preventDefault(); e.stopImmediatePropagation(); setTodo(null); };
+    const onClick = (e) => { const p = popRef.current; if (p && e.target && p.contains(e.target)) return; if (justDragged.current) return; setTodo(null); };
+    window.addEventListener('keydown', onKey, true); window.addEventListener('click', onClick, true);
+    return () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('click', onClick, true); };
+  }, [todoOn]);
+  useLayoutEffect(() => { if (todoOn && placeRef.current) placeRef.current(); }, [todoOn, lay, vsize, sumOpen]);
   window.__mtTa = { view: () => (view.current ? { ...view.current } : null), fit: () => fit(false), flyTo, lay: () => layRef.current, set: (v) => paint(v), tags: () => tags, rail: RAIL, top: TOPH, label: () => lstepRef.current, sumW }; // 시험이 읽는다
 
   if (!open) return null;
@@ -758,7 +800,7 @@ export function LineageMap() {
               })}
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
-            {shown.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} />; })}
+            {shown.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} todo />; })}
             {/* P153 r11: Alt+카드 끌기 때 놓을 자리(하위로·동료로·독립). 끄는 동안 DOM에 바로 쓴다 */}
             <div className="mt-sm-drop" data-role="ln-drop" hidden><span className="lb" /></div>
           </div>
@@ -767,6 +809,7 @@ export function LineageMap() {
       </div>
 
       {pv && lay && lay.cards.get(pv.id) && (() => { const b = lay.cards.get(pv.id), row = lay.rows.find((r) => r.key === b.ws), band = row && lay.bands.find((x) => (x.id || null) === (row.band || null)); return <Peek pv={pv} b={b} f={factsOf(pv.id)} live={liveOf(b.node)} tier={tiers.get(pv.id)} t={t} now={now} folder={[band && band.name, row && row.name].filter(Boolean).join(' / ')} />; })()}
+      {todo && lay && lay.cards.get(todo.id) ? <TodoPop key={todo.sid} sessionId={todo.sid} name={todo.name} popRef={popRef} onPlace={() => placeRef.current && placeRef.current()} onClose={() => setTodo(null)} /> : null}
       <div className="mt-ta-hud mt-sm-top" data-role="ta-top">
         <span className="mt-ta-title">{t('mission.title')}</span>
         <span className="mt-ta-attn" data-role="ta-attn">

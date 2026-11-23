@@ -234,7 +234,7 @@ function CheckBody({ d, t, busy, setBusy, timing = null }) {
   );
 }
 
-function DecisionRow({ d, onGo, now, t }) {
+export function DecisionRow({ d, onGo, now, t }) { // P331: 세션 맵 미니 창(MapTodo.jsx)도 같은 카드를 쓴다
   const [busy, setBusy] = useState(false);
   const [timing, setTiming] = useState(null); // P295: 사람이 바꾼 보내는 때(답할 때 넘긴다)
   const act = actionOf(d);
@@ -345,13 +345,13 @@ export function DecisionPill() {
 }
 
 // 세션 카드·세션 맵 카드의 작은 표식(지금 목록에 카드가 있을 때만, 종류 구별 없이 센다)
-export function DecisionMark({ sessionId, className = 'mt-dc-mark' }) {
+export function DecisionMark({ sessionId, className = 'mt-dc-mark', rideOnly = false }) { // P331: rideOnly = 세션 맵 카드(수는 왼쪽 위 배지 MapTodo.jsx TodoBadge가 보인다)
   const t = useT();
   const n = useStore((st) => { let k = 0; for (const d of st.decisions) if (d.sessionId === sessionId && !d.deferred) k++; return k; }) + useStore((st) => planCountFor([...st.plans.values()], sessionId)); // P306: 관리하는 레인의 사용자 항목
   const auto = useStore((st) => allAuto(activeCards(st.decisions), sessionId));
   const ride = useStore((st) => (st.decisionRiding && st.decisionRiding[sessionId]) || 0); // P295
   const rideEl = ride ? <span className={`${className} mt-dc-ride`} data-role="decision-ride" data-count={ride} title={t('riding.markTitle', { n: ride })}>{t('riding.mark', { n: ride })}</span> : null;
-  if (!n) return rideEl;
+  if (!n || rideOnly) return rideEl;
   if (rideEl) return <>{rideEl}<span className={`${className}${auto ? ' auto' : ''}`} data-role="decision-mark" data-count={n} data-auto={auto ? '1' : undefined} title={auto ? t('autoDecisions.markTitle', { n }) : t('userTasks.markTitle', { n })}>{n > 1 ? t('userTasks.markN', { n }) : t('userTasks.mark')}</span></>;
   return <span className={`${className}${auto ? ' auto' : ''}`} data-role="decision-mark" data-count={n} data-auto={auto ? '1' : undefined} title={auto ? t('autoDecisions.markTitle', { n }) : t('userTasks.markTitle', { n })}>{n > 1 ? t('userTasks.markN', { n }) : t('userTasks.mark')}</span>;
 }
