@@ -110,6 +110,7 @@ export class UnitStops {
   add(tr, unit, why, detail = null) {
     if (!unit || !this.b.sessions.has(unit.from)) return false;
     if (unit.from === tr.sessionId) return false; // 자기에게 맡긴 일(자기에게 멈춤을 알리면 끝없이 돈다)
+    if (unit.meta && unit.meta.human) return false; // P321: 사람이 맡긴 병합의 merger 멈춤은 재운 하위에게 알리지 않는다
     if (why !== 'tree_quiet' && this.waited(unit.from, unit.to)) return false;
     const line = stopLine({ child: this.units.nameOf(tr.sessionId), unitId: unit.id, spec: unitTitle(unit), why, detail });
     this.store().addEvent(tr.sessionId, 'unit_stop_seen', { unitId: unit.id, tryId: tr.id, why });

@@ -2928,3 +2928,24 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-agent-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 10px; }
 .mt-agent-name { font-size: 14px; font-weight: 700; color: var(--text); }
 .mt-agent-desc { font-size: 12px; color: var(--dim); line-height: 1.4; }
+
+/* ---------- P321: 빠른 워크트리 세션(QuickWorktree.jsx). 빈 곳 메뉴는 사이드바 메뉴(.mt-sb2-menu)와 같은 생김새, 빠른 창은 레일 이름 칸(.mt-qname)과 같은 판 ---------- */
+.mt-pane-menu .mt-pane-strong { font-weight: 600; }
+.mt-qwt { position: fixed; z-index: 66; width: 330px; box-sizing: border-box; padding: 12px 14px 10px; background: var(--panel); border: 1px solid var(--panel-line-2); border-radius: 10px; box-shadow: var(--panel-shadow); display: grid; gap: 8px; font-size: 12.5px; color: var(--text); }
+.mt-qwt-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.mt-qwt-row { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 8px; margin: 0; }
+.mt-qwt-row.top { align-items: start; }
+.mt-qwt-row > span { color: var(--dim); }
+.mt-qwt-row .mt-set-text, .mt-qwt-row select { width: 100%; box-sizing: border-box; height: 30px; font-size: 12.5px; }
+.mt-qwt-row textarea { width: 100%; box-sizing: border-box; height: 46px; resize: vertical; font-size: 12.5px; font-family: inherit; }
+.mt-qwt-row .mt-set-text.bad { border-color: var(--bad); }
+.mt-qwt-peer { display: flex; align-items: center; gap: 8px; }
+.mt-qwt-peer label { display: flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; }
+.mt-qwt-change { border: 0; background: none; color: var(--dim); font-size: 11.5px; cursor: pointer; padding: 0; }
+.mt-qwt-change:hover { color: var(--text); }
+.mt-qwt-note { font-size: 11px; line-height: 1.45; color: var(--dim); word-break: break-all; }
+.mt-qwt-note.bad { color: var(--bad); }
+.mt-qwt-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.mt-menu-row a[data-action^="rel-"] { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.mt-menu-row a[data-action^="rel-"]:hover { color: var(--accent, var(--text)); }
+.mt-merge-ask { color: var(--ok, #3ecf8e); border-color: color-mix(in srgb, var(--ok, #3ecf8e) 55%, transparent); }

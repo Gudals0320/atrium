@@ -58,6 +58,7 @@ import { registerProgressReader, registerKindProgress, ProgressWatcher } from '.
 import { claudeSubagentProgress } from './claude-subagents.mjs'; // P322: Claude Code 서브에이전트 칩
 import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
+import { WorktreeSessions } from './worktree-session.mjs'; // P321: 빠른 워크트리 세션, 병합 맡기기
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
 import { attachDesktopImport } from './desktop-import.mjs'; // P34: 데스크톱 앱 세션 가져오기
 import { attachUpdater } from './updater.mjs'; // P69: 앱 안 업데이트
@@ -331,6 +332,8 @@ export class Backend {
     await this.worktrees.sync('start').catch((e) => this.log('worktree sync error', e.stack));
     this.features = attachFeatures(this);
     Object.assign(this.api.handlers, this.features.handlers);
+    this.wtSessions = new WorktreeSessions(this); // P321: 빠른 워크트리 세션(session.worktree)과 병합 맡기기(merge.request)
+    Object.assign(this.api.handlers, this.wtSessions.handlers());
     // P269: rig를 걷어 냈다. 옛 판 DB에 남은 역할 세션을 보통 띄우기 값으로 한 번 바꾼다(호출자 'claude'의 승인 방식이 필요해 features 뒤)
     try { retireRigRoles(this); } catch (e) { this.log('old rig roles error', e.stack); }
     // P146: 성능 기록(진단 스위치). 켜면 창이 보낸 요약을 백엔드 로그에 남기고 10분 뒤 저절로 끈다

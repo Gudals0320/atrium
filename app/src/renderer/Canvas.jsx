@@ -24,6 +24,7 @@
 //   상자가 본 저장소 쪽 것이나 다른 상자와 겹치거나, 커진 리포 영역이 다른 영역과 겹치면 놓을 때 되돌린다(regionConflicts). 메모·칸반은 본 저장소 영역에만 속한다
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, Background, BackgroundVariant, useReactFlow, applyNodeChanges } from '@xyflow/react';
+import { QuickLayer, openPaneMenu, openQuickWorktree } from './QuickWorktree.jsx'; // P321: 빈 곳 메뉴, 빠른 워크트리 세션
 import { shiftAreasLocal } from './store.js'; // P27
 import { useStore, getState, setNodeLocal, saveNode, setAttached, setCloseIds, setFocus, markSeen, toast, openDialog, selectWorkspace, noteWorkspace, matesNow, setViewNow, setSelected, setPendingInput, dockOf, loadBoard, setMemoLocal, setKanbanLocal, setConvoLocal, wsName } from './store.js';
 import { commandDraft } from './Thread.jsx'; // P176
@@ -961,15 +962,37 @@ export function Canvas() {
     autoTagFor(node.id);
   }, []);
   const onPaneClick = useCallback((e) => { if (!(e && (e.ctrlKey || e.shiftKey || e.metaKey))) autoTagFor(null); }, []); // P176
+  // P321: 빈 곳 우클릭 메뉴(리포 영역 안이면 워크트리 세션…). 영역 바탕은 영역 노드라 노드 우클릭도 받는다(이름표는 RegionMenu가 먼저 받는다)
+  const paneWs = (x, y) => { const st = getState(); return st.regionAt ? st.regionAt(rf.screenToFlowPosition({ x, y })) : null; };
+  const onPaneContextMenu = useCallback((e) => { e.preventDefault(); openPaneMenu(e.clientX, e.clientY, paneWs(e.clientX, e.clientY)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const onNodeContextMenu = useCallback((e, node) => {
+    if (node.type !== 'region' && node.type !== 'wtarea') return;
+    e.preventDefault();
+    openPaneMenu(e.clientX, e.clientY, node.data.wsKey);
+  }, []);
+  // P321: 리포 영역 위에서 W = 빠른 창(main.jsx onKey가 부른다). 마지막 마우스 자리가 캔버스 안일 때만
+  const mouseAt = useRef(null);
+  useEffect(() => {
+    const st = getState();
+    st.quickWorktreeHere = () => {
+      const m = mouseAt.current;
+      if (!m) return false;
+      const key = paneWs(m.x, m.y);
+      const w = key ? getState().workspaces.find((x) => x.key === key) : null;
+      if (!w || w.kind !== 'repo') return false;
+      return openQuickWorktree(m.x, m.y, key);
+    };
+    return () => { if (getState().quickWorktreeHere) getState().quickWorktreeHere = null; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const onSelectionChange = useCallback(({ nodes: sel }) => setSelected(sel.filter((n) => n.type === 'session').map((n) => n.id)), []);
 
   const defaultViewport = useMemo(() => initialViewport || { x: 40, y: 80, zoom: 0.75 }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="mt-canvas" ref={wrapRef}>
+    <div className="mt-canvas" ref={wrapRef} onMouseMove={(e) => { mouseAt.current = { x: e.clientX, y: e.clientY }; }} onMouseLeave={() => { mouseAt.current = null; }}>
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onConnect={onConnect} connectionRadius={40} connectionMode="loose"
-        onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={onNodeClick} onPaneClick={onPaneClick} onSelectionChange={onSelectionChange}
+        onNodesChange={onNodesChange} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} onNodeClick={onNodeClick} onPaneClick={onPaneClick} onSelectionChange={onSelectionChange} onPaneContextMenu={onPaneContextMenu} onNodeContextMenu={onNodeContextMenu}
         onMove={onMove} onMoveEnd={onMoveEnd}
         defaultViewport={defaultViewport} minZoom={0.05} maxZoom={2}
         deleteKeyCode={null} selectionKeyCode="Shift" multiSelectionKeyCode="Control"
@@ -980,6 +1003,7 @@ export function Canvas() {
         <Background variant={BackgroundVariant.Dots} gap={DOT_GAP} size={3.6} className="mt-dots" />
       </ReactFlow>
       <EmptyHint />
+      <QuickLayer />
     </div>
   );
 }

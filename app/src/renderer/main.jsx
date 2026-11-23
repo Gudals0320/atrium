@@ -161,6 +161,8 @@ function App() {
       if (close) { e.preventDefault(); if (close.one) setKillAsk(close.one); else openDialog({ kind: 'close', ids: close.many }); return; }
       const ren = !e.defaultPrevented && renameKeyTarget(e, getState()); // P66: 사이드바 목록의 F2는 그 줄이 먼저 받는다
       if (ren) { e.preventDefault(); setRenaming(ren, 'node'); return; }
+      // P321: 리포 영역 위에서 W = 빠른 워크트리 세션(마우스가 리포 영역 위일 때만. Canvas.jsx quickWorktreeHere)
+      if ((e.key === 'w' || e.key === 'W') && !e.shiftKey && !e.repeat && !getState().dialog && getState().quickWorktreeHere && getState().quickWorktreeHere()) { e.preventDefault(); return; }
       if (e.key === 'n' || e.key === 'N') {
         // N: 내 차례(그다음 문제)를 차례로. 노드를 옮기지 않고 화면만 간다(BRIEF 4절)
         const id = nextTarget(orderRef.current, getState().focusId);

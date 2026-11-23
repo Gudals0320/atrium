@@ -296,7 +296,7 @@ export class Merger {
     const { mode, answer } = this.modeFor(ws);
     if (mode === 'off' || isMerger) return mergeVerdict({ mode, isMerger });
     const cfg = readMergeConfig(root);
-    const parent = this.b.sessions.get(unit.from) || null;
+    const parent = unit.from !== unit.to ? this.b.sessions.get(unit.from) || null : null; // P321: 사람이 맡긴 병합(from = 그 세션 자신)은 리포의 브랜치
     const target = cfg.config.target || (parent && parent.cwd ? await branchOf(parent.cwd).catch(() => null) : null) || (await branchOf(root).catch(() => null));
     const cwd = workCwd(child); // claude -w 하위는 띄운 폴더(s.cwd)가 아니라 판이 읽은 지금 폴더(s.git.cwd)에서 일한다
     const pcwd = workCwd(parent); // P320: 부모의 작업 트리 뿌리(같으면 같은 워크트리 보조 하위)
@@ -317,7 +317,7 @@ export class Merger {
     const childName = shownName(child) || child.name;
     const meta = { key, ws: plan.ws, root: slash(plan.root), target: plan.target, child: childName, childId: child.sessionId, childKind: child.kind || 'claude', parentId: unit.from,
       worktree: slash(plan.probe.root), branch: plan.probe.branch, tip: plan.probe.tip, dirty: plan.probe.dirty, ahead: plan.probe.ahead, holder: plan.holder ? slash(plan.holder) : null,
-      where: c.where, push: c.push, guide: c.guide, mergerWorktree: mergerWorktreeOf(plan.root, plan.target) };
+      where: c.where, push: c.push, guide: c.guide, mergerWorktree: mergerWorktreeOf(plan.root, plan.target), ...(unit.meta && unit.meta.human ? { human: true } : {}) }; // P321: 사람이 맡긴 병합
     const spec = mergeJobText({ ...meta, parent: this.nameOf(unit.from), configSource: plan.cfg.source, problems: plan.cfg.problems, doneText: text });
     const mu = { id: newId('u'), from: unit.from, to: '', origin: 'merge', spec, status: 'open', createdAt: Date.now(), source: unit.id, meta };
     st.insertUnit(mu);
@@ -633,7 +633,7 @@ export class Merger {
       const parent = b.sessions.get(from) || null;
       const name = merger || units[units.length - 1].meta.merger || (this.rec(key) || {}).name || 'merger';
       let deliveryId = null;
-      if (parent && !parent.closedAt && b.queue) {
+      if (parent && !parent.closedAt && b.queue && !units.every((u) => u.meta && u.meta.human)) { // P321: 사람이 맡긴 병합은 정리 알림을 보내지 않는다(실패는 결정 카드, 합침은 소식)
         const extra = b.docs ? b.docs.doneLines(parent) : []; // P257 문서 규칙 꼬리(한 번)
         const d = b.queue.enqueue(parent.sessionId, mergeSummaryText({ merger: name, units, extra }));
         deliveryId = d ? d.deliveryId : null;
