@@ -478,6 +478,10 @@ export function findListChecks(text, max = 2) {
 export const AUTO_CARDS_MAX = 3;
 export function findAsks(text) {
   const t = typeof text === 'string' ? text : '';
+  const steps = agentSteps(t); // P328: 다른 에이전트·자기가 할 순서는 사람 할 일이 아니다
+  return findAsksRaw(t).filter((c) => !agentCard(c, steps));
+}
+function findAsksRaw(t) {
   let first = findAsk(t);
   const p = findProceed(t);
   if (p) {
@@ -501,4 +505,79 @@ export function mayAsk(text, paras = 3) {
   if (typeof text !== 'string' || !text.trim()) return false;
   const ps = parasOf(text).slice(-paras);
   return ps.some((p) => p.some((l) => ADDRESS.test(noCode(l))));
+}
+
+// ---------- P328: 할 일 카드의 주어는 사람 ----------
+// 행동의 주어가 다른 에이전트(@이름·워커·하위 세션·서브에이전트)나 답을 쓴 에이전트 자신("제가/저는", "I will")인 문장은 카드가 아니다.
+// "…에게 전달했습니다/맡겼습니다", "워커는 … 진행합니다" 뒤의 번호 목록은 그 에이전트의 순서다(사람에게 청하는 말이 든 줄은 빼고).
+// agentSteps(text) → 그런 문장·목록 줄(꾸밈 벗긴 글) 목록. agentCard(card, steps) → 카드의 질문(이나 줄)이 그 글을 옮겨 쓴 것인가.
+// 규칙(findAsks)과 할 일 정리(todo-tidy.mjs parseTidy) 둘 다 이것으로 거른다(작은 모델이 "~합니다"를 "~하세요"로 바꿔 주어가 사람으로 바뀌는 것을 막는다).
+const AGENT_WHO = '(?:@[\\w.\\-]+|워커|작업자|하위\\s?(?:세션|워커|에이전트)|서브\\s?에이전트|에이전트|머저|merger)';
+const KO_AGENT_SUBJ = new RegExp(`^\\s*(?:${AGENT_WHO}\\s?(?:은|는|이|가|께서|도|쪽은|쪽에서)|제가|저는|저도|저희가|저희는|내가|나는)(?=\\s|$)`);
+const EN_AGENT_SUBJ = /^\s*(?:@[\w.-]+(?=\s)|the (?:worker|sub-?agent|sub-?session|agent|merger)|I|I'll|I will|I'm going to|we'll|we will)\b/i;
+const KO_DELEGATE = new RegExp(`${AGENT_WHO}\\s?(?:에게|한테|께|에)\\s?[^.!?]{0,80}?(?:전달|맡기|맡겼|보냈|보냄|시켰|넘겼|요청했|지시했|부탁했|알렸)`);
+const EN_DELEGATE = /\b(?:asked|told|handed|delegated|sent|assigned|instructed|passed)\b[^.!?]{0,60}?(?:@[\w.-]+|the (?:worker|sub-?agent|sub-?session|agent))|(?:^|\s)(?:@[\w.-]+|the (?:worker|sub-?agent|sub-?session)) (?:will|is going to|now)\b/i;
+const HUMAN_ASK = /(주세요|주십시오|주시면|주시겠어요|주실래요|하세요|하십시오|보세요|\bplease\b|\byou (?:need|should|can|must|'ll need)\b|\blet me know\b)/i;
+const stripItem = (l) => plain(String(l).replace(/^\s*(\d{1,2}[.)]|[-*+])\s+/, '')).replace(/\s+/g, ' ').trim();
+// 한 문장(목록 머리 없이)의 주어가 에이전트인가(사람에게 청하는 말이 들었으면 아니다)
+// 주어 바로 뒤 낱말이 꾸미는 꼴(받침 ㄴ·"던")이면 에이전트는 주어가 아니라 꾸밈이다("워커가 열어 둔 창에서 …을 엽니다", "워커가 고친 것을 …")
+const JONG_N = (ch) => { const c = (ch || '').charCodeAt(0) - 0xac00; return c >= 0 && c < 11172 && c % 28 === 4; };
+function modifies(s, m) {
+  const words = s.slice(m[0].length).trim().split(/\s+/);
+  for (const w of words.slice(0, 2)) { const x = w.replace(/[^가-힣]+$/, ''); if (x && (JONG_N(x.slice(-1)) || /던$/.test(x))) return true; }
+  return false;
+}
+export function isAgentSentence(sentence) {
+  const s = noCode(stripItem(sentence ?? '')).trim();
+  if (!s || HUMAN_ASK.test(s) || /[?？]\s*$/.test(s)) return false;
+  const ko = s.match(KO_AGENT_SUBJ);
+  if (ko) return !modifies(s, ko);
+  return EN_AGENT_SUBJ.test(s);
+}
+// 사람 몫을 여는 머리("해 주실 것", "직접 눌러 주셔야 합니다", "Your part:") 뒤의 목록은 "~합니다"로 써도 사람 몫이다
+const AGENT_HEAD = /^(제가\s?(할|이어서\s?할)\s?(것|일)|제\s?몫|다음에\s?제가\s?할\s?(것|일)|my (part|next steps)|what i'll do|next,? i'll)\s*[:：]?$/i;
+const HUMAN_HEAD = /(해\s?주실|주셔야|주실\s?것|하실\s?것|하실\s?일|사용자\s?몫|직접\s?(하|눌러|해)|\byour (turn|part|steps|to-?do)\b|\bfor you\b|\byou(?:'ll)? need to\b)/i;
+export function agentSteps(text) {
+  if (typeof text !== 'string' || !text.trim()) return [];
+  const out = [];
+  let lead = false; // 앞 글이 일을 다른 에이전트에게 넘겼다(그 뒤 목록은 그 에이전트의 순서)
+  let human = false; // 앞 글이 사람 몫을 열었다(그 뒤 목록은 사람의 순서)
+  for (const p of parasOf(text)) {
+    for (const l of p) {
+      if (isItem(l) && !BOLD_HEAD.test(l)) {
+        const body = stripItem(l);
+        if (human) continue;
+        if (lead && !HUMAN_ASK.test(noCode(body))) { out.push(body); continue; }
+        for (const s of sentences(body)) if (isAgentSentence(s)) out.push(s);
+        continue;
+      }
+      const body = stripItem(l);
+      if (AGENT_HEAD.test(noCode(body).trim())) { lead = true; human = false; continue; } // "제가 할 것" 머리 뒤 목록은 그 에이전트의 순서
+      const ss = sentences(body);
+      for (const s of ss) if (isAgentSentence(s)) out.push(s);
+      const last = noCode(ss[ss.length - 1] || '');
+      const handed = KO_DELEGATE.test(noCode(body)) || EN_DELEGATE.test(noCode(body));
+      human = HUMAN_HEAD.test(noCode(body));
+      lead = !HUMAN_ASK.test(last) && (handed && (ss.length === 1 || isAgentSentence(last) || /[:：]\s*$/.test(last) || KO_DELEGATE.test(last) || EN_DELEGATE.test(last)) || isAgentSentence(last) && /[:：]\s*$|(순서|차례|다음과\s?같이|아래와\s?같이|아래처럼)/.test(last));
+    }
+  }
+  return [...new Set(out)];
+}
+// 글 → 비교용 두 글자 조각(빈칸·문장부호·끝말을 뺀다)
+const ENDINGS = /(합니다|됩니다|습니다|하세요|하십시오|해\s?주세요|주세요|하기|해요|한다|하고|하면|입니다|세요)(?=\s|[.,!?]|$)/g;
+function grams(s) {
+  const t = String(s ?? '').toLowerCase().replace(ENDINGS, ' ').replace(/[^0-9a-z가-힣]+/g, '');
+  const g = new Set(); for (let i = 0; i + 1 < t.length; i++) g.add(t.slice(i, i + 2));
+  return g;
+}
+export const AGENT_MATCH = 0.6; // 카드 질문의 두 글자 조각 가운데 에이전트 순서 글에서 온 몫이 이만큼이면 옮겨 쓴 것
+export function agentCard(card, steps) {
+  if (!card || !steps || !steps.length) return false;
+  const line = card.line ? stripItem(card.line) : '';
+  if (line && steps.includes(line)) return true;
+  const q = grams(card.question);
+  if (q.size < 4) return false;
+  const pool = new Set(); for (const s of steps) for (const x of grams(s)) pool.add(x);
+  let hit = 0; for (const x of q) if (pool.has(x)) hit++;
+  return hit / q.size >= AGENT_MATCH;
 }

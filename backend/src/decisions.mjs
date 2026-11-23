@@ -560,7 +560,7 @@ export class Decisions {
     if (!tidy || !tidy.on() || !mayAsk(t) || this.autoBlocked(sid, since)) { this.autoAsk(s, t, since); return null; }
     const at = s.rt.lastAnswerAt || 0;
     return tidy.ask(sid, t).then((r) => {
-      const ev = { harness: r.harness || null, model: r.model || null, ms: r.ms ?? null, cards: r.cards ? r.cards.length : null, fallback: r.fallback || null, tokensIn: r.tokensIn ?? null, tokensOut: r.tokensOut ?? null, costUsd: r.costUsd ?? null };
+      const ev = { harness: r.harness || null, model: r.model || null, ms: r.ms ?? null, cards: r.cards ? r.cards.length : null, fallback: r.fallback || null, tokensIn: r.tokensIn ?? null, tokensOut: r.tokensOut ?? null, costUsd: r.costUsd ?? null, ...(r.dropped ? { dropped: r.dropped } : {}) }; // P328: dropped = 사람 몫이 아니라 버린 카드
       // 묻는 사이 세션이 닫혔거나 새 턴이 열렸거나 다른 답이 왔으면 버린다
       const stale = !this.b.sessions.has(sid) || (s.rt.lastAnswerAt || 0) !== at || this.prev.get(sid) === 'working';
       if (!r.skipped) this.b.store.addEvent(sid, 'decision_tidy', { ...ev, stale }); // P316: for-you-report.mjs가 센다(decision%)
