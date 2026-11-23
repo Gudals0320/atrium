@@ -44,7 +44,7 @@ function cleanGitEnv() { return Object.fromEntries(Object.entries(process.env).f
 
 // 설정 → { ok, config, source, note }. 잘못된 설정은 기본값으로 돌고 note에 까닭(점검 결과의 한 줄)
 export function loadDocConfig(root) {
-  const config = { ...DOC_DEFAULTS, budgets: { ...DOC_DEFAULTS.budgets }, growth: { ...DOC_DEFAULTS.growth }, leads: [], off: false };
+  const config = { ...DOC_DEFAULTS, budgets: { ...DOC_DEFAULTS.budgets }, growth: { ...DOC_DEFAULTS.growth }, leads: [], off: false, explicit: false, ownFiles: [] };
   let source = null; let note = null;
   const own = readJson(path.join(root, DOCS_CONFIG));
   let user = null;
@@ -61,12 +61,16 @@ export function loadDocConfig(root) {
   if (user) {
     for (const [k0, v] of Object.entries(user.budgets || {})) {
       const k = k0.startsWith(config.dir + '/') ? k0.slice(config.dir.length + 1) : k0; // 옛 키 "docs/ARCH.md"
-      if (Number.isFinite(v) && v > 0) config.budgets[k] = v;
+      if (Number.isFinite(v) && v > 0) { config.budgets[k] = v; if (!(k in DOC_DEFAULTS.budgets)) config.ownFiles.push(k); }
     }
     if (Number.isFinite(user.total) && user.total > 0) config.total = user.total;
     if (Array.isArray(user.leads)) config.leads = user.leads.map((x) => String(x).replace(/^@/, '')).filter(Boolean);
     if (user.off === true) config.off = true;
     for (const k of ['docsAllow', 'docsDirs', 'rootAllow']) if (Array.isArray(user[k])) config[k] = user[k].map(String);
+    // P334: .atrium/docs.json을 손으로 둔 워크스페이스는 BRIEF·ARCH·PLAN이 없어도 점검한다(off가 아니면). 예산에 적은 파일은 그 저장소의 살아 있는 문서다:
+    //   docsAllow를 따로 주지 않았으면 허락 목록에 더하고 합계에 센다
+    if (source === DOCS_CONFIG) config.explicit = true;
+    if (!Array.isArray(user.docsAllow)) for (const k of config.ownFiles) if (!k.includes('/') && !ROOT_FILES.includes(k) && !config.docsAllow.includes(k)) config.docsAllow = [...config.docsAllow, k];
   }
   return { config, source, note };
 }
@@ -79,11 +83,13 @@ export function docPlace(root, config) {
   return { docsAbs, privateRepo, present };
 }
 
-// 이 워크스페이스에서 점검을 하는가(꺼 두지 않았고 문서가 있다)
+// 점검이 켜졌는가: 꺼 두지 않았고, 살아 있는 문서(BRIEF·ARCH·PLAN)가 있거나 .atrium/docs.json을 손으로 두었다(P334)
+export const activeOf = (config, place) => !config.off && (place.present || !!config.explicit);
+// 이 워크스페이스에서 점검을 하는가
 export function docsOn(root) {
   if (!root) return false;
   const { config } = loadDocConfig(root);
-  return !config.off && docPlace(root, config).present;
+  return activeOf(config, docPlace(root, config));
 }
 
 // git 안의 마크다운 목록(따로 받은 문서 저장소면 그 저장소에서). git이 아니면 폴더를 한 겹만 본다
@@ -122,7 +128,7 @@ export async function checkDocs(root, { config: given = null } = {}) {
   const loaded = given ? { config: given, source: 'given', note: null } : loadDocConfig(root);
   const { config } = loaded;
   const place = docPlace(root, config);
-  const res = { root, on: !config.off && place.present, dir: config.dir, privateRepo: place.privateRepo, source: loaded.source, note: loaded.note, rows: [], total: { chars: 0, budget: config.total, over: false }, problems: [] };
+  const res = { root, on: activeOf(config, place), dir: config.dir, privateRepo: place.privateRepo, source: loaded.source, note: loaded.note, rows: [], total: { chars: 0, budget: config.total, over: false }, problems: [] };
   if (!res.on) return res;
   const P = (code, file, text, short) => res.problems.push({ code, file, text, short });
   const dirRel = (f) => config.dir === '.' ? f : config.dir + '/' + f;
@@ -134,7 +140,7 @@ export async function checkDocs(root, { config: given = null } = {}) {
     const t = readText(abs(f));
     if (t == null) continue;
     const chars = countChars(t);
-    if (ROOT_FILES.includes(f) || LIVE.includes(f)) res.total.chars += chars;
+    if (ROOT_FILES.includes(f) || LIVE.includes(f) || (config.ownFiles || []).includes(f)) res.total.chars += chars; // P334: docs.json 예산에 적은 파일도 합계에
     const over = chars > budget;
     res.rows.push({ file: shown(f), chars, budget, over });
     if (over) P('budget', shown(f), shown(f) + ': ' + fmt(chars) + '자, 예산 ' + fmt(budget) + '자(' + fmt(chars - budget) + '자 넘음)', f + ' ' + fmt(chars) + '자 > ' + fmt(budget));
@@ -148,14 +154,14 @@ export async function checkDocs(root, { config: given = null } = {}) {
     const parts = rel.split('/');
     const inDocs = config.dir === '.' ? parts.length <= 2 : rel.startsWith(config.dir + '/');
     if (config.dir === '.' && parts.length === 1) {
-      if (!config.rootAllow.includes(rel) && !config.docsAllow.includes(rel)) P('shape', rel, '뿌리에 허락하지 않은 마크다운: ' + rel + '. 기록이면 git 밖(.atrium/log/)에 둔다', rel + ' 꼴 밖');
+      if (!config.rootAllow.includes(rel) && !config.docsAllow.includes(rel)) P('shape', rel, '뿌리에 허락하지 않은 마크다운: ' + rel + '. 일 결과(조사·감사·제안·인계)면 git 밖 .atrium/records/에 둔다(atrium done --record)', rel + ' 꼴 밖');
       continue;
     }
-    if (parts.length === 1) { if (!config.rootAllow.includes(rel)) P('shape', rel, '뿌리에 허락하지 않은 마크다운: ' + rel + '. 기록이면 git 밖(.atrium/log/)에 둔다', rel + ' 꼴 밖'); continue; }
+    if (parts.length === 1) { if (!config.rootAllow.includes(rel)) P('shape', rel, '뿌리에 허락하지 않은 마크다운: ' + rel + '. 일 결과(조사·감사·제안·인계)면 git 밖 .atrium/records/에 둔다(atrium done --record)', rel + ' 꼴 밖'); continue; }
     if (!inDocs) continue;
     const sub = config.dir === '.' ? parts : rel.slice(config.dir.length + 1).split('/');
-    if (sub.length === 1) { if (!config.docsAllow.includes(sub[0])) P('shape', rel, dirRel('') + ' 바로 아래에 허락하지 않은 문서: ' + rel + '. 문서는 ' + config.docsAllow.join(', ') + '뿐이다(기록은 git 밖)', rel + ' 꼴 밖'); }
-    else if (!config.docsDirs.includes(sub[0])) P('shape', rel, dirRel('') + ' 아래에 허락하지 않은 폴더: ' + dirRel(sub[0]) + '/ (' + rel + '). 폴더는 ' + config.docsDirs.join(', ') + '뿐이다', dirRel(sub[0]) + '/ 꼴 밖');
+    if (sub.length === 1) { if (!config.docsAllow.includes(sub[0])) P('shape', rel, dirRel('') + ' 바로 아래에 허락하지 않은 문서: ' + rel + '. 문서는 ' + config.docsAllow.join(', ') + '뿐이다(일 결과면 git 밖 .atrium/records/로, atrium done --record)', rel + ' 꼴 밖'); }
+    else if (!config.docsDirs.includes(sub[0])) P('shape', rel, dirRel('') + ' 아래에 허락하지 않은 폴더: ' + dirRel(sub[0]) + '/ (' + rel + '). 폴더는 ' + config.docsDirs.join(', ') + '뿐이다(일 결과면 .atrium/records/로)', dirRel(sub[0]) + '/ 꼴 밖');
   }
 
   // 3·4. PLAN의 세 절과 끝남 표시
@@ -193,13 +199,17 @@ export const problemSig = (res) => (res && res.problems && res.problems.length ?
 
 // 한 줄 경고(막지 않는다). 앞의 둘만 보이고 나머지는 수
 export const WARN_MAX = 300;
+export const SHAPE_TAIL = '. 일 결과면 `.atrium/records/`로(atrium done --record)';
 export function warnLine(res) {
   if (!res || !res.problems || !res.problems.length) return null;
   const ps = res.problems;
   const head = ps.slice(0, 2).map((p) => p.short).join('; ');
   const more = ps.length > 2 ? ' 외 ' + (ps.length - 2) + '개' : '';
-  const line = '[Atrium 보드] 문서 점검(막지 않는다): ' + head + more + '. 자세히: atrium docs';
-  return line.length > WARN_MAX ? line.slice(0, WARN_MAX - 1) + '…' : line;
+  // P334: 허락 밖 파일이 있으면 "일 결과면 .atrium/records/로"를 더한다(잘려도 이 꼬리는 남게)
+  const tail = ps.some((p) => p.code === 'shape') ? SHAPE_TAIL : '';
+  let line = '[Atrium 보드] 문서 점검(막지 않는다): ' + head + more + '. 자세히: atrium docs';
+  if (line.length + tail.length > WARN_MAX) line = line.slice(0, WARN_MAX - tail.length - 1) + '…';
+  return line + tail;
 }
 
 // 판이 싣는 짧은 규칙. done 알림에 붙는다(지휘 세션이 처음 받는 done에는 RULES, 그 뒤로는 한 줄)

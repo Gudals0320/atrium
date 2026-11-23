@@ -37,6 +37,7 @@
 // 9(P296): 자체 오케스트레이션 세션(런처 칸 orchestrates)은 허용 동사만 가진다. 허용되지 않은 동사는 보드가 not_permitted(종료 코드 1, error.allowed·error.reason)로
 //   거절하고, help(사람 글·--json)는 그 세션의 허용 동사만 보인다(--json의 allowed·orchestrates·scope 칸). 세션마다 쓸 수 있는 동사가 달라지는 새 약속이라 올렸다
 // P295: ask·todo의 --no-wait·--wait(보내는 때)와 카드의 timing 칸을 더했다(더하기만이라 올리지 않는다)
+// P334: done --record(일 기록 파일, 응답의 records 칸 { dir, files }, items의 records 칸)를 더했다(더하기만이라 9 그대로)
 // P304: plan 동사(리포별 목표·마일스톤 레인: 레인마다 관리자, 관리자 아닌 쓰기는 막지 않고 표시)와 me의 plans 칸을 더했다(더하기만이라 9 그대로)
 export const CONTRACT_VERSION = 9;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
@@ -77,7 +78,7 @@ export const VERBS = [
   { name: 'wake', args: ['<이름>', '[--json]'], does: '잠든 세션을 깨운다(같은 대화로 이어 간다). atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만', out: ['name', 'woke', 'state', 'next'] },
   { name: 'models', args: ['[--json]'], does: '띄울 수 있는 런처·모델과 각각을 띄우는 atrium child 명령', out: ['entries', 'gateways', 'parent'] },
   // P180: 일 단위. 첫 요청 앞에 "[Atrium 보드] … 맡긴 일 u…" 머리가 붙은 일을 받은 세션이 끝을 알린다
-  { name: 'done', args: ['ok|failed', '"<보고>"', '[--file 경로]', '[--json]'], does: '보드가 맡긴 지금 일을 닫는다(ok 끝냈다, failed 못 했다). 값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 기다리는 중이면 그 기다림이 받는다). 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1', out: ['unit', 'result', 'parent', 'claimedBy', 'next', 'queued'] },
+  { name: 'done', args: ['ok|failed', '"<보고>"', '[--file 경로]', '[--record 파일]…', '[--json]'], does: '보드가 맡긴 지금 일을 닫는다(ok 끝냈다, failed 못 했다). 값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 기다리는 중이면 그 기다림이 받는다). 닫은 뒤 쉰다. 열린 일이 없으면 종료 코드 1. --record: 일의 결과 파일(조사·감사·제안·측정·인계)을 커밋하지 않고 붙인다(보드가 주 체크아웃의 .atrium/records/로 복사하고 보고에 경로를 붙인다. 저장소 안 파일만, 파일 2MB·20개까지)', out: ['unit', 'result', 'parent', 'claimedBy', 'next', 'queued', 'records'] },
   { name: 'item', args: ['[--json]'], does: '너의 지금 일: 맡긴 세션, 할 일, 시작, 뒤에 줄 선 일 수', out: ['item', 'queued'] },
   { name: 'items', args: ['[--json]'], does: '네가 맡긴 일들: 맡은 세션, 상태(open·done·failed·cancelled), 결과와 보고', out: ['items', 'open'] },
   // P182: 자세한 사용법. P267: merger 안내

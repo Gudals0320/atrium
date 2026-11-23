@@ -3162,4 +3162,15 @@ export default {
     next: 'Next to do',
     closeTitle: 'Close (Esc)',
   },
+  // P334: work records (atrium done --record)
+  records: {
+    chip: 'Records {n}',
+    chipTitle: 'Open the {n} record(s) this session left on its last task. Saved in {dir} (outside Git)',
+    title: 'Task records from @{name}',
+    close: 'Close (Esc)',
+    copyPath: 'Copy path',
+    copied: 'Path copied.',
+    binary: 'This is not a text file, so it cannot be shown ({bytes} bytes).',
+    clipped: 'The file is large; only the beginning is shown.',
+  },
 };

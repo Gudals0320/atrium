@@ -14,6 +14,20 @@ import { BOARD_SYSTEM_PROMPT } from './launch.mjs';
 import { HARNESS_PROMPT } from './harness.mjs';
 import { orchPromptLines } from './orchestration.mjs';
 
+// P334: 동사가 아닌 새 안내(안내문에 더한 약속). 판 기록(stamp.news)에 없으면 다음 전달 앞에 한 줄로 한 번 알린다.
+//   news 칸이 없는 판(P334 전의 판이 남긴 기록)은 아무것도 모른다고 본다. 판 기록이 없는 옛 세션(P317 전)은 띄운 때로 어림한다(since)
+export const NEWS_HEAD = '[Atrium 보드] 판 안내가 늘었다:';
+export const BRIEF_NEWS = [
+  { id: 'records', since: Date.parse('2026-11-22T00:00:00+09:00') /* 판 기록이 없는 세션은 P317 전에 떴다: 그 전이면 모른다 */, line: '저장소 문서는 지금 상태만 고친다. 조사·감사·제안·측정·인계 결과는 커밋하지 않고 `atrium done ok "<보고>" --record <파일>`로 붙인다(보드가 .atrium/records/에 둔다). 날짜별 결정 로그는 만들지 않는다' },
+];
+export const NEWS_IDS = BRIEF_NEWS.map((n) => n.id);
+// 그 판이 모르는 새 안내(id 목록)
+export const newNews = (stamp, ids = NEWS_IDS) => { const had = new Set((stamp && stamp.news) || []); return ids.filter((id) => !had.has(id)); };
+export function newsLine(ids) {
+  const list = BRIEF_NEWS.filter((n) => (ids || []).includes(n.id));
+  return list.length ? `${NEWS_HEAD} ${list.map((n) => n.line).join(' / ')}(자세히는 atrium help)` : null;
+}
+
 export const NOTICE_HEAD = '[Atrium 보드] 판 명령이 늘었다:';
 // 알림에 쓰는 동사의 한 줄 뜻(계약의 does는 길다). 없는 동사는 does의 첫 마디
 export const VERB_BRIEF = {
@@ -48,12 +62,12 @@ export function boardPromptOf(s, scope = null) {
 export const promptHash = (text) => crypto.createHash('sha256').update(String(text || '')).digest('hex').slice(0, 12);
 // 지금 판(띄울 때 남기는 값) → { contract, verbs, hash, at, why }
 export function stampOf({ text = '', verbs = VERB_NAMES, at = Date.now(), why = 'launch' } = {}) {
-  return { contract: CONTRACT_VERSION, verbs: [...verbs], hash: promptHash(text), at, why };
+  return { contract: CONTRACT_VERSION, verbs: [...verbs], hash: promptHash(text), at, why, news: [...NEWS_IDS] }; // P334: news
 }
 // 판 기록이 없는 옛 세션: 마지막으로 띄운 때(at)까지 합쳐진 동사만 안다고 본다
 export function assumedStamp(at, verbs = VERB_NAMES) {
   const t = Number(at) || 0;
-  return { contract: null, verbs: verbs.filter((v) => !VERB_SINCE[v] || VERB_SINCE[v] <= t), hash: null, at: t, why: 'assumed' };
+  return { contract: null, verbs: verbs.filter((v) => !VERB_SINCE[v] || VERB_SINCE[v] <= t), hash: null, at: t, why: 'assumed', news: BRIEF_NEWS.filter((n) => n.since <= t).map((n) => n.id) }; // P334
 }
 // 같은 판인가(계약 번호·동사·안내문 해시)
 export function sameStamp(a, b) {
@@ -119,13 +133,14 @@ export class BriefNotices {
     if (sameStamp(old, cur)) return null;
     let perm = null; try { perm = this.permOf(s); } catch {}
     const list = newVerbs(old, { verbs: cur.verbs, allowed: perm && perm.allowed ? perm.allowed : null });
+    const news = newNews(old); // P334: 동사가 아닌 새 안내
     const prev = s.briefStamp || null;
-    this.save(s, list.length ? cur : { ...cur, why: 'quiet' });
-    if (!list.length) { try { this.b.store.addEvent(s.sessionId, 'brief_stamp', { why: 'quiet', contract: cur.contract, hash: cur.hash }); } catch {} return null; }
+    this.save(s, list.length || news.length ? cur : { ...cur, why: 'quiet' });
+    if (!list.length && !news.length) { try { this.b.store.addEvent(s.sessionId, 'brief_stamp', { why: 'quiet', contract: cur.contract, hash: cur.hash }); } catch {} return null; }
     if (deliveryId) this.rides.set(deliveryId, { sessionId, prev, cur: s.briefStamp });
-    try { this.b.store.addEvent(s.sessionId, 'verbs_notice', { deliveryId, verbs: list, contract: cur.contract, from: old.contract ?? null, assumed: old.why === 'assumed' }); } catch {}
-    this.b.log && this.b.log(`verbs notice ${s.name} ${deliveryId || ''}: ${list.join(', ')}`);
-    return noticeLine(list, VERBS);
+    try { this.b.store.addEvent(s.sessionId, 'verbs_notice', { deliveryId, verbs: list, ...(news.length ? { news } : {}), contract: cur.contract, from: old.contract ?? null, assumed: old.why === 'assumed' }); } catch {}
+    this.b.log && this.b.log(`verbs notice ${s.name} ${deliveryId || ''}: ${[...list, ...news].join(', ')}`);
+    return [noticeLine(list, VERBS), newsLine(news)].filter(Boolean).join('\n');
   }
   // 알림을 실은 전달이 실패·취소되면 판을 되돌린다(그새 다시 올리지 않았을 때만)
   onDelivery(e) {
