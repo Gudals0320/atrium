@@ -4,19 +4,19 @@ import assert from 'node:assert/strict';
 import { tierFor, textReadable, pickAttached, TIER_TEXT_ZOOM, TIER_KEEP, TEXT_BASE_PX, TEXT_READ_PX } from '../src/renderer/lib/faces.js';
 import { viewSettler, invBand, SETTLE_REST_MS } from '../src/renderer/lib/view-settle.js';
 
-test('읽히는 배율: 머리줄 13px이 화면 6px 아래가 되는 배율부터 틀(P327)', () => {
+test('읽히는 배율: 배율 0.20 아래부터 틀(P327 0.46 → P332 0.20, 머리줄 13px가 화면 2.6px)', () => {
   assert.equal(TEXT_BASE_PX, 13);
-  assert.equal(TEXT_READ_PX, 6);
-  assert.ok(Math.abs(TIER_TEXT_ZOOM - 6 / 13) < 1e-9);
+  assert.ok(Math.abs(TEXT_READ_PX - 2.6) < 1e-9);
+  assert.ok(Math.abs(TIER_TEXT_ZOOM - 0.2) < 1e-9);
   assert.equal(tierFor(1440, null, 1), 'term');
-  assert.equal(tierFor(1440 * 0.47, null, 0.47), 'term');
-  assert.equal(tierFor(1440 * 0.45, null, 0.45), 'frame'); // 노드는 화면 648px이지만 글이 5.85px
-  assert.equal(tierFor(1440 * 0.3, null, 0.3), 'frame');
-  // 이력: 이미 글을 그리던 노드는 경계의 88%까지 남는다
-  assert.equal(tierFor(1440 * 0.42, 'term', 0.42), 'term');
-  assert.equal(tierFor(1440 * 0.42, 'brief', 0.42), 'term'); // 요약에서도 글을 그리던 노드라 남고, 노드 너비로는 터미널 단계
-  assert.equal(tierFor(1440 * 0.4, 'term', 0.4), 'frame');
-  assert.equal(tierFor(1440 * 0.42, 'frame', 0.42), 'frame'); // 틀에서 올라가려면 0.46
+  assert.equal(tierFor(1440 * 0.21, null, 0.21), 'term');
+  assert.equal(tierFor(1440 * 0.19, null, 0.19), 'frame'); // 노드는 화면 274px(터미널 단계 너비)이지만 배율이 경계 아래
+  assert.equal(tierFor(1440 * 0.1, null, 0.1), 'frame');
+  // 이력: 이미 글을 그리던 노드는 경계의 88%(0.176)까지 남는다
+  assert.equal(tierFor(1440 * 0.18, 'term', 0.18), 'term');
+  assert.equal(tierFor(1440 * 0.18, 'brief', 0.18), 'term'); // 요약에서도 글을 그리던 노드라 남고, 노드 너비(259px)로는 터미널 단계
+  assert.equal(tierFor(1440 * 0.17, 'term', 0.17), 'frame');
+  assert.equal(tierFor(1440 * 0.18, 'frame', 0.18), 'frame'); // 틀에서 올라가려면 0.20
   // zoom을 주지 않으면 예전(노드 화면 너비만)
   assert.equal(tierFor(1440 * 0.3), 'term');
   assert.equal(textReadable(undefined), true);
@@ -28,10 +28,10 @@ test('pickAttached(textZoom): 글이 읽히지 않는 배율이면 붙이지 않
   const screen = { width: 1600, height: 900 };
   const tz = { textZoom: true };
   assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.8 }, screen, tz), ['a']);
-  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.4 }, screen, tz), []);
-  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.4 }, screen), ['a']);
-  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.43 }, screen, { ...tz, prev: new Set(['a']) }), ['a']); // 붙은 노드는 여유
-  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.43 }, screen, tz), []); // 새로 붙으려면 0.46
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.19 }, screen, tz), []);
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.19 }, screen), ['a']);
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.18 }, screen, { ...tz, prev: new Set(['a']) }), ['a']); // 붙은 노드는 여유
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.18 }, screen, tz), []); // 새로 붙으려면 0.20
 });
 
 function clock() {

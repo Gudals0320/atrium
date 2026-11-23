@@ -39,9 +39,11 @@ export const TIER_KEEP = 0.88;
 //   글을 그리지 않고 틀(로고) 얼굴로 가린다. 경계 여유는 다른 단계와 같다. zoom을 주지 않으면 이 조건은 보지 않는다(예전 호출)
 // P327: 작은 글씨도 읽힌다는 사용자 피드백으로 8px → 6px(경계 0.615 → 0.46, 여유 0.54 → 0.41). 요약 15px는 그 배율에서 화면 약 7px.
 //   영역·워크트리·묶음 이름표의 큰 이름 전환(Canvas.jsx data-text)과 판의 터미널 붙이기(pickAttached textZoom)도 이 경계를 따른다
+// P332: 사용자 요청으로 가려지는 배율을 20%까지 낮춘다(경계 0.46 → 0.20, 여유 0.41 → 0.176). 머리줄 13px는 경계에서 화면 2.6px라
+//   글자로 읽히기보다 줄 모양·색으로 보인다. 경계를 배율로 정하고 그때의 화면 글자 크기(TEXT_READ_PX)는 거기서 센다
 export const TEXT_BASE_PX = 13;
-export const TEXT_READ_PX = 6;
-export const TIER_TEXT_ZOOM = TEXT_READ_PX / TEXT_BASE_PX;
+export const TIER_TEXT_ZOOM = 0.2;
+export const TEXT_READ_PX = TEXT_BASE_PX * TIER_TEXT_ZOOM;
 export const textReadable = (zoom, prev = null) => !(zoom >= 0) || zoom >= TIER_TEXT_ZOOM || (!!prev && prev !== 'frame' && zoom >= TIER_TEXT_ZOOM * TIER_KEEP);
 export function tierFor(px, prev = null, zoom = undefined) {
   if (!(px >= 0)) px = 0;
