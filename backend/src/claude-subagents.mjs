@@ -1,7 +1,9 @@
 // P322: Claude Code 세션의 이번 턴 서브에이전트(Task·Agent) 진행(읽기 전용). 판 세션 카드에 P300 칩과 같은 꼴로 보인다.
 // 대화 기록 옆 <세션 ID>/subagents/agent-<id>.jsonl(갈래 하나)과 agent-<id>.meta.json(설명, 끝 표시)을 읽기만 한다(convos.mjs subagentDir와 같은 자리).
 // - 이름: meta.json description, 없으면 첫 사용자 글 첫 줄. 중첩된 갈래(meta.parentAgentId)는 이름 앞에 ↳
-// - 시작: 첫 줄 timestamp(없으면 파일 만든 때). 이번 턴(UserPromptSubmit 이후, TURN_SLACK_MS 앞까지)에 시작한 갈래만 센다
+// - 시작: 첫 줄 timestamp(없으면 파일 만든 때). 이번 턴(UserPromptSubmit 이후, TURN_SLACK_MS 앞까지)에 시작했거나, 아직 돌거나, 이번 턴에 끝난 갈래를 센다.
+//   백그라운드 서브에이전트는 부모 턴이 끝난 뒤에도 돌고, 끝날 때 알림이 새 턴(UserPromptSubmit)을 연다. 그래도 같은 묶음으로 남게 열쇠는 가장 이른 갈래의 시작이다.
+//   지난 턴에 시작해 STALE_MS 넘게 기록이 그대로인 갈래(끝 표시 없이 꺼진 세션 등)는 뺀다
 // - 끝: meta.finished, 판이 받은 SubagentStop hook(agent_id), 또는 마지막 assistant 줄이 end_turn이고 QUIET_MS 넘게 그대로. meta.stoppedByUser는 취소
 // - 가볍게: 갈래마다 시작·이름은 한 번만 읽어 두고(캐시), 끝난 갈래는 다시 읽지 않는다. 판이 세션이 일하는 동안만 부른다(inner-progress.mjs)
 // 다른 하네스(다음 조각 Codex)는 같은 진행 꼴을 돌려주는 읽개를 registerKindProgress(종류, 읽개)로 꽂는다
@@ -11,6 +13,7 @@ import { subagentDir } from './convos.mjs';
 
 export const SUB_QUIET_MS = 10000;
 export const TURN_SLACK_MS = 2000;
+export const SUB_STALE_MS = 60 * 60000;
 const HEAD_BYTES = 256 * 1024;
 const TAIL_BYTES = 64 * 1024;
 
@@ -45,23 +48,23 @@ export function tailOf(text) {
 }
 
 // 갈래 목록 → 진행 | null. o: { transcript, turnStartedAt, now, stops(Set agent id), cache(Map), fsx }
-export function claudeSubagentProgress({ transcript, turnStartedAt = 0, now = Date.now(), stops = null, cache = new Map(), fsx = fs, quietMs = SUB_QUIET_MS } = {}) {
+export function claudeSubagentProgress({ transcript, turnStartedAt = 0, now = Date.now(), stops = null, cache = new Map(), fsx = fs, quietMs = SUB_QUIET_MS, staleMs = SUB_STALE_MS } = {}) {
   if (!transcript) return null;
   const dir = subagentDir(transcript);
   let names; try { names = fsx.readdirSync(dir).filter((f) => /^agent-.+\.jsonl$/.test(f)); } catch { return null; }
   const from = (turnStartedAt || 0) - TURN_SLACK_MS;
-  const items = [];
+  const items = [], all = [];
   for (const f of names) {
     const id = f.slice(6, -6);
     const file = path.join(dir, f);
     let st; try { st = fsx.statSync(file); } catch { continue; }
+    if (st.mtimeMs < from && now - st.mtimeMs > staleMs) continue; // 지난 턴에 끝났거나 오래 멈춘 갈래(읽지 않는다)
     let c = cache.get(file);
     if (!c) {
       const h = headOf(readSlice(fsx, file, 0, Math.min(HEAD_BYTES, st.size)));
       c = { id, startedAt: h.startedAt || Math.round(st.birthtimeMs || st.mtimeMs), prompt: h.prompt, state: 'running', endedAt: null, name: null, depth: 1 };
       cache.set(file, c);
     }
-    if (c.startedAt < from) continue; // 지난 턴의 갈래
     if (c.state === 'running') {
       let meta = {}; try { meta = JSON.parse(fsx.readFileSync(path.join(dir, `agent-${id}.meta.json`), 'utf8')) || {}; } catch {}
       c.name = clip((typeof meta.description === 'string' && meta.description) || String(c.prompt || '').split('\n')[0] || id, 120);
@@ -74,12 +77,18 @@ export function claudeSubagentProgress({ transcript, turnStartedAt = 0, now = Da
         if (t.ended || t.hookStop) { c.state = 'done'; c.endedAt = t.lastAt || mt; }
       }
     }
-    items.push({ name: (c.depth > 1 ? '↳ ' : '') + (c.name || id), state: c.state, startedAt: c.startedAt, endedAt: c.endedAt, id });
+    all.push(c);
   }
+  // 묶음: 이번 턴에 시작했거나, 아직 돌거나, 이번 턴에 끝난 갈래(핵심) 가운데 가장 이른 시작 이후에 시작한 갈래 모두.
+  // 끝 알림 턴이 여러 번 열려도 앞서 끝난 형제 갈래가 빠지지 않는다
+  const core = all.filter((c) => c.startedAt >= from || c.state === 'running' || c.endedAt >= from);
+  if (!core.length) return null;
+  const groupFrom = Math.min(...core.map((c) => c.startedAt)) - TURN_SLACK_MS;
+  for (const c of all) if (c.startedAt >= groupFrom) items.push({ name: (c.depth > 1 ? '↳ ' : '') + (c.name || c.id), state: c.state, startedAt: c.startedAt, endedAt: c.endedAt });
   if (cache.size > 400) for (const k of [...cache.keys()].slice(0, 200)) cache.delete(k);
   if (!items.length) return null;
   items.sort((a, b) => a.startedAt - b.startedAt);
   const running = items.filter((x) => x.state === 'running').length;
-  return { kind: 'subagents', key: `sub:${turnStartedAt || items[0].startedAt}`, label: null, done: items.length - running, total: items.length, running, failed: 0, finished: running === 0,
-    items: items.map(({ id, ...x }) => x), updatedAt: now };
+  return { kind: 'subagents', key: `sub:${items[0].startedAt}`, label: null, done: items.length - running, total: items.length, running, failed: 0, finished: running === 0,
+    items, updatedAt: now };
 }
