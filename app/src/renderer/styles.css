@@ -3155,6 +3155,11 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-node-head { font-size: calc(13px * var(--lbl, 1)); }
 .mt-node.face-close .mt-node-head { position: relative; z-index: 3; margin-bottom: calc(27.95px - 2.15em); }
 
+/* P340: 위 알약 중 바탕이 비치던 것(할 일의 옅은 청록·0일 때 바탕 없음, DEV 배지의 옅은 파랑)은 캔버스 색 위에 깐다.
+   빈 캔버스 위에서는 생김새가 그대로이고, 노드·터미널이 밑에 와도 글이 섞이지 않는다. 나머지 알약은 이미 불투명(--chrome-bg) */
+.mt-cp.decision { background: linear-gradient(var(--teal-bg), var(--teal-bg)), var(--canvas); }
+.mt-cp.decision.quiet { background: var(--canvas); }
+.mt-dev-badge { background: linear-gradient(var(--info-bg), var(--info-bg)), var(--canvas); }
 /* ---------- P341: 폭주 감시 배지(Guard.jsx GuardBadge)·폭주 할 일 카드 몸통·메모리 알약 줄 강조. 의심(쉬는데 많이 씀)은 빨강 쪽, 무거움(일하는 중·셸)은 노랑 쪽, 멈춤은 하늘색 ---------- */
 .mt-guard-badge { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 1.45em; padding: 0 .5em 0 .4em; border-radius: .8em; font: 700 .8em/1.45em var(--font-mono); white-space: nowrap; background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(226, 178, 76, .45); }
 .mt-guard-badge > i { width: .5em; height: .5em; border-radius: 50%; background: currentColor; flex: none; }
