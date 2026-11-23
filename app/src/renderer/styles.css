@@ -3154,3 +3154,9 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
    터미널 얼굴의 머리줄은 커진 만큼 터미널 칸 위에 겹쳐(아래 여백을 음수로) 터미널 칸 크기(칸·줄 수)가 배율 따라 바뀌지 않게 한다 ---------- */
 .mt-node-head { font-size: calc(13px * var(--lbl, 1)); }
 .mt-node.face-close .mt-node-head { position: relative; z-index: 3; margin-bottom: calc(27.95px - 2.15em); }
+
+/* P340: 위 알약 중 바탕이 비치던 것(할 일의 옅은 청록·0일 때 바탕 없음, DEV 배지의 옅은 파랑)은 캔버스 색 위에 깐다.
+   빈 캔버스 위에서는 생김새가 그대로이고, 노드·터미널이 밑에 와도 글이 섞이지 않는다. 나머지 알약은 이미 불투명(--chrome-bg) */
+.mt-cp.decision { background: linear-gradient(var(--teal-bg), var(--teal-bg)), var(--canvas); }
+.mt-cp.decision.quiet { background: var(--canvas); }
+.mt-dev-badge { background: linear-gradient(var(--info-bg), var(--info-bg)), var(--canvas); }
