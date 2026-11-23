@@ -11,6 +11,17 @@ export const PROGRESS_POLL_MS = 3000;
 export const PROGRESS_READERS = new Map();
 export function registerProgressReader(name, fn) { PROGRESS_READERS.set(String(name), fn); return () => PROGRESS_READERS.delete(String(name)); }
 // busy 칸의 읽개 가운데 꽂힌 것이 있는가
+// P322: 오케스트레이션이 아닌 보통 세션도 종류별 진행 읽개를 꽂는다(claude: 서브에이전트 'claude-subagents', 다음 조각 Codex도 같은 자리).
+// 오케스트레이션 세션은 busy 칸의 읽개를 그대로 쓴다
+export const KIND_PROGRESS = new Map();
+export function registerKindProgress(kind, reader) { KIND_PROGRESS.set(String(kind), String(reader)); return () => KIND_PROGRESS.delete(String(kind)); }
+// 세션 → 읽을 읽개 칸([{ reader }])
+export function progressReadersOf(s) {
+  if (!s) return [];
+  if (s.orch) return s.orch.on ? s.orch.busy || [] : [];
+  const r = KIND_PROGRESS.get(s.kind || 'claude');
+  return r ? [{ reader: r }] : [];
+}
 export const progressReadable = (busy = []) => (busy || []).some((x) => x && typeof x === 'object' && x.reader && PROGRESS_READERS.has(String(x.reader)));
 // busy 칸의 읽개들 → 첫 진행 | null(읽개가 없거나 모두 실패·없음). 실패는 조용히
 export function readProgress(busy = [], ctx = {}) {
@@ -57,8 +68,8 @@ export class ProgressWatcher {
   stop() { clearInterval(this.timer); this.timer = null; }
   busy(s) { const sl = this.b.sleeper; return !!(sl && sl.innerBusy && sl.innerBusy(s)); }
   wants(s) {
-    if (!s || !s.orch || !s.orch.on || !s.paneId || (s.rt && s.rt.sleep) || (s.kind || 'claude') === 'shell') return false;
-    return progressReadable(s.orch.busy);
+    if (!s || !s.paneId || (s.rt && s.rt.sleep) || (s.kind || 'claude') === 'shell') return false;
+    return progressReadable(progressReadersOf(s)); // P322: 오케스트레이션 세션은 busy 칸, 보통 세션은 종류별 읽개
   }
   // 한 번 돌기. now: 시험용
   poll(now = Date.now()) {
@@ -72,7 +83,7 @@ export class ProgressWatcher {
         const prev = this.st.get(s.sessionId) || null;
         const working = deriveState(s.rt).state === 'working';
         const open = !!(prev && prev.shown && !prev.shown.finished);
-        const read = working || open || this.busy(s) ? readProgress(s.orch.busy, { session: s, now }) : undefined;
+        const read = working || open || this.busy(s) ? readProgress(progressReadersOf(s), { session: s, now }) : undefined;
         if (read === undefined && !(prev && prev.shown)) continue; // 쉬고 보일 것도 없다: 읽지 않는다
         const next = stepProgress(prev, read, { working });
         this.st.set(s.sessionId, next);
