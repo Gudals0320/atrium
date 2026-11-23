@@ -2988,7 +2988,7 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-canvas[data-band="4"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"]) .mt-region-dot,
 .mt-canvas[data-band="5"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"]) .mt-region-dot,
 .mt-canvas[data-band="6"] .mt-big-label:is([data-fit="0"], [data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"], [data-fit="5"]) .mt-region-dot { display: block; width: calc(8px * var(--inv, 1)); height: calc(8px * var(--inv, 1)); }
-/* 틀 얼굴(SessionNode FrameFace): 종류 로고 + 이름 + 상태 표지 한 줄, 글자 크기는 노드 높이의 1/6(인라인, 판 단위 고정) */
+/* 틀 얼굴(SessionNode FrameFace): 종류 로고 + 이름 + 상태 표지 한 줄, 글자 크기는 노드 높이의 1/8(인라인, 판 단위 고정, P327) */
 .mt-frameface .mt-frame-row { display: flex; align-items: center; gap: .3em; max-width: 92%; min-width: 0; font-weight: 700; line-height: 1.15; color: var(--chrome-text); }
 .mt-frameface .mt-frame-row .mt-kind-icon { width: 1.1em; height: 1.1em; flex: none; }
 .mt-frameface .mt-frame-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
