@@ -28,7 +28,7 @@ import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위
 import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩(작게)
 import { useRowFit } from './lib/row-fit.js'; // P307: 휴대폰 맵 카드 첫 줄에서 이름이 밀려나지 않게
-import { TodoBadge, TodoPop } from './MapTodo.jsx'; // P331: 할 일 배지(왼쪽 위)·그 자리 답하기 미니 창
+import { TodoBadge, TodoPop } from './MapTodo.jsx'; // P331: 할 일 배지·그 자리 답하기 미니 창(P333: 배지는 오른쪽 위 작업 완료 꼬리표와 한 무리)
 import { todoCount, opensTodo, todoPlace } from './lib/map-todo.js';
 import { planCountFor } from './lib/plans.js';
 
@@ -121,7 +121,8 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
 // P157: 카드에는 브라우저 풍선(title)을 달지 않는다. 마우스를 올리면 미리 보기(Peek) 하나만 뜬다(전에는 둘이 함께 떴다). 같은 사실은 aria-label에
 // P293: lite = 휴대폰 맵 가볍게 열림(먼 타일·결정 표식을 그리지 않는다. 멀리 단계에서도 보통 사실을 보인다, phone.css)
-// P331: todo = PC 세션 맵(왼쪽 위 할 일 배지, 이름 옆 할 일 표식 대신). 휴대폰 맵은 그대로
+// P331: todo = PC 세션 맵(할 일 배지, 이름 옆 할 일 표식 대신). 휴대폰 맵은 그대로
+// P333: PC 세션 맵은 할 일 배지와 작업 완료 꼬리표를 오른쪽 위 한 무리(.mt-sm-tags)로 쌓는다: [할 일 n][작업 완료], 하나만 있으면 그것이 맨 오른쪽
 export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, onOpen, onHover, t, unfold = false, onFold = null, lite = false, fit = false, todo = false }) {
   noteMap('cards');
   const rowRef = useRef(null), nameRef = useRef(null);
@@ -138,8 +139,9 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
         {/* P163: 얇은 줄(하위 많은 리드 아래 절전 하위) = 상태 점 + 이름 + 지난 시간 한 줄. 조작은 카드와 같다 */}
         {b.thin ? <span className="mt-sm-thin" data-role="ta-thin"><i /><span className="cname" data-role="ta-name">{n.name}</span>{f.age ? <span className="cago">{f.age}</span> : null}</span> : null}
         {tier === 'work' && <MissionLight role="ta-light" />}
-        {done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
-        {todo && <TodoBadge sessionId={n.sessionId} />}
+        {todo ? (
+          <span className="mt-sm-tags" data-role="map-tags"><TodoBadge sessionId={n.sessionId} />{done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}</span>
+        ) : done && <span className="mt-mm-donetag" data-role="mm-done"><DoneMark />{t('doneMark.tag')}</span>}
         {!b.thin && !lite && <span className="mt-ta-tile" aria-hidden="true"><span className="tn">{n.name}<DecisionMark sessionId={n.sessionId} className="mt-dc-mark map tile" rideOnly={todo} /></span><span className="ts">{b.merger ? <span className="mt-sm-merger-tile" data-role="ta-merger-tile">{t('merger.tag')}</span> : null}{done ? <span className="dim">{f.age || ''}</span> : <><i />{f.stateText}</>}{f.bg ? <span className="mt-bg-tile" data-role="ta-bg-tile"><BgIcon />{f.bg.n}</span> : null}{f.prog ? <span className={`mt-prog-chip tile${f.prog.finished ? ' finished' : ''}${f.prog.failed ? ' failed' : ''}${f.prog.running ? ' running' : ''}`} data-role="ta-progress-tile">{f.prog.short}</span> : null}</span></span>}
         {!b.thin && <span className="mt-ta-full">
           <span className="c1" ref={rowRef}>{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name" ref={nameRef}>{n.name}</span>{lite ? null : <DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" rideOnly={todo} />}{lite ? null : <ManagerChip sessionId={n.sessionId} map />}<span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" />{f.orch ? <span className={`mt-orch-tag map${f.orch.busy ? ' busy' : ''}`} data-role="ta-orch" data-busy={f.orch.busy ? '1' : '0'}>{f.orch.text}</span> : null}</span>

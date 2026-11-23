@@ -97,7 +97,7 @@ async function pc() {
     // 1) 배지
     const bl = await badgeOf(page, 'lead'), bw = await badgeOf(page, 'w1'), bs = await badgeOf(page, 'sh3');
     check('lead 배지 2(수 보임, 제목 "할 일 2")', bl && bl.n === 2 && /2/.test(bl.text) && bl.title === '할 일 2' && bl.aria === '할 일 2', bl);
-    check('배지는 카드 왼쪽 위(작업 완료 꼬리표 자리의 반대)', bl && bl.left < 40 && bl.top < 0, bl);
+    check('배지는 카드 오른쪽 위(P333: 작업 완료 꼬리표와 한 무리)', bl && bl.left > 100 && bl.top < 0, bl);
     check('이름 옆 할 일 표식은 배지로 갈음(PC 맵)', bl && !bl.inlineMark, bl);
     check('w1 배지 1(미룬 카드 뺌, 수 안 보임)', bw && bw.n === 1 && !/\d/.test(bw.text), bw);
     check('sh3 배지 없음', bs === null, bs);

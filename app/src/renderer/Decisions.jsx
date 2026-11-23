@@ -345,7 +345,7 @@ export function DecisionPill() {
 }
 
 // 세션 카드·세션 맵 카드의 작은 표식(지금 목록에 카드가 있을 때만, 종류 구별 없이 센다)
-export function DecisionMark({ sessionId, className = 'mt-dc-mark', rideOnly = false }) { // P331: rideOnly = 세션 맵 카드(수는 왼쪽 위 배지 MapTodo.jsx TodoBadge가 보인다)
+export function DecisionMark({ sessionId, className = 'mt-dc-mark', rideOnly = false }) { // P331: rideOnly = 세션 맵 카드(수는 오른쪽 위 배지 MapTodo.jsx TodoBadge가 보인다)
   const t = useT();
   const n = useStore((st) => { let k = 0; for (const d of st.decisions) if (d.sessionId === sessionId && !d.deferred) k++; return k; }) + useStore((st) => planCountFor([...st.plans.values()], sessionId)); // P306: 관리하는 레인의 사용자 항목
   const auto = useStore((st) => allAuto(activeCards(st.decisions), sessionId));
