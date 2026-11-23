@@ -51,7 +51,7 @@ const formInfo = () => page.evaluate(() => {
   const txt = (s) => [...document.querySelectorAll(s)].map((e) => e.innerText.replace(/\s+/g, ' ').trim());
   return { harness: v('launcher-harness'), model: v('launcher-model'), effort: v('launcher-effort'), perm: v('launcher-permissionMode'), args: v('launcher-args'), start: v('launcher-startCommand'), command: v('launcher-command'),
     hint: txt('[data-role=launcher-contract] li'), overlap: txt('[data-role=launcher-overlap] li'), move: !!document.querySelector('[data-action=launcher-move-args]'), convert: txt('[data-role=launcher-convert-note]'),
-    check: [...document.querySelectorAll('[data-role=launcher-check-result] li')].map((e) => ({ t: e.innerText.trim(), tone: e.dataset.tone })), preview: txt('[data-role=launcher-form-preview]')[0] || '' };
+    permShown: !!document.querySelector('[data-field=launcher-permissionMode]'), pvFull: (() => { const p = document.querySelector('[data-role=launcher-form-preview]'); return p ? p.clientHeight >= p.scrollHeight - 1 && p.getBoundingClientRect().height >= 20 : null; })(), check: [...document.querySelectorAll('[data-role=launcher-check-result] li')].map((e) => ({ t: e.innerText.trim(), tone: e.dataset.tone })), preview: txt('[data-role=launcher-form-preview]')[0] || '' };
 });
 const openEdit = async (id) => {
   await page.click('[data-role=launcher-row][data-launcher="' + id + '"] [data-action=launcher-edit]');
@@ -87,6 +87,7 @@ try {
     await page.click('[data-action=launcher-check]');
     await until(() => page.$('[data-role=launcher-check-result]'), 20000); await sleep(400);
     f = await formInfo();
+    check('[' + lang + '] 점검 뒤 넘치는 틀에서도 미리보기 줄이 다 보인다', f.pvFull === true, { pvFull: f.pvFull });
     check('[' + lang + '] Codex 점검: 판 줄과 판이 붙일 인자(-c, -m, resume, --approve-for-me) 모두 있음', f.check.length >= 5 && f.check.slice(1).every((c) => c.tone === 'ok'), f.check);
     await shot(page, 'codex-after-check-' + lang, await S());
     await cancel();
@@ -113,6 +114,7 @@ try {
       await page.click('[data-action=launcher-convert]'); await sleep(1400);
       f = await formInfo();
       check('[' + lang + '] ' + want[k].name + ' 바꾼 뒤: 하네스 ' + h + (st ? ', 실행 명령 ' + st : ''), f.harness === h && (f.start || '') === st && f.convert.length === 0, { harness: f.harness, start: f.start, preview: f.preview, hint: f.hint });
+      check('[' + lang + '] ' + want[k].name + ' 바꾼 뒤: 승인 인자가 없어 승인 칸이 없다', f.permShown === false, { permShown: f.permShown });
       await shot(page, 'convert-' + k + '-after-' + lang, await S());
       await cancel();
     }

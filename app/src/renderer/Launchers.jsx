@@ -177,6 +177,8 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
     setCkBusy(false);
   };
   const cv = contractView(pv && !pv.error ? pv.contract : null);
+  // P330: 승인 인자가 없는 하네스(실행 명령 omh 등, 계약 hint approvalVia none)는 승인 칸을 숨긴다(dsh처럼)
+  const noApproval = !!(pv && !pv.error && pv.contract && pv.contract.hint && pv.contract.hint.approvalVia === 'none');
   const secrets = secretNames(d.envText);
   const models = harnessModels(harnesses, d.harness);
   const labels = harnessModelLabels(harnesses, d.harness);
@@ -215,7 +217,7 @@ function LauncherForm({ init, harnesses, onDone, focusPaste = false }) {
         {has('effort') && <label className="mt-ln-f"><span>{t('settings.effort')}</span>
           <select data-field="launcher-effort" value={d.effort} onChange={(e) => set('effort', e.target.value)}>{harnessEfforts(harnesses, d.harness).map((o) => <option key={o} value={o}>{o === '' ? t('launcherEffort.harnessDefault', { harness: harnessName(harnesses, d.harness, t) }) : o}</option>)}</select>
         </label>}
-        {has('permissionMode') && <label className="mt-ln-f"><span>{t('settings.permissionMode')}</span>
+        {has('permissionMode') && !noApproval && <label className="mt-ln-f"><span>{t('settings.permissionMode')}</span>
           <select data-field="launcher-permissionMode" value={d.permissionMode || defaultPermission(harnesses, d.harness)} onChange={(e) => set('permissionMode', e.target.value)}>{MODES.map((o) => <option key={o}>{o}</option>)}</select>
         </label>}
         {/* P203: AGY는 권한 생략이 아니면 샌드박스가 atrium을 막는다(승인 칸 아래 한 줄) */}

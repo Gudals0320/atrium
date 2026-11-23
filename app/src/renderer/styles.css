@@ -3016,3 +3016,5 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-ln-check-rows { flex-basis: 100%; margin: 0; padding: 0; list-style: none; font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; line-height: 1.45; }
 .mt-ln-check-rows .ok { color: var(--dim-2); }
 .mt-ln-cflag { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 6px; border-radius: 50%; font-size: 10px; font-weight: 700; background: var(--warn); color: var(--canvas, #111); vertical-align: 1px; }
+/* P330: 틀이 넘칠 때도 명령 미리보기 줄은 줄어들지 않는다(명령줄 전체가 보이게) */
+.mt-ln-form > .mt-ln-preview { flex-shrink: 0; min-height: max-content; } /* 넘치는 그리드에서 overflow:hidden 칸은 0까지 줄어든다 */
