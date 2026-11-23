@@ -70,6 +70,7 @@ try {
     await page.evaluate((x) => { window.__mt.api.emit('usage.updated', x); }, call('usage.get'));
     // 3) 설정 › 일반
     await page.click('[data-action=settings-open]');
+    await page.click('[data-role=settings-tabs] [data-tab=alerts]'); // P338: 알림·사용량 쪽(옛 일반)
     await page.waitForSelector('[data-role=usage-probe-setting]', { timeout: 10000 });
     await page.locator('[data-role=usage-probe-setting]').scrollIntoViewIfNeeded();
     await sleep(300);

@@ -62,8 +62,9 @@ async function pc() {
       await page.screenshot({ path: path.join(OUT, `pc-spawn-${lang}.png`), clip: await clipOf(page, '[data-role=spawn]', 10) });
       await page.keyboard.press('Escape');
       await sleep(300);
-      // 설정 › 일반: 사용량 알림 끄기
+      // 설정 › 알림·사용량(P338, 옛 일반): 사용량 알림 끄기
       await page.click('[data-action=settings-open]');
+      await page.click('[data-role=settings-tabs] [data-tab=alerts]');
       await page.waitForSelector('[data-role=usage-alert-setting]', { timeout: 10000 });
       await page.locator('[data-role=usage-alert-setting]').scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(OUT, `pc-setting-${lang}.png`), clip: await clipOf(page, '[data-role=usage-alert-setting]', 10) });

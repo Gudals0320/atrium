@@ -21,7 +21,8 @@ const boxOf = (page, sel, pad = 8) => page.evaluate(([s, p]) => { const e = docu
 async function openMerger(page) {
   await page.evaluate(() => { const b = document.querySelector('[data-action=settings-open]') || document.querySelector('[data-action=settings-rail]'); if (b) b.click(); else window.__mt.getState().openDialog({ kind: 'settings' }); });
   await page.waitForSelector('[data-role=settings]', { timeout: 10000 });
-  await page.click('[data-role=settings-tabs] [data-tab=agents]');
+  await page.click('[data-role=settings-tabs] [data-tab=bots]'); // P338: 봇 쪽, 승인 방식은 병합 봇의 "▸ 고급"
+  await page.click('[data-bot=merge] [data-action=bot-advanced]');
   await page.waitForSelector('[data-role=merger-permission-setting]', { timeout: 10000 });
 }
 
