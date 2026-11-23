@@ -68,6 +68,8 @@ export async function revOf(cwd, ref) { const out = await git(cwd, ['rev-parse',
 export async function branchOf(cwd) { const out = await git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']); return out ? out.trim() || null : null; }
 // 하위 폴더의 합칠 거리: 워크트리인가, 브랜치, 끝 커밋, 커밋 안 한 변경 수, 합칠 브랜치보다 앞선 커밋 수.
 // → { repo, isWorktree, commonDir, root, branch, tip, dirty, ahead } | null(git이 아님). target이 없으면 ahead는 null
+// P320: 그 폴더의 작업 트리 뿌리(--show-toplevel) → 경로 | null
+export async function worktreeRootOf(cwd) { const rp = cwd ? await revParse(cwd) : null; return rp ? rp.root : null; }
 export async function branchProbe(cwd, target = null) {
   const rp = cwd ? await revParse(cwd) : null;
   if (!rp) return null;

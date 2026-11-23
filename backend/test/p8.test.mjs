@@ -147,7 +147,7 @@ test('K2(P36): 플러그인에 atrium 스킬과 옛 이름 delegate(같은 글),
     assert.match(sh, /^#!\/bin\/sh\n/); assert.match(sh, /exec "C:\/node\/node.exe" "C:\/m\/bin\/atrium-child.mjs" "\$@"/);
     assert.match(fs.readFileSync(path.join(root, 'bin', `${c}.cmd`), 'utf8'), /"C:\\node\\node.exe" "C:\\m\\bin\\atrium-child.mjs" %\*/);
   }
-  assert.match(BOARD_SYSTEM_PROMPT, /atrium:atrium/); assert.doesNotMatch(BOARD_SYSTEM_PROMPT, /herdr/); assert.match(BOARD_SYSTEM_PROMPT, /delegate/); assert.match(BOARD_SYSTEM_PROMPT, /상한은 없다/);
+  assert.match(BOARD_SYSTEM_PROMPT, /atrium:atrium/); assert.doesNotMatch(BOARD_SYSTEM_PROMPT, /herdr/); assert.match(BOARD_SYSTEM_PROMPT, /서브에이전트/); assert.doesNotMatch(BOARD_SYSTEM_PROMPT, /상한은 없다/); // P320(P318 Q1): 상한 문장은 스킬 머리에만
   assert.ok(ATRIUM_ALLOW.includes('Bash(atrium child-wait *)') && ATRIUM_ALLOW.includes('PowerShell(atrium child-wait *)'));
   assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 9); // P284: 결정 카드 한 줄. P21: 잠든 세션 깨우기 한 줄, P81: atrium me 한 줄, P156: 관계 고르기 한 줄
   assert.ok(pl.pluginDir.endsWith('/atrium'));

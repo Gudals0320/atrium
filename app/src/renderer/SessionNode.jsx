@@ -29,7 +29,7 @@ import { enterSession, markInteracted } from './touch.js';
 import { LoopBadge, SessionLoopList } from './Loops.jsx';
 import { BranchBadge } from './Branch.jsx'; // P8(K4): "@lead의 워커 · 2단계"
 import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
-import { orchTag, sessionProgress, progressChip, progressRows } from './lib/orch.js'; // P296: 자체 오케스트레이션 표. P300: 안 진행 칩
+import { orchTag, sessionProgress, progressChip, progressRows, progressPopText } from './lib/orch.js'; // P296: 자체 오케스트레이션 표. P300: 안 진행 칩
 import { createPortal } from 'react-dom'; // P300: 갈래 목록 겉판
 import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩
@@ -199,13 +199,14 @@ function ProgressPop({ p, at, t }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { if (p.finished) return undefined; const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, [p.finished]);
   const c = progressChip(p, t);
+  const pt = progressPopText(p, t); // P322: 서브에이전트는 머리 "서브에이전트 · 이번 턴"과 밑글이 다르다
   return (
-    <div className="mt-prog-pop" data-role="progress-pop" style={{ left: at.x, top: at.y }} role="dialog" aria-label={t('progress.list')}>
-      <div className="pp-head"><b>{t('progress.list')}</b>{p.label ? <span className="pp-label">{p.label}</span> : null}<span className="pp-sum">{c.text}</span></div>
+    <div className="mt-prog-pop" data-role="progress-pop" data-kind={p.kind} style={{ left: at.x, top: at.y }} role="dialog" aria-label={pt.head}>
+      <div className="pp-head"><b>{pt.head}</b>{pt.label ? <span className="pp-label">{pt.label}</span> : null}<span className="pp-sum">{c.text}</span></div>
       <ul className="pp-list">
         {progressRows(p, t, now).map((x, i) => <li key={i} className={`pp-row st-${x.state}`} data-role="progress-row" data-state={x.state}><i /><span className="pp-name" title={x.name}>{x.name}</span><span className="pp-st">{x.stateText}</span><span className="pp-dur">{x.dur}</span></li>)}
       </ul>
-      <div className="pp-note">{t('progress.listNote')}</div>
+      <div className="pp-note">{pt.note}</div>
     </div>
   );
 }

@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { branchProbe, worktreeList, revOf, branchOf, isAncestor } from './git.mjs';
+import { branchProbe, worktreeList, revOf, branchOf, isAncestor, worktreeRootOf } from './git.mjs';
 import { shownName } from './session-label.mjs';
 import { ensureAtriumDir, excludeFileOf } from './doc-check.mjs';
 import { DEFAULTS, PERMISSION_MODES } from './settings.mjs';
@@ -83,14 +83,17 @@ export function mergerNameOf({ wsName, target, taken = new Set() }) {
 export const mergerWorktreeOf = (root, target) => slash(path.join(root, '.atrium', 'merge', slug(target) || 'target'));
 
 // 판정(순수). → { route, why, ask }
-//   why: merger(merger 자신·합치기 일), off, answered_off, not_git, not_worktree, other_repo, detached, no_target, same_branch, no_commits, ask, ok
-export function mergeVerdict({ mode = 'ask', answer = null, probe = null, repoCommonDir = null, target = null, isMerger = false }) {
+//   why: merger(merger 자신·합치기 일), off, answered_off, not_git, not_worktree, other_repo, parent_worktree, detached, no_target, same_branch, no_commits, ask, ok
+//   P320 parent_worktree: 하위의 작업 트리 뿌리가 일을 맡긴 부모의 작업 트리 뿌리와 같다(--worktree 없이 부모 워크트리를 물려받은 보조 하위).
+//     그 브랜치는 부모가 아직 일하는 브랜치라 합치지 않고 보통 done(부모에게 보고)으로 둔다. 부모가 끝날 때 부모의 done이 합친다
+export function mergeVerdict({ mode = 'ask', answer = null, probe = null, repoCommonDir = null, target = null, isMerger = false, parentRoot = null }) {
   const no = (why, extra = {}) => ({ route: false, why, ask: false, ...extra });
   if (isMerger) return no('merger');
   if (mode === 'off') return no('off');
   if (!probe) return no('not_git');
   if (!probe.isWorktree) return no('not_worktree');
   if (repoCommonDir && !same(probe.commonDir, repoCommonDir)) return no('other_repo');
+  if (parentRoot && probe.root && same(probe.root, parentRoot)) return no('parent_worktree');
   if (!probe.branch) return no('detached');
   if (!target) return no('no_target');
   if (probe.branch === target) return no('same_branch');
@@ -296,8 +299,9 @@ export class Merger {
     const parent = unit.from !== unit.to ? this.b.sessions.get(unit.from) || null : null; // P321: 사람이 맡긴 병합(from = 그 세션 자신)은 리포의 브랜치
     const target = cfg.config.target || (parent && parent.cwd ? await branchOf(parent.cwd).catch(() => null) : null) || (await branchOf(root).catch(() => null));
     const cwd = workCwd(child); // claude -w 하위는 띄운 폴더(s.cwd)가 아니라 판이 읽은 지금 폴더(s.git.cwd)에서 일한다
-    const [probe, repoCommonDir] = await Promise.all([cwd ? branchProbe(cwd, target).catch(() => null) : null, this.repoCommonDir(root)]);
-    const v = mergeVerdict({ mode, answer, probe, repoCommonDir, target });
+    const pcwd = workCwd(parent); // P320: 부모의 작업 트리 뿌리(같으면 같은 워크트리 보조 하위)
+    const [probe, repoCommonDir, parentRoot] = await Promise.all([cwd ? branchProbe(cwd, target).catch(() => null) : null, this.repoCommonDir(root), pcwd ? worktreeRootOf(pcwd).catch(() => null) : null]);
+    const v = mergeVerdict({ mode, answer, probe, repoCommonDir, target, parentRoot });
     const out = { ...v, unitId: unit.id, ws, root, target, probe, cfg };
     if (v.ask) this.ask(ws, { child: shownName(child) || child.name, branch: probe.branch, target, root });
     if (!v.route) return out;

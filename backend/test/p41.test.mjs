@@ -286,14 +286,14 @@ test('P41 승인 규칙: atrium models는 묻지 않는다(옛 이름 mtask도)'
   assert.ok(!allowed(ATRIUM_ALLOW, 'Bash', 'atrium launchers'), '판 CLI의 다른 명령은 그대로 묻는다');
 });
 
-test('P41 스킬 글과 짧은 안내: 말로 한 모델은 atrium models로 골라 띄우고, ID를 묻지 않고, 내부 하위 에이전트로 우회하지 않는다', () => {
+test('P41 스킬 글과 짧은 안내: 말로 한 모델은 atrium models로 골라 띄우고, ID를 묻지 않고, 서브에이전트로 갈음하지 않는다', () => {
   const s = boardSkill();
   assert.match(s, /`atrium models`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다/);
   assert.match(s, /정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다/);
-  assert.match(s, /내부 하위 에이전트로 우회하지 않는다/);
+  assert.match(s, /사용자가 말한 모델·워커를 서브에이전트로 갈음하지 않는다/); // P320: 뜻을 좁혔다
   assert.match(s, /모델 오류로 답하지 못하면/);
   assert.ok(Buffer.byteLength(s) < 10700 + 900, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P304: 목표·마일스톤 레인 절로 900바이트를 더 둔다. P292: 사용자 몫 절(사람에게 넘기기)로 1000바이트를 더 둔다. P284: 결정 카드 절(사람에게 묻기)로 1000바이트를 더 둔다. P267: merger 문구(판 스킬 9절)로 400바이트를 더 둔다. P248: 대기열·스티어링 한 줄로 300바이트를 더 둔다(전 8000). P156: 관계 고르기 절. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
-  assert.match(BOARD_SYSTEM_PROMPT, /`atrium models`에서 골라 띄운다/);
+  assert.match(BOARD_SYSTEM_PROMPT, /`atrium models`에서 고른다/);
 });
 
 // P55: 같은 밀리초에 끝난 두 모델 오류도 둘 다 알린다(시각이 아니라 오류마다). 시계를 멈춰 같은 밀리초를 늘 만든다
