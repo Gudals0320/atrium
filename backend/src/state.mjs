@@ -140,7 +140,10 @@ export function applyHook(rt, body, now = Date.now()) {
       rt.sessionEnd = { reason: body.reason || null, at: now };
       rt.bg = null;
       break;
-    default: // SubagentStop 등은 상태를 바꾸지 않는다(E2 2.4)
+    case 'SubagentStop': // 상태는 바꾸지 않는다(E2 2.4). P322: 끝난 서브에이전트(agent_id)를 적어 두어 칩이 바로 "끝"으로 본다
+      if (body.agent_id) rt.subStops = [...(rt.subStops || []).slice(-31), String(body.agent_id)];
+      break;
+    default:
   }
   // P173: 턴 hook(지시, 턴 끝)이 일 구간이 끝난 직후에 왔다(늦게 온 hook). 그 구간은 턴이었다
   if ((ev === 'UserPromptSubmit' || ev === 'Stop' || ev === 'StopFailure') && rt.lastWork && rt.lastWork.turnless && now - rt.lastWork.endedAt <= LATE_TURN_HOOK_MS) {

@@ -15,7 +15,7 @@ import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
 import { bgShow, bgText, bgKindsText } from './lib/bg-work.js'; // P164
-import { orchTag, sessionProgress, progressChip, progressRows } from './lib/orch.js'; // P296. P300: 안 진행 칩
+import { orchTag, sessionProgress, progressChip, progressRows, progressPopText } from './lib/orch.js'; // P296. P300: 안 진행 칩
 import { STATE_LABEL, shellProgram, shellStateText } from './lib/labels.js'; // P309: 셸에서 실행 중인 프로그램
 import { useT, errText } from './lib/i18n.js';
 import { leadTags } from './lib/cmd-input.js';
@@ -56,7 +56,7 @@ export function BgList({ f, t }) {
 // P300: 미리 보기의 안 진행 갈래 목록(읽기 전용)
 export function ProgList({ f, t, now }) {
   if (!f.progress) return null;
-  return <div className="pkpg" data-role="ln-peek-progress"><span className="lb">{t('progress.list')}</span>{f.prog.text}{progressRows(f.progress, t, now || Date.now()).map((x, i) => <span key={i} className={`it st-${x.state}`} data-state={x.state}><i /><b>{x.stateText}</b><span className="lbl">{clip(x.name, 80)}</span>{x.dur ? <span className="dim"> · {x.dur}</span> : null}</span>)}</div>;
+  return <div className="pkpg" data-role="ln-peek-progress"><span className="lb">{progressPopText(f.progress, t).head}</span>{f.prog.text}{progressRows(f.progress, t, now || Date.now()).map((x, i) => <span key={i} className={`it st-${x.state}`} data-state={x.state}><i /><b>{x.stateText}</b><span className="lbl">{clip(x.name, 80)}</span>{x.dur ? <span className="dim"> · {x.dur}</span> : null}</span>)}</div>;
 }
 const branchOfLive = (live) => (live && live.git && live.git.isWorktree && live.git.branch) || null;
 // 상태 색 클래스(시안 st-*): 등급 → 색
@@ -110,7 +110,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const relAll = [relText, ...extra].filter(Boolean).join(' · ');
   const bg = bgShow(n, live, tier); // P164: 쉬는 세션에 도는 뒤 일(뒤 셸·뒤 하위 에이전트)
   const orch = orchTag({ orch: (live && live.orch) || n.orch || null }, t); // P296: 자체 오케스트레이션 표
-  const progress = sessionProgress({ orch: (live && live.orch) || null }); // P300: 안 진행(깨어 있는 세션의 요약에만 있다)
+  const progress = sessionProgress({ orch: (live && live.orch) || null, subs: (live && live.subs) || null }); // P322: 보통 세션의 서브에이전트 // P300: 안 진행(깨어 있는 세션의 요약에만 있다)
   const prog = progress ? progressChip(progress, t) : null;
   return { orch, progress, prog, kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
 }

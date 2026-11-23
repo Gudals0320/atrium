@@ -54,7 +54,8 @@ import { orchOf, orchPromptLines } from './orchestration.mjs'; // P296: 자체 �
 import { HARNESS_PROMPT, adapterOf, harnessResumable, harnessLaunch, writeLaunchFiles, codexSessionOf, agySessionOf, agyHomeOf, removeWrapperDir, hermesReasoningOf, reasoningIn } from './harness.mjs'; // P299: Hermes 노력 수준
 import { hermesHomeOf, hermesSessionOf, hermesLastAnswer, hermesUsageOf, hermesBusyOf, hermesProgressOf, omhHomeOf } from './hermes.mjs'; // P298: Hermes(+OMH) state.db 읽기 전용
 import { registerInnerReader } from './inner-work.mjs'; // P298: Hermes 바쁨 읽개
-import { registerProgressReader, ProgressWatcher } from './inner-progress.mjs'; // P300: 안 진행 읽개와 감시
+import { registerProgressReader, registerKindProgress, ProgressWatcher } from './inner-progress.mjs'; // P300: 안 진행 읽개와 감시
+import { claudeSubagentProgress } from './claude-subagents.mjs'; // P322: Claude Code 서브에이전트 칩
 import { dshHomeOf, dshSessionOf, findDshSession, readDshLastAnswer, refreshDshModel, waitDshAnswer } from './dsh.mjs'; // P270: dsh(DeepSeek Harness, dsh-tui) // P115: Claude Code 밖 하네스(env·PATH의 atrium·안내문·이어 가기)
 import { attachWorktrees } from './worktrees.mjs'; // P27: 워크트리 영역
 import { writeHarnessFiles, writeTokenFile, tokenFileOf } from './launch.mjs'; // P115
@@ -247,6 +248,10 @@ export class Backend {
     registerInnerReader('hermes', ({ session }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesBusyOf({ id, home: this.hermesHome() }) : null; });
     // P300: Hermes의 안 진행 읽개(같은 busy 칸 { reader: 'hermes' }). OMH dag-ulw 실행 기록, 없으면 Hermes 자체 위임(state.db)
     registerProgressReader('hermes', ({ session, now }) => { const id = session ? this.harnessSessionIdOf(session) : null; return id ? hermesProgressOf({ id, home: this.hermesHome(), omhHome: omhHomeOf(), now }) : null; });
+    // P322: Claude Code 세션의 이번 턴 서브에이전트(대화 기록 옆 subagents/, 읽기 전용). 보통 세션(오케스트레이션 아님)에도 종류로 꽂는다
+    this.subCache = new Map();
+    registerProgressReader('claude-subagents', ({ session: s, now }) => s ? claudeSubagentProgress({ transcript: s.rt.transcriptPath || transcriptPathFor(this.cfg.claudeProjects, s.cwd, s.rt.claudeSessionId || s.sessionId), turnStartedAt: (s.rt.turn && s.rt.turn.startedAt) || s.createdAt || 0, now, stops: new Set(s.rt.subStops || []), cache: this.subCache }) : null);
+    registerKindProgress('claude', 'claude-subagents');
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다
     this.branch = attachBranch(this);
     Object.assign(this.api.handlers, this.branch.handlers);
@@ -597,6 +602,7 @@ export class Backend {
       ...(this.branch ? this.branch.summaryExtra(s) : {}), // P8: branch(깊이, 부모 이름, 하위 세션이면 역할)
       ...(this.sleeper ? this.sleeper.summaryExtra(s) : {}), // P21: sleep(잠든 때, 아낀 메모리, 깨우기 실패), waking
       ...(this.desktopImport ? this.desktopImport.summaryExtra(s) : {}), // P34: imported(데스크톱 앱에서 가져온 세션의 앱 제목)
+      subs: !s.orch && this.progress ? this.progress.view(s) : null, // P322: 보통 세션의 이번 턴 서브에이전트 진행(오케스트레이션 세션은 orch.progress)
     };
   }
 
