@@ -19,6 +19,7 @@ import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는
 import { adapterOf, reservedArg, wrapperInfo } from './harness.mjs'; // P115: 하네스 어댑터 표. P309: 감싼 호출자(omh)
 import { AGY_APPROVAL, AGY_APPROVAL_FLAGS } from './harness.mjs'; // P192: AGY 승인 인자
 import { HERMES_EFFORTS, hermesEffortOf, hermesReasoningOf, reasoningIn, withoutReasoning } from './harness.mjs'; // P299: Hermes 노력 수준
+import { OMO_EFFORTS, omoEffortOf, thinkingIn } from './harness.mjs'; // P329: omo 생각 수준(--thinking)
 import { V2_KEY, migrateLaunchers, legacyInitialLaunchers } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
 export { LEGACY_KEYS } from './launcher-migrate.mjs';
 
@@ -57,6 +58,10 @@ export const HARNESSES = {
   //   P299: 노력 수준 칸(efforts: Hermes --reasoning 값, 빈 값 = Hermes 설정 기본). --tui가 --reasoning을 받지 않아 판이 준비된 뒤 /reasoning <값>을 넣는다(harness.mjs).
   //   모델 목록은 판이 모른다(freeModel: --model 이름을 그대로 -m으로)
   hermes: { id: 'hermes', kind: 'hermes', label: 'Hermes', fields: ['startCommand', 'model', 'effort', 'args'], models: [], efforts: ['', ...HERMES_EFFORTS], freeModel: true },
+  // P329: omo(OmO, 엔진 senpi = pi 계열). 모델은 --model <제공자/ID>(목록은 omo --list-models의 Codex 구독 제공자 chatgpt-subscription, omo-models.mjs),
+  //   목록 밖 이름도 그대로 넘긴다(freeModel). 노력 수준 칸은 omo --thinking 값(빈 값 = omo 설정 기본). 자체 오케스트레이션 하네스(ORCH_DEFAULTS).
+  //   기본 런처 목록에는 넣지 않는다(사람이 "+"로 만든다)
+  omo: { id: 'omo', kind: 'omo', label: 'OmO', fields: ['startCommand', 'model', 'effort', 'args'], models: [], efforts: ['', ...OMO_EFFORTS], freeModel: true },
   shell: { id: 'shell', kind: 'shell', label: 'Shell', fields: [], models: [] },
   command: { id: 'command', kind: 'shell', label: 'Command', fields: ['command', 'env'], models: [] },
 };
@@ -300,7 +305,7 @@ export function resolveLauncher(l, over = {}) {
     // P309: 하네스 계열이면 셸에 치지 않고 그 계열의 에이전트로 띄운다(실행 명령 = 그 명령 이름, 나머지 = 추가 인자)
     const a = commandAgent(c, fam);
     const ah = harnessOf(a.kind);
-    return { ...base, kind: a.kind, flavor: flavorOf({ ...l, command: c }), model: null, args: a.args, command: '', startCommand: a.startCommand.toLowerCase() === defaultCommandOf(a.kind) ? '' : a.startCommand, gateway: null, ...(a.kind === 'hermes' ? { effort: over.effort || null } : {}), ...(ah && ah.fields.includes('permissionMode') ? { permissionMode: over.permissionMode || defaultPermission(ah.id) } : {}) };
+    return { ...base, kind: a.kind, flavor: flavorOf({ ...l, command: c }), model: null, args: a.args, command: '', startCommand: a.startCommand.toLowerCase() === defaultCommandOf(a.kind) ? '' : a.startCommand, gateway: null, ...(a.kind === 'hermes' || a.kind === 'omo' ? { effort: over.effort || null } : {}), ...(ah && ah.fields.includes('permissionMode') ? { permissionMode: over.permissionMode || defaultPermission(ah.id) } : {}) };
   }
   const model = h.fields.includes('model') ? String(pick('model') || '').trim() : '';
   if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
@@ -308,7 +313,7 @@ export function resolveLauncher(l, over = {}) {
   const args = splitArgs(pick('args'));
   // P192: 노력 수준·승인 방식 칸이 있는 하네스(AGY)는 그 값을 그 하네스 인자로 붙인다(추가 인자에 이미 있으면 그것이 이긴다)
   const extra = h.fields.includes('effort') || h.fields.includes('permissionMode') ? harnessOptionArgs(h.kind, { effort: pick('effort'), permissionMode: pick('permissionMode') || defaultPermission(h.id) }, args) : [];
-  return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', gateway: gatewayOf(l), ...(h.kind === 'hermes' ? { effort: pick('effort') || null } : {}), /* P299: 판이 준비된 뒤 /reasoning으로 */ ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || defaultPermission(h.id) } : {}) };
+  return { ...base, model: model || null, args: [...args, ...extra], command: '', startCommand: l.startCommand || '', gateway: gatewayOf(l), ...(h.kind === 'hermes' || h.kind === 'omo' ? { effort: pick('effort') || null } : {}), /* P299: 판이 준비된 뒤 /reasoning으로. P329: omo는 어댑터가 --thinking으로 */ ...(h.fields.includes('permissionMode') ? { permissionMode: pick('permissionMode') || defaultPermission(h.id) } : {}) };
 }
 // P208: Codex가 받는 추론 수준(config의 model_reasoning_effort. models_cache.json의 supported_reasoning_levels와 Codex 설정 값)
 export const CODEX_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
@@ -347,10 +352,20 @@ export function effortArgsOf(kind, effort, args = []) {
     if (own != null) return { args: a, applied: false, ignored: true, why: 'launcherArgs', effort: own };
     return { args: a, applied: true, effort: v };
   }
+  // P329: omo는 인자를 바꾸지 않는다(어댑터가 --thinking <값>을 붙인다, 이어 가기에도). 런처 인자에 --thinking이 있으면 그 값을 따른다
+  if (kind === 'omo') {
+    const v = omoEffortOf(e);
+    if (!v) return { args: a, applied: false, ignored: true, why: 'omoValue', effort: e };
+    const own = thinkingIn(a);
+    if (own != null) return { args: a, applied: false, ignored: true, why: 'omoLauncherArgs', effort: own };
+    return { args: a, applied: true, effort: v };
+  }
   return { args: a, applied: false, ignored: true, effort: e };
 }
 // 노력 수준을 무시한 까닭 한 줄(atrium child 응답). P299: Hermes의 까닭(받지 않는 값, 런처 인자의 --reasoning)
-export const effortIgnoredLine = (kind, effort, why = null) => why === 'value' ? `--effort ${effort}는 무시했다: ${kind}는 ${HERMES_EFFORTS.join(', ')}만 받는다(${kind} 설정의 기본을 따른다).`
+export const effortIgnoredLine = (kind, effort, why = null) => why === 'omoValue' ? `--effort ${effort}는 무시했다: omo는 ${OMO_EFFORTS.join(', ')}만 받는다(omo 설정의 기본을 따른다).`
+  : why === 'omoLauncherArgs' ? `--effort는 무시했다: 런처 추가 인자의 --thinking ${effort}를 따른다.`
+  : why === 'value' ? `--effort ${effort}는 무시했다: ${kind}는 ${HERMES_EFFORTS.join(', ')}만 받는다(${kind} 설정의 기본을 따른다).`
   : why === 'launcherArgs' ? `--effort는 무시했다: 런처 추가 인자의 --reasoning ${effort}를 따른다.`
   : `--effort ${effort}는 무시했다: ${kind}는 노력 수준을 받지 않는다(호출자 인자나 ${kind} 설정을 따른다).`;
 // P192: 노력 수준·승인 방식 → 그 하네스 인자(지금은 AGY만). 추가 인자에 같은 인자가 있으면 붙이지 않는다
@@ -387,7 +402,8 @@ export function previewLauncher(l) {
   const ra = h.kind === 'hermes' ? hermesReasoningOf(r.effort, r.args) : null; // P299: 판이 준비된 뒤 넣는 /reasoning(--tui는 --reasoning을 받지 않는다)
   const ha = h.kind === 'hermes' ? withoutReasoning(r.args) : r.args;
   const omh = h.kind === 'hermes' && wrapperInfo(s); // P309: omh는 모델을 인자가 아니라 env HERMES_MODEL로 받는다
-  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a && !omh ? a.modelArgs(r.model) : [])].join(' ') + (ha.length ? ' ' + joinArgs(ha) : ''), env: omh && r.model ? ['HERMES_MODEL'] : [], board: !!a, ...(ra ? { after: `/reasoning ${ra}` } : {}) };
+  const th = h.kind === 'omo' && thinkingIn(r.args) == null ? omoEffortOf(r.effort) : null; // P329: omo 생각 수준(어댑터가 --thinking으로 붙인다)
+  return { line: [...(s.length ? s : [a ? a.command : h.kind]), ...(r.model && a && !omh ? a.modelArgs(r.model) : []), ...(th ? ['--thinking', th] : [])].join(' ') + (ha.length ? ' ' + joinArgs(ha) : ''), env: omh && r.model ? ['HERMES_MODEL'] : [], board: !!a, ...(ra ? { after: `/reasoning ${ra}` } : {}) };
 }
 
 // ---------- 기본값과 옮기기 ----------
@@ -411,8 +427,8 @@ export const dropConnection = (l) => { if (!l || typeof l !== 'object' || !('con
 export class Launchers {
   // codexModels: P72 Codex 모델 목록(codex-models.mjs CodexModels). 없으면 하네스의 고정 목록
   // gateway: 옛 환경 변수의 게이트웨이 주소({ healthUrl, baseUrl }, P33 전 판의 처음 목록만 읽는다)
-  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, agyModels = null, piModels = null, log = () => {} }) {
-    this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.piModels = piModels; this.log = log; // P192: agyModels
+  constructor({ store, broadcast = () => {}, gateway = {}, codexModels = null, agyModels = null, piModels = null, omoModels = null, log = () => {} }) {
+    this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.piModels = piModels; this.omoModels = omoModels; this.log = log; // P329: omoModels // P192: agyModels
     this.migrated = this.ensure();
     this.agyBypassMoved = this.migrateAgyBypass();
   }
@@ -452,9 +468,9 @@ export class Launchers {
   data() { const d = this.store.getMeta(META_KEY) || { v: VERSION, items: [], favorites: [] }; const items = (Array.isArray(d.items) ? d.items : []).map(dropConnection); const ids = new Set(items.map((x) => x.id)); return { v: d.v, items, favorites: (d.favorites || []).filter((id) => ids.has(id)) }; }
   save(d) { this.store.setMeta(META_KEY, d); const out = this.list(); this.broadcast('launchers.updated', out); return out; }
   // 하네스별로 읽어 온 모델 목록(P72: codex)
-  modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } if (this.agyModels) { try { out.agy = this.agyModels.read(); } catch {} } if (this.piModels) { try { out.pi = this.piModels.read(); } catch {} } return out; } // P192: agy. P201: pi
+  modelLists() { const out = {}; if (this.codexModels) { try { out.codex = this.codexModels.read(); } catch {} } if (this.agyModels) { try { out.agy = this.agyModels.read(); } catch {} } if (this.piModels) { try { out.pi = this.piModels.read(); } catch {} } if (this.omoModels) { try { out.omo = this.omoModels.read(); } catch {} } return out; } // P192: agy. P201: pi. P329: omo
   // P192: 뒤에서 받는 목록(AGY)을 잠깐 기다린다(atrium models). ms 안에 못 받으면 지금 아는 목록
-  async freshModelLists(ms = 8000) { const w = [this.agyModels, this.piModels].filter(Boolean).map((m) => m.refresh().catch(() => {})); if (w.length) await Promise.race([Promise.all(w), new Promise((r) => setTimeout(r, ms).unref?.())]); return this.modelLists(); } // P201: pi도
+  async freshModelLists(ms = 8000) { const w = [this.agyModels, this.piModels, this.omoModels].filter(Boolean).map((m) => m.refresh().catch(() => {})); if (w.length) await Promise.race([Promise.all(w), new Promise((r) => setTimeout(r, ms).unref?.())]); return this.modelLists(); } // P201: pi도
   harnesses() { return describeHarnesses(this.modelLists()); }
   // P97: warns는 경고 모두(모델 목록 밖, 실행 명령이 PATH에 없음). warn은 첫 경고(옛 창)
   previewOf(l, hs) { const warns = [modelWarning(l, hs), startWarning(l)].filter(Boolean); return { ...previewLauncher(l), ...(warns.length ? { warn: warns[0], warns } : {}) }; }
@@ -628,6 +644,9 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
         if (inline === undefined && (RESERVED_WITH_VALUE.has(flag) || (RESERVED_OPT_VALUE.has(flag) && k + 1 < rest.length && !wordText(rest[k + 1]).startsWith('-')))) v = ` ${wordText(rest[++k])}`;
         dropped.push(a + v); continue;
       }
+    } else if (kind === 'omo') { // P329: omo --model <제공자/ID> · --thinking <수준>
+      if (flag === '--model') { out.model = value(); mapped.push({ arg: '--model', field: 'model' }); continue; }
+      if (flag === '--thinking') { const v = value(); const e = omoEffortOf(v); if (e) { out.effort = e; mapped.push({ arg: '--thinking', field: 'effort' }); } else dropped.push(`--thinking ${v}`); continue; }
     } else if (kind === 'codex') {
       if (flag === '-m' || flag === '--model') { out.model = value(); mapped.push({ arg: flag, field: 'model' }); continue; }
       if (/^-m./.test(a)) { out.model = a.slice(2); mapped.push({ arg: '-m', field: 'model' }); continue; }
@@ -647,7 +666,7 @@ export function parseCommandLine(text, { kinds = [] } = {}) {
   const harness = kind;
   const label = kind === 'claude' ? 'Claude' : kind === 'codex' ? 'Codex' : kind;
   const name = [startCommand || (kind === 'claude' && !out.model ? 'Claude Code' : label), out.model].filter(Boolean).join(' ');
-  const launcher = { ...blank, harness, model: out.model, effort: kind === 'claude' ? out.effort : '', permissionMode: kind === 'claude' ? out.permissionMode || 'manual' : '', args: joinArgs(out.args), env: kind === 'claude' ? env : {}, startCommand };
+  const launcher = { ...blank, harness, model: out.model, effort: kind === 'claude' || kind === 'omo' ? out.effort : '', permissionMode: kind === 'claude' ? out.permissionMode || 'manual' : '', args: joinArgs(out.args), env: kind === 'claude' ? env : {}, startCommand };
   // P115: env의 ANTHROPIC_BASE_URL은 연결로 옮길 값이라 알린다(설정 탭에서 연결을 만들어 고른다)
   const baseUrl = kind === 'claude' && env.ANTHROPIC_BASE_URL ? env.ANTHROPIC_BASE_URL : null;
   // claude 밖은 환경 변수를 받지 않는다(터미널에 넘길 길이 없다): 있으면 명령 한 줄로

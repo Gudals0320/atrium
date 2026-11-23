@@ -60,10 +60,13 @@ export function lineModel(kind, line) {
     const effort = clean(p.effort) || clean(s.reasoning_effort);
     return model || effort ? { ...(model ? { model } : {}), effort: effort || null } : null;
   }
-  if (kind === 'pi') {
+  if (kind === 'pi' || kind === 'omo') { // P329: omo(엔진 senpi)의 세션 파일도 같은 꼴
     if (!line.includes('model_change') && !line.includes('thinking_level_change')) return null;
     let o; try { o = JSON.parse(line); } catch { return null; }
     if (!isObj(o)) return null;
+    // P329: omo의 서비스 등급 확장(<builtin:service-tier>)은 -fast 모델을 띄운 뒤 같은 모델의 기본 이름으로 바꿔 적는다(originalModelId에 띄운 이름).
+    //   사람이 고른 모델은 띄운 이름이다(이어 갈 때 -fast가 빠지지 않게)
+    if (o.type === 'model_change' && clean(o.originalModelId) && /service-tier/.test(String(o.actor || ''))) return { model: clean(o.originalProvider) && !clean(o.originalModelId).includes('/') ? `${clean(o.originalProvider)}/${clean(o.originalModelId)}` : clean(o.originalModelId) };
     if (o.type === 'model_change' && clean(o.modelId)) return { model: clean(o.provider) && !clean(o.modelId).includes('/') ? `${clean(o.provider)}/${clean(o.modelId)}` : clean(o.modelId) };
     if (o.type === 'thinking_level_change' && typeof o.thinkingLevel === 'string') return { effort: o.thinkingLevel === 'off' ? null : o.thinkingLevel };
     return null;

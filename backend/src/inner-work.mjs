@@ -104,6 +104,16 @@ export function innerWork({ procs = null, root = null, harness = true, launchedA
   const busy = why.length > 0 || (!!lastBusyAt && now - lastBusyAt < holdMs);
   return { busy, why, n, cpu, cpuMs, at: now, lastBusyAt };
 }
+// P329: 프로세스 표(resources.mjs readProcessTable)의 cpu는 Windows CPU 시간(KernelModeTime + UserModeTime, 100ns 단위)이다.
+//   innerWork는 ms로 센다(INNER_CPU_RATE: 지난 시간 ms 대비). 전에는 100ns 값을 그대로 넘겨 1만 배 민감했다(쉬는 하네스의 아주 작은 CPU도 바쁨으로 보여
+//   omo 세션이 잠들지 못했다). 측정하는 쪽(sleep.mjs scanInner)이 이것으로 바꿔 넘긴다. 순수 함수
+export const CPU_TICKS_PER_MS = 1e4;
+export function procsCpuMs(procs) {
+  if (!procs) return procs;
+  const out = new Map();
+  for (const [k, p] of procs) out.set(k, p && Number.isFinite(p.cpu) ? { ...p, cpu: p.cpu / CPU_TICKS_PER_MS } : p);
+  return out;
+}
 // busy 칸의 파일 묶음 → [{ glob, newest }]
 export function fileSignals(busy = [], { cwd = '.', env = process.env, fsx = fs } = {}) {
   return (busy || []).filter((x) => x && typeof x === 'object' && x.files).map((x) => {

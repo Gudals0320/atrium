@@ -68,6 +68,9 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     agyCommand: E('AGY') === 'none' ? null : E('AGY') || 'agy',
     // P201: pi 모델 목록(pi --list-models)을 띄울 명령. ATRIUM_PI=none이면 띄우지 않는다(고정 목록, pi는 빈 목록)
     piCommand: E('PI') === 'none' ? null : E('PI') || 'pi',
+    // P329: omo 모델 목록(omo --list-models chatgpt-subscription)을 띄울 명령. ATRIUM_OMO=none이면 띄우지 않는다(빈 목록). omo 세션 파일 폴더(ATRIUM_OMO_SESSIONS, 없으면 ~/.omo/agent/sessions)
+    omoCommand: E('OMO') === 'none' ? null : E('OMO') || 'omo',
+    omoSessionsDir: E('OMO_SESSIONS') ? path.resolve(E('OMO_SESSIONS')) : null,
     agyHome: E('AGY_HOME') ? path.resolve(E('AGY_HOME')) : null,
     claudeJson: E('CLAUDE_JSON') || path.join(os.homedir(), '.claude.json'),
     claudeProjects: path.join(os.homedir(), '.claude', 'projects'),
