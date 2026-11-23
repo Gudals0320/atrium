@@ -5,12 +5,11 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from './api.js';
-import { useInvRef, useZoomStyle } from './zoom-var.js'; // P112: 배율을 따르는 이름표 크기를 렌더 없이
 import { useStore, getState, openDialog, selectWorkspace, noteWorkspace, toast, markArranged } from './store.js';
 import { Icon } from './lib/icons.jsx';
 import { useT, t, errText } from './lib/i18n.js';
 import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
-import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
+import { REGION_HEAD, GROUP_HEAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
 import { LaneChips } from './Plan.jsx'; // P306: 목표 레인 칩
 import { worktreeLabel } from '../../../backend/src/worktree-areas.mjs'; // P27: 워크트리 영역(P35: 리포 영역 안의 노란 상자)
@@ -50,14 +49,11 @@ export async function arrangeBoard(undo = false) {
 // P11: 영역은 1.5px 얇은 테두리(안에 일하는 세션이 있으면 청록 회색)로 그리고, 이름표를 테두리 위에 단다(목업의 그룹 이름표: 점, 이름 대문자 굵게, 고정폭 회색 "6 · 3 일하는 중", ⌄).
 //   테두리는 영역 맨 위(REGION_HEAD 자리)가 아니라 안의 것 32px 위에 긋는다. 이름표의 단추(정리, 되돌리기, + 세션, 이 영역으로)는 ⌄를 누르거나 이름표에 마우스를 올리면 보인다
 export const BORDER_TOP = REGION_HEAD + 8; // 영역 위에서 테두리까지(안의 것보다 REGION_PAD - 8 위)
-// 화면에서 13px. 아주 멀리서는 영역 사이 틈(REGION_GAP)을 넘지 않게 줄인다(이름표가 위쪽 영역을 덮지 않게)
 // 이름표는 작을 때 테두리 한가운데에, 커지면 아래 끝이 테두리 조금 아래에 오게(안의 노드를 덜 덮게)
-// P112: 배율이 바뀔 때마다 영역 전체를 다시 그리지 않게 이름표 style만 useZoomStyle로 쓴다
-const regionHead = (zoom) => {
-  const fs = Math.max(13, Math.min((REGION_HEAD + REGION_GAP * 0.7) / 2.3, 13 / Math.max(zoom, 0.02)));
-  const head = fs * 2.1;
-  return { fontSize: fs, height: head, top: BORDER_TOP - head + Math.min(head / 2, fs * 0.9) };
-};
+// P324: 이름표 글자는 판 단위 고정 크기(예전 P112·P127은 화면 기준 크기라 배율 계단마다 다시 셌다). 화면에서 읽히지 않을 만큼 멀면 판(.mt-canvas[data-text=far])이
+//   글을 숨기고 점만 남긴다(styles.css 끝)
+const headAt = (fs) => { const head = fs * 2.1; return { fontSize: fs, height: head, top: BORDER_TOP - head + Math.min(head / 2, fs * 0.9) }; };
+const REGION_HEAD_STYLE = headAt(13);
 function RegionNodeInner({ data }) {
   const t = useT();
   const key = data.wsKey;
@@ -66,7 +62,6 @@ function RegionNodeInner({ data }) {
   const arranged = useStore((st) => st.arranged.has(key));
   const current = useStore((st) => (st.viewWs || st.currentWs) === key); // P121: 위 바의 켜진 칩과 같이 고른 워크스페이스(터미널이 붙는 곳)
   const convos = useStore((st) => { let n = 0; for (const c of st.convoNodes.values()) if (c.workspaceKey === key) n++; return n; }); // P13: 판 밖 대화 노드 수
-  const headRef = useZoomStyle(regionHead, true); // P127: 글자 크기는 배율 계단(±5%)으로
   const actsRef = useRef(null);
   const [acts, setActs] = useState(false);
   const [menu, setMenu] = useState(null); // P120: 이름표 메뉴 { x, y }(⌄를 눌렀는데 단추가 다 들어가지 않을 때, 오른쪽 클릭)
@@ -84,7 +79,7 @@ function RegionNodeInner({ data }) {
   return (
     <div className={`mt-region${data.warn ? ' warn' : ''}${c.needsYou ? ' hot' : ''}${c.working ? ' run' : ''}${current ? ' current' : ''}${z.all ? ' asleep' : ''}`} data-ws={key} data-name={w.name} data-asleep={z.asleep || undefined}>
       <div className="mt-region-box" style={{ top: BORDER_TOP }} />
-      <div className={`mt-region-head mt-rdrag${acts ? ' acts' : ''}`} ref={headRef} onContextMenu={ctx} title={t('regions.headTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root })}>
+      <div className={`mt-region-head mt-rdrag${acts ? ' acts' : ''}`} style={REGION_HEAD_STYLE} onContextMenu={ctx} title={t('regions.headTitle', { kind: w.kind === 'repo' ? t('top.wsRepo') : t('top.wsFolder'), root: w.root })}>
         <span className="mt-region-dot" />
         <b className="mt-region-name" data-label={w.label ? 'rel' : undefined}>{w.label || w.name}</b>{/* P91: 저절로 만든 묶음 안에서는 뿌리에서의 상대 경로(전체 경로는 title) */}
         <span className="mt-region-meta"><span data-count="sessions">{c.sessions}</span>{c.working > 0 && <> · <span data-count="working">{t('regions.working', { n: c.working })}</span></>}{convos > 0 && <> · <span data-count="convos">{t('regions.convos', { n: convos })}</span></>}{w.kind !== 'repo' && <> · {t('regions.folder')}</>}</span>
@@ -145,20 +140,14 @@ export const RegionNode = memo(RegionNodeInner);
 // P27: 워크트리 영역. P35: 리포 영역 안의 노란 상자(테두리, 옅은 바탕, 이름표 글자 모두 노란 계열, tokens.css --wt-box-*).
 //   이름표는 ⎇ 브랜치(폴더 이름이 다르면 함께)와 세는 값. 이름표를 끌면 이 상자와 안의 노드·대화 노드가 함께 움직이고 자리를 저장한다(worktree.move). 누르면 그 리포로 간다.
 //   줌 아웃하면 이름표는 리포 영역 이름표처럼 화면 기준 크기로 커지되, 리포 영역 이름표보다 조금 작게 둔다
-const wtHead = (zoom) => {
-  const fs = Math.max(12, Math.min((REGION_HEAD + REGION_GAP * 0.5) / 2.3, 12 / Math.max(zoom, 0.02)));
-  const head = fs * 2.1;
-  return { fontSize: fs, height: head, top: BORDER_TOP - head + Math.min(head / 2, fs * 0.9) };
-};
+const WT_HEAD_STYLE = headAt(12); // P324: 판 단위 고정
 function WorktreeAreaNodeInner({ data }) {
   const t = useT();
-  const invRef = useInvRef(); // P112: --inv와 이름표 크기는 렌더 없이(RegionNode와 같다)
-  const headRef = useZoomStyle(wtHead, true); // P127: 계단
   const { branch, folder } = worktreeLabel({ path: data.path, branch: data.branch });
   return (
-    <div className={`mt-region mt-wtarea${data.warn ? ' warn' : ''}${data.working || data.live ? ' run' : ' rest'}`} ref={invRef} data-ws={data.wsKey} data-area={data.area} data-worktree={data.path} data-branch={branch}>
+    <div className={`mt-region mt-wtarea${data.warn ? ' warn' : ''}${data.working || data.live ? ' run' : ' rest'}`} data-ws={data.wsKey} data-area={data.area} data-worktree={data.path} data-branch={branch}>
       <div className="mt-region-box" style={{ top: BORDER_TOP }} />
-      <div className="mt-region-head mt-wadrag" ref={headRef} title={t('regions.wtTitle', { path: data.path || '', branch })}>
+      <div className="mt-region-head mt-wadrag" style={WT_HEAD_STYLE} title={t('regions.wtTitle', { path: data.path || '', branch })}>
         <b className="mt-wtarea-name">⎇ {branch}</b>
         {folder && <span className="mt-wtarea-meta" data-role="wt-folder">({folder})</span>}
         <span className="mt-wtarea-meta"><span data-count="sessions">{t('regions.wtSessions', { n: data.n || 0 })}</span>{data.working > 0 && <> · <span data-count="working">{t('regions.working', { n: data.working })}</span></>}{data.convos > 0 && <> · <span data-count="convos">{t('regions.convos', { n: data.convos })}</span></>}</span>
@@ -169,17 +158,13 @@ function WorktreeAreaNodeInner({ data }) {
 export const WorktreeAreaNode = memo(WorktreeAreaNodeInner);
 
 // P91: 묶음(가상 그룹) 테두리. 구성 영역 둘레의 바깥 띠(점선 없는 옅은 선과 아주 옅은 바탕)와 위 왼쪽 이름표(대문자, 자간, 저절로 만든 묶음이면 ⌂ 표시).
-//   이름표를 끌면 구성 영역이 함께 움직인다(group.shift). 줌 아웃하면 이름표는 화면 기준 크기로 커지되 테두리 위 띠(GROUP_HEAD + GROUP_PAD)를 넘지 않는다.
+//   이름표를 끌면 구성 영역이 함께 움직인다(group.shift). 이름표는 판 단위 고정 크기다(P324).
 //   가볍게: filter·그림자·끝없는 움직임 없음
 // 화면에서 12px. 멀리서는 커지되 영역 사이 틈의 반(테두리 위 빈 곳)을 넘지 않게. 작을 때는 테두리 위 띠 안, 커지면 대부분 테두리 위로
-const groupHead = (zoom) => {
-  const fs = Math.max(12, Math.min((GROUP_HEAD + GROUP_PAD + REGION_GAP / 2) / 2.2, 12 / Math.max(zoom, 0.02)));
-  const headH = fs * 2;
-  return { fontSize: fs, height: headH, top: Math.min(Math.max(4, GROUP_HEAD / 2 - fs), -headH * 0.85 + GROUP_HEAD) };
-};
+const groupHeadAt = (fs) => { const headH = fs * 2; return { fontSize: fs, height: headH, top: Math.min(Math.max(4, GROUP_HEAD / 2 - fs), -headH * 0.85 + GROUP_HEAD) }; };
+const GROUP_HEAD_STYLE = groupHeadAt(12); // P324: 판 단위 고정
 function GroupFrameNodeInner({ data }) {
   const t = useT();
-  const headRef = useZoomStyle(groupHead, true); // P112: 이름표 크기는 렌더 없이. P127: 계단
   const groups = useStore((st) => st.groups);
   const wss = useStore((st) => st.workspaces);
   const g = (groups || []).find((x) => x.id === data.groupId);
@@ -187,7 +172,7 @@ function GroupFrameNodeInner({ data }) {
   return (
     <div className={`mt-wsgroup${data.auto ? ' auto' : ''}`} data-group={data.groupId} data-auto={data.auto ? '1' : undefined}>
       <div className="mt-wsgroup-box" />
-      <div className="mt-wsgroup-head mt-gdrag" ref={headRef} title={title}>
+      <div className="mt-wsgroup-head mt-gdrag" style={GROUP_HEAD_STYLE} title={title}>
         {data.auto && <span className="mt-wsgroup-auto" aria-hidden="true">⌂</span>}
         <b className="mt-wsgroup-name">{g ? g.name : data.name}</b>
         <span className="mt-wsgroup-meta">{t('groupFrame.count', { n: (data.keys || []).length })}</span>

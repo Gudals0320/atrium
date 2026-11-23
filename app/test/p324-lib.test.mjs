@@ -1,0 +1,96 @@
+// P324: 판 글자 고정 크기 — 글이 읽히지 않는 배율의 틀 얼굴 경계, 움직이는 동안 멈춘 화면 값(앞·뒤 한 번씩), 테두리 --inv 띠
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { tierFor, textReadable, pickAttached, TIER_TEXT_ZOOM, TIER_KEEP, TEXT_BASE_PX, TEXT_READ_PX } from '../src/renderer/lib/faces.js';
+import { viewSettler, invBand, SETTLE_REST_MS } from '../src/renderer/lib/view-settle.js';
+
+test('읽히는 배율: 머리줄 13px이 화면 8px 아래가 되는 배율부터 틀', () => {
+  assert.equal(TEXT_BASE_PX, 13);
+  assert.equal(TEXT_READ_PX, 8);
+  assert.ok(Math.abs(TIER_TEXT_ZOOM - 8 / 13) < 1e-9);
+  assert.equal(tierFor(1440, null, 1), 'term');
+  assert.equal(tierFor(1440 * 0.62, null, 0.62), 'term');
+  assert.equal(tierFor(1440 * 0.6, null, 0.6), 'frame'); // 노드는 화면 864px이지만 글이 7.8px
+  assert.equal(tierFor(1440 * 0.3, null, 0.3), 'frame');
+  // 이력: 이미 글을 그리던 노드는 경계의 88%까지 남는다
+  assert.equal(tierFor(1440 * 0.56, 'term', 0.56), 'term');
+  assert.equal(tierFor(1440 * 0.56, 'brief', 0.56), 'term'); // 요약에서도 글을 그리던 노드라 남고, 노드 너비로는 터미널 단계
+  assert.equal(tierFor(1440 * 0.53, 'term', 0.53), 'frame');
+  assert.equal(tierFor(1440 * 0.56, 'frame', 0.56), 'frame'); // 틀에서 올라가려면 0.615
+  // zoom을 주지 않으면 예전(노드 화면 너비만)
+  assert.equal(tierFor(1440 * 0.3), 'term');
+  assert.equal(textReadable(undefined), true);
+  assert.equal(textReadable(TIER_TEXT_ZOOM * TIER_KEEP - 0.001, 'term'), false);
+});
+
+test('pickAttached(textZoom): 글이 읽히지 않는 배율이면 붙이지 않고, 주지 않으면 예전 기준', () => {
+  const nodes = [{ id: 'a', x: 0, y: 0, w: 1440, h: 810 }];
+  const screen = { width: 1600, height: 900 };
+  const tz = { textZoom: true };
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.8 }, screen, tz), ['a']);
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.4 }, screen, tz), []);
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.4 }, screen), ['a']);
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.57 }, screen, { ...tz, prev: new Set(['a']) }), ['a']); // 붙은 노드는 여유
+  assert.deepEqual(pickAttached(nodes, { x: 0, y: 0, zoom: 0.57 }, screen, tz), []); // 새로 붙으려면 0.615
+});
+
+function clock() {
+  let t = 0; const timers = new Map(); let id = 0;
+  return {
+    now: () => t,
+    setT: (f, ms) => { timers.set(++id, { f, at: t + ms }); return id; },
+    clearT: (i) => timers.delete(i),
+    go(ms) { const end = t + ms; for (;;) { const due = [...timers].filter(([, x]) => x.at <= end).sort((a, b) => a[1].at - b[1].at)[0]; if (!due) break; t = due[1].at; timers.delete(due[0]); due[1].f(); } t = end; },
+  };
+}
+const V = (z) => ({ transform: [0, 0, z], width: 100, height: 100 });
+
+test('멈춘 화면 값: 움직임의 첫 값은 바로, 움직이는 동안은 그대로, 멈춘 뒤 마지막 값을 한 번', () => {
+  const c = clock(); const out = [];
+  const s = viewSettler({ publish: (v) => out.push(v.transform[2]), now: c.now, setT: c.setT, clearT: c.clearT });
+  assert.equal(SETTLE_REST_MS, 300);
+  s.moved(V(1));
+  assert.deepEqual(out, [1]);
+  for (let i = 0; i < 20; i++) { c.go(16); s.moved(V(1 - i * 0.03)); }
+  assert.deepEqual(out, [1]); // 움직이는 동안 바꾸지 않는다
+  assert.equal(s.moving, true);
+  c.go(SETTLE_REST_MS - 20);
+  assert.deepEqual(out, [1]);
+  c.go(40);
+  assert.equal(out.length, 2);
+  assert.ok(Math.abs(out[1] - (1 - 19 * 0.03)) < 1e-9); // 멈춘 뒤 마지막 값 한 번
+  assert.equal(s.moving, false);
+  c.go(2000);
+  assert.equal(out.length, 2);
+  // 다음 움직임은 다시 첫 값부터
+  s.moved(V(0.2));
+  assert.equal(out.length, 3);
+  c.go(SETTLE_REST_MS + 10);
+  assert.equal(out.length, 3); // 한 번만 움직였으면 뒤에 낼 것이 없다
+});
+
+test('멈춘 화면 값: 창 크기만 바뀌면 바로, 움직이는 중이면 멈춘 뒤에 함께', () => {
+  const c = clock(); const out = [];
+  const s = viewSettler({ publish: (v) => out.push(v.width), now: c.now, setT: c.setT, clearT: c.clearT });
+  s.resized({ transform: [0, 0, 1], width: 200, height: 100 });
+  assert.deepEqual(out, [200]);
+  s.moved({ transform: [1, 0, 1], width: 200, height: 100 });
+  s.resized({ transform: [1, 0, 1], width: 300, height: 100 });
+  assert.deepEqual(out, [200, 200]);
+  c.go(SETTLE_REST_MS + 5);
+  assert.deepEqual(out, [200, 200, 300]);
+  s.dispose();
+});
+
+test('테두리 --inv 띠: 1/배율을 2의 거듭제곱으로', () => {
+  assert.equal(invBand(1), 1);
+  assert.equal(invBand(0.8), 1);
+  assert.equal(invBand(0.6), 2);
+  assert.equal(invBand(0.3), 4);
+  assert.equal(invBand(0.1), 8);
+  assert.equal(invBand(2), 0.5);
+  assert.equal(invBand(0.001), 64);
+  assert.equal(invBand(NaN), 1);
+  // 띠 안에서는 같은 값(움직이는 동안 쓰지 않아도, 멈춘 뒤 바뀌는 일이 드물다)
+  assert.equal(invBand(0.75), invBand(0.9));
+});

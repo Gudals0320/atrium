@@ -1,9 +1,27 @@
 // P112: 판 배율을 React 렌더 없이 따라간다. 판을 끌거나 확대·축소하는 동안 노드가 배율을 구독하면 프레임마다 노드 전체(머리줄, 터미널 감싸개 등)가
 // 다시 그려져 렌더러 주 스레드가 거의 다 바빴다. 배율에 따라 바뀌는 값 가운데 CSS 변수는 여기서 요소에 바로 쓰고, 얼굴 같은 단계 값만 상태로 구독한다
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useStoreApi } from '@xyflow/react';
 import { zoomStep } from './lib/faces.js';
 import { motionPauser } from './lib/work-light.js';
+import { viewSettler } from './lib/view-settle.js';
+
+// P324: 멈춘 화면 값(lib/view-settle.js). 판(Canvas)의 useBoardMotion이 하나만 낸다. 아직 내지 않았으면 React Flow의 지금 값을 본다
+let settled = null;
+const settledSubs = new Set();
+function publishSettled(st) {
+  settled = { transform: st.transform, width: st.width, height: st.height };
+  for (const f of [...settledSubs]) f(settled);
+}
+const subSettled = (cb) => { settledSubs.add(cb); return () => settledSubs.delete(cb); };
+export const settledView = () => settled;
+// 멈춘 값이 바뀔 때마다 fn(view)를 부른다(판 테두리 띠, 터미널 붙이기). 끄는 함수를 돌려준다
+export const onSettled = (fn) => subSettled(fn);
+// useFlowStore처럼 쓰되 움직이는 동안에는 마지막 멈춘 값을 본다(st.transform, st.width, st.height만 있다). 고르는 함수는 단계 값(문자열·불)을 돌려준다
+export function useSettledFlow(selector) {
+  const flow = useStoreApi();
+  return useSyncExternalStore(subSettled, () => selector(settled || flow.getState()));
+}
 
 // 화면 밖 노드는 화면을 옮기는 동안 --inv 쓰기를 미룬다. --inv가 바뀌면 그 노드 하위 전체의 스타일과 머리줄 글자 배치를 다시 세므로,
 // 노드가 많으면 보이지 않는 노드가 프레임 일의 대부분이었다. 노드가 화면(둘레 AWAY_PX 여유) 가까이 오는 프레임에 바로 쓰고,
@@ -94,17 +112,25 @@ export function useZoomStyle(styleOf, stepped = false) {
 
 // P127: 판 화면 변환(이동·배율)이 바뀌는 동안 문서 뿌리에 data-board-moving을 단다(lib/work-light.js motionPauser, 작업 중 둘레를 멈춤).
 //   휠·끌기·코드(setViewport)·손가락 이동 모두 React Flow 변환으로 오므로 변환 하나만 본다. 판(Canvas)에 하나만 둔다
+// P324: 같은 구독으로 멈춘 화면 값(useSettledFlow, onSettled)도 낸다. 판이 내려가면 멈춘 값을 지운다(다음 판은 지금 값부터)
 export function useBoardMotion() {
   const flow = useStoreApi();
   useEffect(() => {
     const p = motionPauser();
-    let last = flow.getState().transform;
+    const s = viewSettler({ publish: publishSettled });
+    const st0 = flow.getState();
+    let last = st0.transform, lw = st0.width, lh = st0.height;
+    publishSettled(st0);
     const off = flow.subscribe((st) => {
       const t = st.transform;
-      if (t === last || (t[0] === last[0] && t[1] === last[1] && t[2] === last[2])) return;
-      last = t;
+      if (t === last || (t[0] === last[0] && t[1] === last[1] && t[2] === last[2])) {
+        if (st.width !== lw || st.height !== lh) { lw = st.width; lh = st.height; s.resized(st); }
+        return;
+      }
+      last = t; lw = st.width; lh = st.height;
       p.moved();
+      s.moved(st);
     });
-    return () => { off(); p.dispose(); };
+    return () => { off(); p.dispose(); s.dispose(); settled = null; };
   }, [flow]);
 }

@@ -100,25 +100,25 @@ test('판(Canvas.jsx): 세션 노드는 sessionNode로 만들고, 바뀐 노드�
   // 세션 값(상태·작업 완료·거리 단계)은 노드 안에서 구독한다: 노드 객체가 같아도 그 세션이 바뀌면 그 노드만 다시 그린다
   const sn = read('SessionNode.jsx');
   assert.match(sn, /const s = useStore\(\(st\) => st\.sessions\.get\(id\)\);/);
-  assert.match(sn, /const dist = useFlowStore\(/);
+  assert.match(sn, /const dist = useSettledFlow\(/); // P324: 멈춘 화면 값
   assert.match(sn, /export const SessionNode = memo\(SessionNodeInner\);/);
 });
 
-test('대화 노드: 멀리 얼굴은 배율을 구독하지 않고 CSS(--inv)로 글자 크기, 감싸개 --inv는 계단, 먼 노드는 얼굴 없이', () => {
+test('대화 노드: 멀리 얼굴은 배율을 구독하지 않고 판 단위 고정 글자 크기(P324), 감싸개 --inv는 판의 띠 값, 먼 노드는 얼굴 없이', () => {
   const src = read('ConvoNode.jsx');
   const far = src.slice(src.indexOf('function FarFace'), src.indexOf('function IconFace'));
   assert.ok(!/useFlowStore|transform\[2\]|zoom/.test(far), '멀리 얼굴에 배율 구독이 없다');
   assert.match(far, /farFont\(12, /);
-  assert.match(src, /useInvRef\(0\.02, id, true\)/, '대화 카드 --inv는 계단 값');
+  assert.ok(!/useInvRef/.test(src), 'P324: 대화 카드 --inv는 판(.mt-canvas)이 멈춘 뒤 띠 값으로');
   assert.ok(!/zoomSel/.test(src));
   assert.match(src, /if \(awayFromView\(st, id, AWAY_PAD\)\) return 'away';/, '먼 노드는 away 하나로 구독(배율 경계를 넘어도 다시 그리지 않음)');
   assert.match(src, /\{!away && face === 'far' && <FarFace/);
-  // farFont: 글자 크기 = min(n px × --inv, 노드 크기 상한)
+  // farFont: 글자 크기 = min(n px, 노드 크기 상한). P324: 판 단위 고정
   const m = /export const farFont = \(n, cap\) => `(.*)`;/.exec(src);
   assert.ok(m);
-  const farFont = (n, cap) => `min(calc(${n}px * var(--inv, 1)), ${+cap.toFixed(2)}px)`;
-  assert.equal(farFont(12, 40), 'min(calc(12px * var(--inv, 1)), 40px)');
-  assert.equal(farFont(14, 1080 * 0.2), 'min(calc(14px * var(--inv, 1)), 216px)');
+  const farFont = (n, cap) => `${+Math.min(n, cap).toFixed(2)}px`;
+  assert.equal(farFont(12, 40), '12px');
+  assert.equal(farFont(14, 8.5), '8.5px');
   // 움직이는 동안 그림자를 뺀다(고른 테두리는 남긴다)
   const css = noComments(read('styles.css'));
   assert.match(css, /html\[data-board-moving="1"\] \.mt-cv \{ box-shadow: none; \}/);
