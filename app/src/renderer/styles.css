@@ -3003,3 +3003,23 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-wtd-bad { color: var(--bad); font-weight: 600; font-size: 12.5px; }
 .mt-modal label.mt-wtd-check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; } /* 대화상자 label의 격자 대신 한 줄 */
 .mt-modal label.mt-wtd-check input { width: auto; flex: none; margin: 0; }
+/* ---------- P331: 세션 맵 할 일 배지(MapTodo.jsx TodoBadge: 카드 왼쪽 위 하늘색 꼬리표, 오른쪽 위 작업 완료 꼬리표 .mt-mm-donetag와 크기·모양·여백이 짝)와
+   그 자리 답하기 미니 창(TodoPop: 할 일 목록 카드 .mt-dc-row를 그대로, 카드 위·아래·옆에 떠서 끌기·확대를 따라간다). 판에는 어두운 테마 하나뿐이다 ---------- */
+.mt-sm { --todo-sky: #7cc8f4; --todo-ink: #0a2131; }
+.mt-sm-todo { position: absolute; top: -9px; left: 18px; z-index: 1; display: inline-flex; align-items: center; gap: 3px; height: 15px; padding: 0 6px 0 4px; border-radius: 8px; background: var(--todo-sky); color: var(--todo-ink); font: 700 10px/15px var(--font-ui); letter-spacing: .01em; white-space: nowrap; }
+.mt-sm-todo svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.mt-sm-todo b { margin-left: 1px; font-weight: 800; }
+.mt-sm .mt-ta-world.lv-far .mt-sm-todo { transform: scale(clamp(1.6, calc(var(--ik, 1) * 0.85), 3.2)); transform-origin: left top; }
+.mt-sm .mt-ta-slot.thin .mt-sm-todo { top: -8px; left: 12px; }
+.mt-sm-todopop { position: absolute; left: 0; top: 0; z-index: 9; width: 380px; max-width: calc(100% - 16px); max-height: min(62vh, 460px); overflow: auto; box-sizing: border-box; display: grid; gap: 6px; padding: 7px 8px 8px; border-radius: 10px;
+  background: rgba(20, 19, 17, 0.98); border: 1px solid color-mix(in srgb, var(--todo-sky) 55%, transparent); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55); color: var(--ln-text); cursor: default; user-select: text; }
+.mt-sm-todopop-head { display: flex; align-items: center; gap: 6px; padding: 0 2px; height: 22px; font-size: 12px; color: var(--ln-dim); }
+.mt-sm-todopop-head .ttl { display: inline-flex; align-items: center; gap: 4px; color: var(--todo-sky); font-weight: 700; }
+.mt-sm-todopop-head .ttl svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.mt-sm-todopop-head .pg { display: inline-flex; align-items: center; gap: 1px; margin-left: auto; font-size: 11.5px; }
+.mt-sm-todopop-head .pgb, .mt-sm-todopop-head .x { border: 0; background: none; color: var(--ln-dim); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 5px; }
+.mt-sm-todopop-head .pgb:hover, .mt-sm-todopop-head .x:hover { background: rgba(255, 252, 240, 0.08); color: var(--ln-text); }
+.mt-sm-todopop-head .x { margin-left: auto; }
+.mt-sm-todopop-head .pg + .x { margin-left: 0; }
+.mt-sm-todopop-body { display: grid; min-width: 0; }
+.mt-sm-todopop .mt-dc-row { background: rgba(255, 252, 240, 0.045); }

@@ -3108,4 +3108,14 @@ export default {
     failed: '워크트리를 치우지 못했습니다: {error}',
     failedNamed: '@{name} 워크트리를 치우지 못했습니다: {error}',
   },
+  // P331: 세션 맵 할 일 배지·그 자리 답하기 미니 창(MapTodo.jsx)
+  mapTodo: {
+    badge: '할 일',
+    badgeTitle: '할 일 {n}',
+    head: '할 일',
+    popTitle: '@{name}의 할 일',
+    prev: '앞 할 일',
+    next: '다음 할 일',
+    closeTitle: '닫기(Esc)',
+  },
 };

@@ -67,7 +67,7 @@ async function pcShots(page, lang) {
   await page.keyboard.press('Escape'); await sleep(300);
   await page.click('[data-action="mission-rail"]');
   await page.waitForSelector('[data-role="mission"] .mt-ta-card', { timeout: 20000 }); await sleep(1500);
-  const mm = await page.$$eval('[data-role="mission"] [data-role=decision-mark]', (xs) => xs.length);
+  const mm = await page.$$eval('[data-role="mission"] [data-role=map-todo]', (xs) => xs.length); // P331: PC 세션 맵은 카드 왼쪽 위 할 일 배지
   check(`[${lang}] 세션 맵 카드에 결정 표식`, mm >= 1, { mm });
   const card = await page.$('[data-role="mission"] .mt-ta-card[data-name="lead"]');
   if (card) await card.screenshot({ path: path.join(OUT, `pc-map-mark-${lang}.png`) }).then(() => log(`그림 pc-map-mark-${lang}.png`)).catch(() => {});
