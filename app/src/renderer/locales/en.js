@@ -3032,4 +3032,12 @@ export default {
     reset: 'Default size',
     hint: 'You set this size. Auto arrange only moves it.',
   },
+  // P322: subagents of this turn in a Claude Code session (read-only chip, same look as P300)
+  p322: {
+    sub: 'Sub',
+    list: 'Subagents',
+    turn: 'This turn',
+    readOnly: 'Subagents inside this session (read-only). Click to see this turn\'s list',
+    note: 'Subagents inside this session. They are not board sessions, so you cannot select them or message them.',
+  },
 };

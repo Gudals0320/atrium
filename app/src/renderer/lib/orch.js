@@ -63,7 +63,14 @@ export function orchTag(s, t) {
 // ---------- P300: 안 진행(읽기 전용) ----------
 // 판이 하네스별 읽개로 읽은 안 진행(orch.progress: { kind: dag | delegations, key, label, done, total, running, failed, finished, items }).
 // 카드 머리·세션 맵 카드(휴대폰 포함)에 작은 칩 "DAG 2/3 · 하위 1", 누르거나 미리 보기에서 갈래 목록(이름·상태·걸린 시간)
-export const sessionProgress = (s) => { const o = sessionOrch(s); const p = o && o.progress; return p && p.total > 0 && Array.isArray(p.items) ? p : null; };
+// P322: 보통 세션(Claude Code)의 이번 턴 서브에이전트(s.subs, kind: subagents)도 같은 칩으로 보인다
+export const sessionProgress = (s) => { const o = sessionOrch(s); const p = (o && o.progress) || (s && !o ? s.subs : null); return p && p.total > 0 && Array.isArray(p.items) ? p : null; };
+const progHead = (p, t) => t(p.kind === 'dag' ? 'progress.dag' : p.kind === 'subagents' ? 'p322.sub' : 'progress.deleg');
+// 갈래 목록 겉판의 머리·덧붙임·밑글(서브에이전트는 따로)
+export function progressPopText(p, t) {
+  const sub = p && p.kind === 'subagents';
+  return { head: t(sub ? 'p322.list' : 'progress.list'), label: sub ? t('p322.turn') : (p && p.label) || null, note: t(sub ? 'p322.note' : 'progress.listNote') };
+}
 // 걸린 시간 글(초·분·시간). 없으면 ''
 export function durText(ms) {
   if (!Number.isFinite(ms) || ms < 0) return '';
@@ -76,12 +83,12 @@ export function durText(ms) {
 // 칩 → { text, finished, failed, running, title } | null
 export function progressChip(p, t) {
   if (!p) return null;
-  const head = t(p.kind === 'dag' ? 'progress.dag' : 'progress.deleg');
+  const head = progHead(p, t);
   const parts = [p.finished ? t('progress.finished', { head, done: p.done, total: p.total }) : `${head} ${p.done}/${p.total}`];
   if (!p.finished && p.running > 0) parts.push(t('progress.running', { n: p.running }));
   if (p.failed > 0) parts.push(t('progress.failed', { n: p.failed }));
   const text = parts.join(' · ');
-  const title = [p.label ? `${head} ${p.label}` : null, text, t('progress.readOnly')].filter(Boolean).join('\n');
+  const title = [p.label ? `${head} ${p.label}` : null, text, t(p.kind === 'subagents' ? 'p322.readOnly' : 'progress.readOnly')].filter(Boolean).join('\n');
   const short = p.finished ? t('progress.finished', { head, done: p.done, total: p.total }) : `${head} ${p.done}/${p.total}${p.failed > 0 ? ' !' : ''}`; // 타일(멀리 단계·휴대폰)용 짧은 글
   return { text, short, finished: !!p.finished, failed: p.failed > 0, running: p.running > 0, title };
 }
