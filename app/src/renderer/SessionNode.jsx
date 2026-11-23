@@ -13,6 +13,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { countRender } from './perf-trace.js'; // P146
 import { NodeResizer, Handle, Position, useStore as useFlowStore } from '@xyflow/react';
 import { useStore, getState, matesNow, saveNode, setNodeLocal, markSeen, toast, dockOf, setOutputView, openDialog, setKillAsk, setRenaming } from './store.js';
+import { MergeMenuRows } from './QuickWorktree.jsx'; // P321
 import { shellLine } from './Workspaces.jsx';
 import { api } from './api.js';
 import { tierFor, faceOfTier, termAllowed, veryClose, zoomStep } from './lib/faces.js'; // P124: 거리 단계(터미널·요약·틀)
@@ -310,6 +311,7 @@ function NodeMenu({ s, docked, onClose }) {
       {hand && <div className="mt-menu-row mt-hand-size" data-role="hand-size"><button className="mt-btn small" data-action="auto-size" onClick={() => call('board.autoSize', { session: s.sessionId })}>{t('handSize.reset')}</button><span className="dim"><span className="mt-hand-dot" aria-hidden="true" />{t('handSize.hint')}</span></div>}
       {/* P66: 판의 이름 바꾸기(에이전트 주소는 그대로) */}
       <div className="mt-menu-row"><button className="mt-btn small" data-action="rename" onClick={() => { onClose(); setRenaming(s.sessionId, 'node'); }}>{t('rename.menu')}</button><span className="dim">{renamed(s) ? t('rename.address', { address: addressOf(s) }) : t('rename.menuHint')}</span></div>
+      <MergeMenuRows s={s} onClose={onClose} />{/* P321: 병합 맡기기, 동료 관계 */}
       {/* P21(D4)·P24: 잠든 노드는 그 리포를 깨운다. 잠재우기는 리포 단위라 영역 이름표 메뉴에 있다 */}
       {s.state === 'sleeping' && <div className="mt-menu-row"><button className="mt-btn small" data-action="wake" disabled={!!s.waking} onClick={() => { onClose(); wakeSession(s.sessionId); }}><Icon name="moon" />{t(sleptAlone(s) ? 'sessionSleep.menuWake' : 'sleep.menuWake')}</button><span className="dim">{t(sleptAlone(s) ? 'sessionSleep.menuWakeHint' : 'sleep.menuWakeHint')}</span></div>}
       {s.kind !== 'shell' && <div className="mt-menu-row"><button className="mt-btn small" data-action="loop-new" onClick={() => { onClose(); openDialog({ kind: 'loop', target: { session: s.sessionId } }); }}>{t('node.loopNew')}</button><span className="dim">{t('node.loopNewHint')}</span></div>}

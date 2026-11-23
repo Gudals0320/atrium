@@ -13,7 +13,8 @@ import { workspaceCounts } from '../../../backend/src/workspaces.mjs';
 import { REGION_HEAD, REGION_GAP, GROUP_HEAD, GROUP_PAD } from '../../../backend/src/canvas.mjs'; // P91: 묶음 테두리
 import { repoSleep, sleepRepo, wakeRepo, fmtMB } from './sleep.js'; // P24: 리포 단위 잠재우기
 import { LaneChips } from './Plan.jsx'; // P306: 목표 레인 칩
-import { worktreeLabel } from '../../../backend/src/worktree-areas.mjs'; // P27: 워크트리 영역(P35: 리포 영역 안의 노란 상자)
+import { worktreeLabel } from '../../../backend/src/worktree-areas.mjs';
+import { openQuickWorktree } from './QuickWorktree.jsx'; // P321 // P27: 워크트리 영역(P35: 리포 영역 안의 노란 상자)
 
 export async function arrangeWorkspace(key, undo = false) {
   try {
@@ -133,6 +134,7 @@ function RegionMenu({ at, close, w, arranged, z }) {
       {z.awake > 0 && item('region-sleep', t('regions.sleep'), () => sleepRepo(key))}
       {z.asleep > 0 && item('region-wake', t('regions.wake'), () => wakeRepo(key), { disabled: z.waking > 0 })}
       {item('region-spawn', t('regions.addSession'), () => { noteWorkspace(key); openDialog({ kind: 'spawn', cwd: w.root }); })}
+      {w.kind === 'repo' && item('region-worktree', t('quickWt.menu.worktree'), () => openQuickWorktree(at.x, at.y, key))}{/* P321: 빠른 워크트리 세션 */}
       {item('region-fit', t('regions.fit'), () => selectWorkspace(key))}
       <div className="mt-sb2-msep" />
       {item('region-remove', t('sbRemove.menu'), () => openDialog({ kind: 'wsclose', ws: [w] }), { danger: true })}

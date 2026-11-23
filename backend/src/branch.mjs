@@ -51,6 +51,27 @@ import { PeerNews } from './peer-news.mjs'; // P204: 동료 소식(atrium log | 
 import { permOf, permKey, opRefusal, refusalText } from './orchestration.mjs'; // P296: 자체 오케스트레이션 세션의 권한
 import { VERB_NAMES } from './cli-contract.mjs';
 
+// P36·P321: 신뢰 관문을 지난 claude를 같은 패널·같은 세션 ID로 claude -w <이름>으로 다시 띄운다(하위의 --worktree와 빠른 워크트리 세션이 함께 쓴다).
+//   since: 관문을 연 때(그 뒤 터미널로 직접 들어간 지시는 slipped로 돌려준다). → { trusted, slipped, args } | null(그 사이 세션이 닫힘)
+export async function relaunchInWorktree(b, s, worktree, { since = 0, trustWaitMs = GATE_TRUST_WAIT_MS } = {}) {
+  const t0 = Date.now();
+  // 신뢰가 ~/.claude.json에 쓰였는지(claude -w가 다시 묻지 않고 만들게)
+  while (predictTrust(s.cwd, b.cfg.claudeJson).needsTrust && Date.now() - t0 < trustWaitMs) await sleep(250);
+  const trusted = !predictTrust(s.cwd, b.cfg.claudeJson).needsTrust;
+  // 그 사이 터미널로 직접 들어간 지시(UserPromptSubmit)는 워크트리에서 다시 보낸다
+  const slipped = s.rt.lastPromptAt && s.rt.lastPromptAt >= (since || 0) && s.rt.lastPrompt ? String(s.rt.lastPrompt) : null;
+  const st = () => deriveState(s.rt).state;
+  if (['working', 'waiting'].includes(st())) { await b.adapter.sendKeys(s.agentName, ['esc']).catch(() => {}); for (let i = 0; i < 25 && ['working', 'waiting'].includes(st()); i++) await sleep(200); }
+  await b.adapter.sendText(s.paneId, '/exit'); await sleep(150); await b.adapter.paneKeys(s.paneId, ['enter']);
+  for (const t = Date.now(); s.rt.term.present && Date.now() - t < (b.cfg.killWaitMs || 8000);) await sleep(200);
+  if (!b.sessions.has(s.sessionId)) return null;
+  await b.adapter.waitShellReady(s.paneId, 8000);
+  const args = buildStartArgs({ ...b.launchOf(s), worktree });
+  await b.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) }); // P97: 실행 명령
+  s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
+  s.rt.term.launchPending = true; s.rt.term.agentSessionId = null; s.rt.trustPredicted = false; s.rt.trustScreen = null;
+  return { trusted, slipped, args };
+}
 
 export const DEFAULT_ROLE = '워커';
 export const CHILD_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/; // 에이전트 이름 규칙(P8 때 터미널의 에이전트 이름 규칙과 같게 정했다)
@@ -932,21 +953,9 @@ export class Branch {
   async passGate(s) {
     const b = this.b; const info = this.info.get(s.sessionId);
     const t0 = Date.now();
-    // 신뢰가 ~/.claude.json에 쓰였는지(claude -w가 다시 묻지 않고 만들게)
-    while (predictTrust(s.cwd, b.cfg.claudeJson).needsTrust && Date.now() - t0 < this.gateTrustWaitMs) await sleep(250);
-    const trusted = !predictTrust(s.cwd, b.cfg.claudeJson).needsTrust;
-    // 그 사이 터미널로 직접 들어간 지시(UserPromptSubmit)는 워크트리에서 다시 보낸다
-    const slipped = s.rt.lastPromptAt && s.rt.lastPromptAt >= (info.at || 0) && s.rt.lastPrompt ? String(s.rt.lastPrompt) : null;
-    const st = () => deriveState(s.rt).state;
-    if (['working', 'waiting'].includes(st())) { await b.adapter.sendKeys(s.agentName, ['esc']).catch(() => {}); for (let i = 0; i < 25 && ['working', 'waiting'].includes(st()); i++) await sleep(200); }
-    await b.adapter.sendText(s.paneId, '/exit'); await sleep(150); await b.adapter.paneKeys(s.paneId, ['enter']);
-    for (const t = Date.now(); s.rt.term.present && Date.now() - t < (b.cfg.killWaitMs || 8000);) await sleep(200);
-    if (!b.sessions.has(s.sessionId)) return;
-    await b.adapter.waitShellReady(s.paneId, 8000);
-    const args = buildStartArgs({ ...b.launchOf(s), worktree: info.worktree });
-    await b.adapter.startAgent({ name: s.agentName, paneId: s.paneId, args, ...startOpt(s) }); // P97: 실행 명령
-    s.rt.exit = null; s.rt.phase = 'starting'; s.rt.launchedAt = Date.now(); s.rt.hooksSinceLaunch = 0; s.rt.sessionEnd = null;
-    s.rt.term.launchPending = true; s.rt.term.agentSessionId = null; s.rt.trustPredicted = false; s.rt.trustScreen = null;
+    const r = await relaunchInWorktree(b, s, info.worktree, { since: info.at || 0, trustWaitMs: this.gateTrustWaitMs }); // P321: 빠른 워크트리 세션도 같은 길
+    if (!r) return;
+    const { trusted, slipped, args } = r;
     const next = { ...info, gate: null, gatePassedAt: Date.now() };
     this.noteChild(s.sessionId, next);
     b.store.addEvent(s.sessionId, 'trust_gate_passed', { worktree: info.worktree, trusted, slipped: !!slipped, ms: Date.now() - t0, args });

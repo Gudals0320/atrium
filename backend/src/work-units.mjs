@@ -22,7 +22,7 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 const newId = (p, n = 3) => p + crypto.randomBytes(n).toString('hex');
 export const DONE_RESULTS = ['ok', 'failed'];
 // 알림에 보이는 일 이름. P267: 합치기 일은 첫 줄("합치기: @하위 (브랜치 → 합칠 브랜치)")만
-export const unitTitle = (u) => (u && u.origin === 'merge' ? String(u.spec || '').split('\n')[0] : u ? u.spec : '');
+export const unitTitle = (u) => (u && (u.origin === 'merge' || u.origin === 'merge_request') ? String(u.spec || '').split('\n')[0] : u ? u.spec : ''); // P321: 병합 맡기기 일도 첫 줄
 const DONE_TEXT_MAX = 100000;
 // P296: 판이 마지막 답으로 닫을 때 턴의 답을 기다리는 상한과 보고 머리 표시
 export const FALLBACK_ANSWER_MS = 20000;
@@ -104,6 +104,7 @@ export class WorkUnits {
     const b = this.b;
     const t = b.sessions.get(unit.to);
     if (unit.origin === 'merge' && b.merger) return b.merger.headerFor(unit); // P267: 합치기 일 머리
+    if (unit.origin === 'merge_request' && b.wtSessions) return b.wtSessions.headerFor(unit); // P321: 사람이 판에서 맡긴 병합(worktree-session.mjs)
     return unitHeader({ merge: b.merger ? b.merger.childTail(t) : null, /* P267 */ parent: this.nameOf(unit.from), unitId: unit.id, kind: t ? t.kind || 'claude' : null, docs: b.docs ? b.docs.headerTail(t) : null }); // P208. P257: 문서 한 마디
   }
   // 붙잡아 둔 일을 넣을 차례인가(열린 시도가 없을 때 먼저 온 것 하나)
@@ -220,7 +221,10 @@ export class WorkUnits {
     const ws = this.waiters.get(`${unit.from}>${unit.to}`);
     // P267: 브랜치에서 일한 하위의 done ok → 부모 대신 merger에게 합치기 일로
     const taken = merge && merge.route && b.merger && unit.origin !== 'merge' ? b.merger.take(merge, caller, unit, text) : null;
+    const human = !!(unit.meta && unit.meta.human); // P321: 사람이 맡긴 병합(worktree-session.mjs). 부모 대신 사람에게 결정 카드로
     if (taken) { claimedBy = 'merger'; if (ws && ws.size) for (const w of ws) w.got = { ...val, tryId: tr.id, merge: taken }; }
+    else if (human && unit.origin === 'merge' && result === 'failed') { claimedBy = 'record'; if (b.wtSessions) b.wtSessions.onMergeFailed(unit, text, mergeDone ? mergeDone.extra : []); }
+    else if (human && unit.origin === 'merge_request') { claimedBy = 'record'; if (b.wtSessions) b.wtSessions.onUnrouted(caller, unit, result, text, merge); }
     else if (!parent || unit.from === unit.to || (mergeDone && result === 'ok')) claimedBy = 'record';
     else if (ws && ws.size) { claimedBy = 'wait'; for (const w of ws) w.got = { ...val, tryId: tr.id }; }
     else {
