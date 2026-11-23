@@ -47,3 +47,19 @@ export function invBand(zoom) {
   const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
   return Math.min(INV_MAX, Math.max(INV_MIN, 2 ** Math.round(Math.log2(1 / z))));
 }
+
+// P339: 축소할수록 다시 키우는 이름표 셋(폴더 묶음·워크스페이스·워크트리 이름표, 세션 노드 머리줄)의 배수(--lbl, styles.css 끝 P339 덩어리).
+//   판 단위 바탕 크기(머리줄 13px)가 화면에서 LABEL_SCREEN_PX 아래로 내려가지 않게 키우되, 배수는 1/4 옥타브 띠(2^(k/4))로 올림해
+//   멈춘 뒤 띠가 바뀔 때만 한 번 다시 센다(P324와 같은 방식). 상한 LABEL_MAX는 이름표가 영역 사이 틈(240px)·노드 안 머리줄 자리를 넘지 않는 값이다.
+//   터미널 글자, 요약·본문 글은 이 값을 쓰지 않는다(판 단위 고정 그대로)
+export const LABEL_BASE_PX = 13;
+export const LABEL_SCREEN_PX = 12;
+export const LABEL_STEPS = 4; // 한 옥타브에 띠 넷(약 1.19배씩)
+export const LABEL_MAX = 2 ** (9 / 4); // 약 4.76: 배율 0.2에서 머리줄 화면 약 12.4px
+export function labelScale(zoom) {
+  const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  const raw = LABEL_SCREEN_PX / (LABEL_BASE_PX * z);
+  if (raw <= 1) return 1;
+  const k = Math.ceil(LABEL_STEPS * Math.log2(raw) - 1e-9);
+  return Math.min(LABEL_MAX, 2 ** (k / LABEL_STEPS));
+}

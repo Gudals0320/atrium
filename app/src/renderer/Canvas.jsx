@@ -63,7 +63,7 @@ import { memoEditView } from './lib/memo-edit.js'; // P50(#6)
 import { boardEmpty } from './lib/empty-board.js'; // P50(#6)
 import { oneFinger, releaseKind, pinchViewport, panViewport, mid, dist as gap2, tapTarget, movableId, tapAction, TAP_CONTROL, LONG_PRESS_MS } from './lib/touch-board.js'; // P76
 import { useBoardMotion, onSettled, settledView } from './zoom-var.js'; // P127: 판을 움직이는 동안 작업 중 둘레를 멈춘다. P324: 멈춘 화면 값
-import { invBand } from './lib/view-settle.js'; // P324: 판 테두리 굵기 띠
+import { invBand, labelScale } from './lib/view-settle.js'; // P324: 판 테두리 굵기 띠. P339: 이름표 되키움 띠
 import { openFull, fullId, onFull } from './full-view.js'; // P76
 import { termBudgetNow, boardPlan, step } from './crash-watch.js'; // P84: 휴대폰 웹은 터미널을 적게. P86: 보드 단계(levelPlan)와 단계 기록
 import { tierOf } from './lib/overview.js'; // P85: 워크트리 상자 강조
@@ -650,13 +650,15 @@ export function Canvas() {
   // P324: 판이 멈추면(zoom-var.js 멈춘 화면 값) 한 번에: 판 테두리·둘레·말풍선의 --inv 띠(lib/view-settle.js invBand, 노드마다 쓰지 않고 판 하나에),
   //   고정 글자가 읽히지 않을 만큼 먼지(data-text=far: 영역 이름표의 글을 숨긴다), 터미널 붙이기를 노드 얼굴이 바뀌는 때에 맞춘다
   useEffect(() => {
-    let far = false, inv = NaN;
+    let far = false, inv = NaN, lbl = NaN;
     const put = (v) => {
       const el = wrapRef.current;
       if (!el || !v) return;
       const z = v.transform[2];
       const b = invBand(z);
       if (b !== inv) { inv = b; el.style.setProperty('--inv', b); el.dataset.band = String(Math.round(Math.log2(b))); } // data-band: 큰 이름표가 읽히는지(styles.css)
+      const l = labelScale(z); // P339: 폴더 묶음·워크스페이스·워크트리 이름표와 노드 머리줄만 쓰는 되키움 배수(판 하나에, 띠가 바뀔 때만)
+      if (l !== lbl) { lbl = l; el.style.setProperty('--lbl', +l.toFixed(4)); }
       const f = !textReadable(z, far ? 'frame' : 'term');
       if (f !== far || el.dataset.text === undefined) { far = f; el.dataset.text = f ? 'far' : 'near'; }
     };
