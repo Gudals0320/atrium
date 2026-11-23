@@ -15,7 +15,14 @@
 //   · head가 받는 쪽이면 실패·결정·정리 알림이 head로 간다(지금 하위 흐름과 같다). merger가 꺼진 리포면 done이 head에게 가고 head가 합친다.
 //   · 사람이 받는 쪽이면: merger에게 넘기지 못한 done, merger의 실패는 그 세션의 결정 카드(P284)로 사람에게. 합침 정리 알림은 보내지 않는다(소식 한 줄은 남는다).
 //     merger가 꺼진 리포면 맡기지 않고 까닭을 돌려준다(merger_off). 설정이 ask이고 답이 없으면 merger 묻기 카드를 띄우고 merger_ask.
-//   · 병합되면 그 세션은 지금 워커처럼 닫고 보관한다(merger.mjs finishOk). 치우기(합치지 않고 버리기)는 다음 조각(S6).
+//   · 병합되면 그 세션은 지금 워커처럼 닫고 보관한다(merger.mjs finishOk).
+// - P325 치우기(판 API worktree.discard { session, keepBranch = true, force = false, dryRun? }, 설계 4.5, 조각 S6): 합치지 않고 버린다.
+//   확인 값(dryRun)은 병합 맡기기 값(mergeView)에 워크트리 자리(path)와 길(via: merger | board)을 더한 것이다.
+//   먼저 판이 세션을 닫고 보관한다(claude -w의 나가기 질문은 남기기로 답한다: P71 kill worktree keep). 지우는 것은 그 뒤에 한다.
+//   · merger가 켜진 리포(enabledFor): merger에게 치우기 일(work_units origin merge, meta.discard)을 맡긴다. merger가 git worktree remove [--force],
+//     남기기 끔일 때만 git branch -D를 하고 done으로 닫는다. 판은 ok를 믿기 전에 git으로 본다(워크트리 목록에 없고, 지우라 했으면 브랜치도 없나).
+//   · 꺼진 리포: 판이 직접 git worktree remove [--force] → git branch -D(남기기 끔일 때만). 사람이 누른 때만 하는 판의 git 쓰기다.
+//   · 커밋 안 한 변경이 있으면 force 없이는 거절(dirty). 결과는 소식 한 줄과 창 알림(worktree.discarded).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -73,6 +80,18 @@ export function humanCardQuestion({ name, kind, line }) {
   const head = kind === 'merge_failed' ? '@' + name + ' 병합 실패' : '@' + name + ' 병합을 맡기지 못함';
   return clip(head + ': ' + String(line || '').replace(/\s+/g, ' ').trim(), 190);
 }
+
+// P325: 치우기 git 인자(순수). remove: 워크트리 지우기, branch: 브랜치 지우기(남기기 끔이고 브랜치가 있을 때만, 아니면 null)
+export function discardGitArgs({ root, path: dir, branch, keepBranch = true, force = false }) {
+  return { remove: ['-C', root, 'worktree', 'remove', ...(force ? ['--force'] : []), dir], branch: !keepBranch && branch ? ['-C', root, 'branch', '-D', branch] : null };
+}
+// 치운 결과 한 줄(소식·로그)
+export function discardResultText(job, r) {
+  if (!r.removed) return '워크트리 치우기 실패: ' + (r.error || '까닭 모름');
+  const b = job.branch ? (job.keepBranch ? '브랜치 ' + job.branch + ' 남김' : r.branchDeleted ? '브랜치 ' + job.branch + ' 지움' : '브랜치 ' + job.branch + ' 못 지움' + (r.error ? ' (' + r.error + ')' : '')) : '브랜치 없음';
+  return '워크트리 치움(' + (r.via === 'merger' ? 'merger' : '보드') + '): ' + job.path + ', ' + b;
+}
+const same = (a, b) => !!a && !!b && slash(path.resolve(a)).toLowerCase() === slash(path.resolve(b)).toLowerCase();
 
 function gitRun(args, timeout = 30000) {
   return new Promise((res) => execFile('git', args, { encoding: 'utf8', windowsHide: true, timeout }, (err, out, errOut) => res({ ok: !err, out: String(out || ''), err: String(errOut || (err && err.message) || '') })));
@@ -223,7 +242,7 @@ export class WorktreeSessions {
     const m = b.merger;
     const mode = m ? m.modeFor(ws) : { mode: 'off', answer: null };
     return { session: s.sessionId, name: shownName(s) || s.name, workspace: ws, root: slash(root), worktree: !!(probe && probe.isWorktree), branch: probe ? probe.branch : null, tip: probe ? probe.tip : null, ahead: probe ? probe.ahead : null, dirty: probe ? probe.dirty : null,
-      target, head: head ? shownName(head) : null, headId: head ? head.sessionId : null, mode: mode.mode, answer: mode.answer, enabled: !!(m && m.enabledFor(ws)), busy: !!this.store().openTryOf(s.sessionId) };
+      path: probe && probe.isWorktree ? slash(probe.root) : null, target, head: head ? shownName(head) : null, headId: head ? head.sessionId : null, mode: mode.mode, answer: mode.answer, enabled: !!(m && m.enabledFor(ws)), busy: !!this.store().openTryOf(s.sessionId) };
   }
   async request(p = {}) {
     const b = this.b; const st = this.store();
@@ -276,8 +295,67 @@ export class WorktreeSessions {
     const line = String(text || '').split('\n').map((l) => l.trim()).find(Boolean) || '';
     return this.tellHuman(s, { kind: 'merge_failed', line, why: extra.map((x) => String(x).replace(/^\[Atrium 보드\] /, '')).join(' ') });
   }
+  // ---------- P325 치우기 ----------
+  async discardView(s) {
+    const v = await this.mergeView(s);
+    const m = this.b.merger;
+    return { ...v, via: m && m.enabledFor(v.workspace) ? 'merger' : 'board' };
+  }
+  async discard(p = {}) {
+    const b = this.b; const st = this.store();
+    const s = b.resolve(p.session);
+    const v = await this.discardView(s);
+    if (p.dryRun) return v;
+    if (!v.worktree || !v.path) throw apiError('not_worktree', '@' + v.name + '는 워크트리에서 일하지 않습니다(치울 워크트리가 없다).');
+    if (v.branch && v.branch === v.target) throw apiError('same_branch', '@' + v.name + '의 브랜치가 합칠 브랜치(' + v.target + ')와 같습니다. 치우지 않습니다.');
+    if (same(v.path, v.root)) throw apiError('not_worktree', '리포 뿌리는 치우지 않습니다: ' + v.root);
+    const force = !!p.force; const keepBranch = p.keepBranch !== false || !v.branch;
+    if (v.dirty > 0 && !force) throw apiError('dirty', '@' + v.name + '의 워크트리에 커밋 안 한 변경이 ' + v.dirty + '개 있습니다. 변경까지 지우려면 force를 켭니다.', { dirty: v.dirty });
+    const job = { name: v.name, sessionId: s.sessionId, kind: s.kind || 'claude', workspace: v.workspace, root: v.root, path: v.path, branch: v.branch, tip: v.tip, ahead: v.ahead, dirty: v.dirty, target: v.target, keepBranch, force };
+    st.addEvent(s.sessionId, 'worktree_discard', { via: v.via, path: v.path, branch: v.branch, ahead: v.ahead, dirty: v.dirty, keepBranch, force });
+    b.log('worktree discard @' + v.name + ' ' + v.path + ' (' + v.via + (keepBranch ? ', keep branch' : ', delete branch') + (force ? ', force' : '') + ')');
+    // 세션 닫기(워크트리는 남긴다: claude -w의 나가기 질문에 남기기로 답한다). 지우기는 판·merger가 한다
+    const br = b.branch;
+    if (br && br.byParentKill) br.byParentKill.add(s.sessionId); // 위 세션에게 닫힘 알림을 보내지 않는다
+    try { await b.kill({ session: s.sessionId, confirm: true, worktree: 'keep', after: 'archive' }); }
+    catch (e) { if (br && br.byParentKill) br.byParentKill.delete(s.sessionId); throw e; }
+    if (v.via === 'merger' && b.merger) {
+      const r = b.merger.takeDiscard(job);
+      return { ...v, closed: true, via: 'merger', unit: r.unit, merger: r.merger, keepBranch, force };
+    }
+    const r = await this.removeDirect(job);
+    this.discarded(job, { via: 'board', ...r });
+    return { ...v, closed: true, via: 'board', keepBranch, force, ...r };
+  }
+  // 판이 직접 지운다(merger 꺼짐, 또는 merger를 띄우지 못함). 막 끝난 세션이 폴더를 쥐고 있을 수 있어(Windows) 몇 번 다시 해 본다
+  //   → { removed, branchDeleted, error }
+  async removeDirect(job, { tries = 5, waitMs = 1000 } = {}) {
+    const args = discardGitArgs(job);
+    let r = null;
+    for (let i = 0; i < tries; i++) {
+      r = await gitRun(args.remove);
+      if (r.ok) break;
+      if (i < tries - 1) await new Promise((res) => setTimeout(res, waitMs));
+    }
+    if (!r.ok) return { removed: false, branchDeleted: false, error: clip('git worktree remove: ' + r.err.trim(), 300) };
+    if (this.b.worktrees) this.b.worktrees.kick('worktree discard');
+    if (!args.branch) return { removed: true, branchDeleted: false, error: null };
+    const d = await gitRun(args.branch);
+    return { removed: true, branchDeleted: d.ok, error: d.ok ? null : clip('git branch -D: ' + d.err.trim(), 300) };
+  }
+  // 치운 결과를 사람에게(소식 한 줄, 창 알림). merger 길은 merger.mjs가 done 뒤에 부른다
+  discarded(job, r) {
+    const st = this.store();
+    const ok = !!r.removed && !r.error;
+    const text = '@' + job.name + ' ' + discardResultText(job, r);
+    try { st.addNews({ sessionId: job.sessionId, name: job.name, at: Date.now(), kind: 'discard', task: '치우기: @' + job.name, text, result: ok ? 'ok' : 'failed' }); } catch (e) { this.b.log('discard news ' + e.message); }
+    try { st.addEvent(job.sessionId, 'worktree_discarded', { via: r.via, removed: !!r.removed, branchDeleted: !!r.branchDeleted, error: r.error || null }); } catch {}
+    try { if (this.b.api && this.b.api.broadcast) this.b.api.broadcast('worktree.discarded', { name: job.name, workspace: job.workspace, branch: job.branch, path: job.path, via: r.via, removed: !!r.removed, branchDeleted: !!r.branchDeleted, keepBranch: job.keepBranch, error: r.error || null }); } catch {}
+    this.b.log('worktree discarded @' + job.name + ' via ' + r.via + ': ' + text);
+  }
   handlers() {
     return {
+      'worktree.discard': (p) => this.discard(p),
       'session.worktree': (p) => this.create(p),
       'session.worktreePreview': (p) => this.preview(p),
       'merge.request': (p) => this.request(p),

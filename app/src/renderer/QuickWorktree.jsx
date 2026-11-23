@@ -11,10 +11,10 @@ import { useT, t, errText } from './lib/i18n.js';
 import { orderedLaunchers, favoriteLaunchers } from './lib/launchers.js';
 import { devModel } from './SpawnDialog.jsx';
 import { arrangeWorkspace } from './Regions.jsx';
-import { headCandidates, nextHead, paneMenuItems, mergerIdsOf, nameIssue, nameFromPrompt, wtBranch, wtRel, canAskMerge } from './lib/quick-worktree.js';
+import { headCandidates, nextHead, paneMenuItems, mergerIdsOf, nameIssue, nameFromPrompt, wtBranch, wtRel, canAskMerge, discardChoices, discardBlock } from './lib/quick-worktree.js';
 
 // ---------- 작은 저장소 ----------
-let q = { menu: null, quick: null }; // menu: { x, y, wsKey|null }, quick: { x, y, wsKey }
+let q = { menu: null, quick: null, discard: null }; // menu: { x, y, wsKey|null }, quick: { x, y, wsKey }, discard(P325): { sessionId, name }
 const subs = new Set();
 const set = (patch) => { q = { ...q, ...patch }; for (const f of subs) f(); };
 const useQ = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => q);
@@ -158,7 +158,7 @@ function QuickBox({ at }) {
 // 캔버스가 그린다(Canvas.jsx)
 export function QuickLayer() {
   const s = useQ();
-  return <>{s.menu && <PaneMenu at={s.menu} />}{s.quick && <QuickBox key={s.quick.wsKey + ':' + s.quick.x + ':' + s.quick.y} at={s.quick} />}</>;
+  return <>{s.menu && <PaneMenu at={s.menu} />}{s.quick && <QuickBox key={s.quick.wsKey + ':' + s.quick.x + ':' + s.quick.y} at={s.quick} />}{s.discard && <DiscardDialog key={s.discard.sessionId} d={s.discard} />}</>;
 }
 
 // ---------- 병합 맡기기(시안 04) ----------
@@ -185,7 +185,72 @@ export function MergeMenuRows({ s, onClose }) {
   const rel = (relation) => api.call('relation.set', { a: v.headId, b: s.sessionId, relation }).then(() => { onClose(); toast(t('quickWt.relSet', { head: v.head, rel: t('quickWt.rel.' + relation) })); }, (e) => toast(errText(e), 'error'));
   return <>
     <div className="mt-menu-row"><button className="mt-btn small mt-merge-ask" data-action="merge-ask" disabled={!!(v && (v.busy || empty))} onClick={() => { onClose(); askMerge(s); }}>{t('quickWt.mergeAsk')}</button><span className="dim" data-role="merge-hint">{v && v.busy ? t('quickWt.mergeBusy') : hint}</span></div>
+    <div className="mt-menu-row"><button className="mt-btn small" data-action="wt-discard" onClick={() => { onClose(); openDiscard(s); }}>{t('wtDiscard.menu')}</button><span className="dim" data-role="discard-hint">{t('wtDiscard.hint')}</span></div>{/* P325 */}
     {v && v.head && <div className="mt-menu-row" data-role="peer-row"><button className="mt-btn small" data-action="peer-show" onClick={() => { onClose(); const st = getState(); if (st.navigateTo) st.navigateTo(v.headId, { viewOnly: true }); }}>{t('quickWt.relNow', { head: v.head })}</button>
       <span className="dim">{t('quickWt.relChange')} <a href="#" data-action="rel-none" onClick={(e) => { e.preventDefault(); rel('none'); }}>{t('quickWt.rel.none')}</a> · <a href="#" data-action="rel-sub" onClick={(e) => { e.preventDefault(); rel('sub'); }}>{t('quickWt.rel.sub')}</a></span></div>}
   </>;
 }
+
+// ---------- P325 워크트리 치우기(설계 4.5, 시안 04 둘째 줄) ----------
+// 카드 ⋯ 메뉴와 사이드바 세션 메뉴의 "워크트리 치우기…" → 확인 상자. 판 API worktree.discard(dryRun으로 값, 누르면 세션을 닫고 merger 또는 판이 지운다)
+export function openDiscard(s) { if (s) set({ discard: { sessionId: s.sessionId, name: s.name }, menu: null, quick: null }); }
+const closeDiscard = () => set({ discard: null });
+function DiscardDialog({ d }) {
+  const t = useT();
+  const [v, setV] = useState(null);
+  const [err, setErr] = useState(null);
+  const [keep, setKeep] = useState(true);
+  const [force, setForce] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.call('worktree.discard', { session: d.sessionId, dryRun: true }).then((r) => { if (!live) return; setV(r); setKeep(discardChoices(r).keepBranch); }).catch((e) => live && setErr(e));
+    const key = (e) => { if (e.key === 'Escape' && !busy) closeDiscard(); };
+    window.addEventListener('keydown', key);
+    return () => { live = false; window.removeEventListener('keydown', key); };
+  }, [d.sessionId]);
+  const c = discardChoices(v);
+  const block = err ? 'error' : discardBlock(v, force);
+  const go = async () => {
+    if (block || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.call('worktree.discard', { session: d.sessionId, keepBranch: !c.hasBranch || keep, force });
+      closeDiscard();
+      if (r.via === 'merger') toast(t('wtDiscard.handed', { name: r.name, merger: r.merger ? '@' + r.merger : 'merger' }));
+      else if (!r.removed || r.error) toast(t('wtDiscard.failed', { error: r.error || '?' }), 'error');
+    } catch (e) { toast(t('wtDiscard.failed', { error: errText(e) }), 'error'); setBusy(false); }
+  };
+  return createPortal(
+    <div className="mt-modal-bg" onMouseDown={(e) => e.target === e.currentTarget && !busy && closeDiscard()}>
+      <div className="mt-modal mt-wtd" role="dialog" aria-labelledby="mt-wtd-title" data-role="wt-discard" data-session={d.sessionId} data-via={v ? v.via : ''}>
+        <h3 id="mt-wtd-title">{t('wtDiscard.title', { name: (v && v.name) || d.name })}</h3>
+        {err ? <div className="mt-wtd-bad" data-role="wtd-error">{errText(err)}</div> : !v ? <div className="dim">{t('wtDiscard.loading')}</div> : <>
+          <dl className="mt-wtd-facts" data-role="wtd-facts">
+            <dt>{t('wtDiscard.branch')}</dt><dd className="mono" data-field="branch">{v.branch || t('wtDiscard.noBranch')}</dd>
+            <dt>{t('wtDiscard.ahead', { target: v.target || '?' })}</dt><dd data-field="ahead" className={v.ahead > 0 ? 'hot' : ''}>{v.ahead ?? '?'}</dd>
+            <dt>{t('wtDiscard.dirty')}</dt><dd data-field="dirty" className={v.dirty > 0 ? 'hot' : ''}>{v.dirty ?? '?'}</dd>
+            <dt>{t('wtDiscard.path')}</dt><dd className="mono" data-field="path" title={v.path || ''}>{v.path || '?'}</dd>
+          </dl>
+          {c.risky && <div className="mt-wtd-bad" data-role="wtd-warn">{t('wtDiscard.warn')}</div>}
+          {c.hasBranch && <label className="mt-wtd-check"><input type="checkbox" data-field="wtd-keep" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> {t('wtDiscard.keepBranch', { branch: v.branch })}</label>}
+          {c.needForce && <label className="mt-wtd-check"><input type="checkbox" data-field="wtd-force" checked={force} onChange={(e) => setForce(e.target.checked)} /> {t('wtDiscard.force', { n: v.dirty })}</label>}
+          <div className="mt-card-sub dim" data-role="wtd-how">{t(v.via === 'merger' ? 'wtDiscard.viaMerger' : 'wtDiscard.viaBoard')}</div>
+          {block === 'same_branch' && <div className="mt-wtd-bad">{t('wtDiscard.sameBranch')}</div>}
+        </>}
+        <div className="mt-card-actions">
+          <button className="mt-btn danger" data-action="wtd-go" disabled={!!block || busy} onClick={go}>{busy ? t('wtDiscard.working') : t('wtDiscard.go')}</button>
+          <button className="mt-btn ghost" data-action="wtd-cancel" disabled={busy} onClick={closeDiscard}>{t('common.cancel')}</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+// 치운 결과(판이 직접 지웠거나 merger가 닫았다)
+api.on('worktree.discarded', (r) => {
+  if (!r) return;
+  const ok = r.removed && !r.error;
+  const br = !r.branch ? '' : r.keepBranch ? t('wtDiscard.branchKept', { branch: r.branch }) : r.branchDeleted ? t('wtDiscard.branchDeleted', { branch: r.branch }) : t('wtDiscard.branchLeft', { branch: r.branch });
+  toast(ok ? t('wtDiscard.done', { name: r.name, by: r.via === 'merger' ? 'merger' : t('wtDiscard.byBoard'), branch: br }) : t('wtDiscard.failedNamed', { name: r.name, error: r.error || '?' }), ok ? 'info' : 'error');
+});

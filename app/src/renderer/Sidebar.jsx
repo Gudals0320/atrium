@@ -19,7 +19,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { api } from './api.js';
 import { shownRole } from './lib/roles.js'; // P141(#17)
 import { useStore, getState, selectWorkspace, selectGroup, toast, goWhenOpen, openDialog, setRenaming } from './store.js';
-import { askMerge } from './QuickWorktree.jsx'; // P321: 병합 맡기기
+import { askMerge, openDiscard } from './QuickWorktree.jsx'; // P321: 병합 맡기기, P325: 워크트리 치우기
 import { canAskMerge, mergerIdsOf } from './lib/quick-worktree.js';
 import { ago, askLine, STATE_LABEL } from './lib/labels.js';
 import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
@@ -479,6 +479,7 @@ function SideMenu() {
       {item('menu-go-session', t('rename.goNode'), () => { const st = getState(); if (st.navigateTo) st.navigateTo(s.sessionId, { viewOnly: true }); })}
       {canReopen(s) && item('menu-reopen-session', t('userClose.reopen'), () => reopenSession(s), { disabled: side.busy.has(s.sessionId) })}
       {canAskMerge(s, mergerIdsOf(getState().merger)) && item('menu-merge-ask', t('quickWt.mergeAsk'), () => askMerge(s))}{/* P321 */}
+      {canAskMerge(s, mergerIdsOf(getState().merger)) && item('menu-wt-discard', t('wtDiscard.menu'), () => openDiscard(s), { danger: true })}{/* P325 */}
     </>;
   } else if (menu.type === 'ws') {
     const w = workspaces.find((x) => x.key === menu.key);

@@ -2994,3 +2994,12 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-frameface .mt-frame-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
 .mt-frameface .mt-frame-row .mt-frame-mark { width: 1em; flex: none; }
 .mt-canvas[data-text="far"] .mt-wtbox-head { visibility: hidden; }
+/* P325: 워크트리 치우기 확인 상자 */
+.mt-wtd { width: 460px; }
+.mt-wtd-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 12.5px; }
+.mt-wtd-facts dt { color: var(--dim); }
+.mt-wtd-facts dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-wtd-facts dd.hot { color: var(--warn); font-weight: 600; }
+.mt-wtd-bad { color: var(--bad); font-weight: 600; font-size: 12.5px; }
+.mt-modal label.mt-wtd-check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; } /* 대화상자 label의 격자 대신 한 줄 */
+.mt-modal label.mt-wtd-check input { width: auto; flex: none; margin: 0; }
