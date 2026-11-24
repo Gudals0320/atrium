@@ -8,6 +8,7 @@
 // 새 기능은 없다. 모든 단추는 이미 있던 동작을 부른다.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GuardBadge } from './Guard.jsx'; // P341: 메모리 알약 줄의 폭주 표시
+import { resOrder } from './lib/guard.js'; // P348: 메모리 알약 펼침의 세션 목록 차례
 import { useStore, getState, openDialog, toast, wsName, setMissionOpen, setSpotlight, markAllSeen } from './store.js';
 import { QuickName } from './QuickName.jsx'; // P97: 레일 빠른 생성의 이름 칸
 import { favoriteLaunchers, launcherIcon, launcherMark, launcherTooltip } from './lib/launchers.js'; // P33: 레일 = 즐겨찾기 호출자
@@ -268,6 +269,8 @@ function ResourcePill({ maxControllers }) {
     t('top.resAt', { time: fmtTime(r.at), ms: r.ms }),
   ].join('\n');
   const repos = memByRepo(r.sessions, sessions, workspaces); // 잰 뒤 잠든 세션은 잠든 줄로만
+  const order = resOrder(r.sessions, sessions); // P348: 위 세션 목록
+  const cores = (r.cpu && r.cpu.cores) || 1; // P348: 줄의 CPU는 코어 하나 대비로(폭주 배지·설정 기준과 같은 잣대)
   const doSleep = async () => { setBusy(true); await sleepIdle(); setBusy(false); };
   return (
     <div className="mt-drop" ref={ref}>
@@ -277,18 +280,21 @@ function ResourcePill({ maxControllers }) {
       </button>
       {open && (
         <div className="mt-dropdown" data-role="resources-list">
-          <div className="mt-dropdown-head"><span>{t('sleep.memHead')} · {fmtMB(r.sessionsMB)}</span></div>
+          <div className="mt-dropdown-head"><span>{t('sleep.memHead')} · {fmtMB(r.sessionsMB)}</span>{r.intervalMs ? <span className="dim mt-res-every" data-role="res-every" title={t('p348.everyTitle', { ms: r.readMs ?? r.ms })}>{t('p348.every', { s: Math.round(r.intervalMs / 1000) })}</span> : null}</div>
+          {/* P348: 세션 목록을 판 전체·PC 전체 값 위에, 폭주·무거움 먼저, CPU·메모리 큰 순(측정마다 다시 그린다) */}
+          <div className="mt-res-top" data-role="res-top">
+            {order.map((x) => (
+              <button key={x.sessionId} className={`mt-chip${x.guard ? ` mt-res-guard k-${x.guard.kind}${x.guard.paused ? ' paused' : ''}` : ''}`} data-role="res-row" data-session={x.sessionId} data-name={x.name} data-guard={x.guard ? x.guard.kind : undefined} onClick={() => { setOpen(false); go(x.sessionId); }}>
+                <span className="mt-chip-line"><b>@{x.name}</b>{x.cpuPct != null && <span className="mono" data-role="res-row-cpu" title={t('p348.rowCpuTitle')}> CPU {fmtPct(x.cpuPct * cores)}</span>} <span className="mono">{fmtMB(x.memMB)}</span> <span className="dim">{STATE_LABEL[x.state] || x.state}</span></span>
+                {x.guard ? <span className="mt-chip-line mt-guard-line"><GuardBadge sessionId={x.sessionId} where="list" /></span> : null}
+              </button>
+            ))}
+          </div>
           <div className="mt-res-sum" data-role="res-asleep-line">{asleepLine}</div>
           <div className="mt-res-sum" data-role="res-cpu" title={t('p255.cpuTitle')}>{t('p255.cpu', cpuLine(r))}</div>
           {repos.map((g) => (
             <div key={g.key || '-'} className="mt-res-group" data-role="res-repo" data-ws={g.key} data-name={g.name}>
               <div className="mt-res-repo"><b>{g.name}</b> <span className="mono">{fmtMB(g.memMB)}</span>{g.asleep.length > 0 && <span className="mt-res-asleep" data-role="res-repo-asleep"><Icon name="moon" />{t('sleep.memRepoAsleep', { n: g.asleep.length, mb: fmtMB(g.savedMB) })}</span>}</div>
-              {g.rows.map((x) => (
-                <button key={x.sessionId} className={`mt-chip${x.guard ? ` mt-res-guard k-${x.guard.kind}${x.guard.paused ? ' paused' : ''}` : ''}`} data-session={x.sessionId} data-name={x.name} data-guard={x.guard ? x.guard.kind : undefined} onClick={() => { setOpen(false); go(x.sessionId); }}>
-                  <span className="mt-chip-line"><b>@{x.name}</b> <span className="mono">{fmtMB(x.memMB)}</span>{x.cpuPct != null && <span className="mono dim" data-role="res-row-cpu"> · CPU {fmtPct(x.cpuPct)}</span>} <span className="dim">{STATE_LABEL[x.state] || x.state}</span></span>
-                  {x.guard ? <span className="mt-chip-line mt-guard-line"><GuardBadge sessionId={x.sessionId} where="list" /></span> : null}
-                </button>
-              ))}
               {g.asleep.map((s) => (
                 <button key={s.sessionId} className="mt-chip asleep" data-session={s.sessionId} data-name={s.name} data-role="res-asleep-row" onClick={() => { setOpen(false); go(s.sessionId); }}>
                   <span className="mt-chip-line"><Icon name="moon" /> {t('sleep.memRowAsleep', { name: s.name, mb: fmtMB(s.sleep && s.sleep.memMB) })}</span>

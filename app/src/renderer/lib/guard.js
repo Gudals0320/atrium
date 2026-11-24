@@ -16,7 +16,7 @@ export function badgeParts(g) {
   if (g.paused) return [{ key: 'guard.badge.paused', vars: {} }];
   const out = [];
   for (const r of g.reasons || []) {
-    if (r.type === 'cpu') out.push({ key: 'guard.badge.cpu', vars: { pct: r.pct, min: fmtMin(r.ms) } });
+    if (r.type === 'cpu') out.push(r.instant ? { key: 'p348.badgeCpuNow', vars: { pct: r.pct } } : { key: 'guard.badge.cpu', vars: { pct: r.pct, min: fmtMin(r.ms) } }); // P348: 곧바로 단 배지
     else if (r.type === 'mem' && !(g.reasons || []).some((x) => x.type === 'grow')) out.push({ key: 'guard.badge.mem', vars: { mem: fmtMem(r.memMB) } });
     else if (r.type === 'grow') out.push({ key: 'guard.badge.grow', vars: { mem: fmtMem(r.toMB) } });
   }
@@ -40,7 +40,7 @@ export function guardActions(card, o = {}) {
 }
 // 카드 머리 글 조각(사전 열쇠 guard.why.*)
 export function whyParts(g) {
-  return (g && g.reasons ? g.reasons : []).map((r) => (r.type === 'cpu' ? { key: 'guard.why.cpu', vars: { pct: r.pct, min: fmtMin(r.ms) } } : r.type === 'mem' ? { key: 'guard.why.mem', vars: { mem: fmtMem(r.memMB) } } : { key: 'guard.why.grow', vars: { from: fmtMem(r.fromMB), to: fmtMem(r.toMB), min: fmtMin(r.ms) } }));
+  return (g && g.reasons ? g.reasons : []).map((r) => (r.type === 'cpu' && r.instant ? { key: 'p348.whyCpuNow', vars: { pct: r.pct } } : r.type === 'cpu' ? { key: 'guard.why.cpu', vars: { pct: r.pct, min: fmtMin(r.ms) } } : r.type === 'mem' ? { key: 'guard.why.mem', vars: { mem: fmtMem(r.memMB) } } : { key: 'guard.why.grow', vars: { from: fmtMem(r.fromMB), to: fmtMem(r.toMB), min: fmtMin(r.ms) } }));
 }
 // 지금 값의 가장 무거운 프로세스(같은 PID면 지금 표본의 값, 아니면 카드의 값)
 export function liveTop(card, row) {
@@ -51,4 +51,14 @@ export function liveTop(card, row) {
   const mem = row.topMem && Number(row.topMem.pid) === Number(t.pid) ? row.topMem : null;
   const now = cpu || mem;
   return now ? { ...t, cpuPct: now.cpuPct, memMB: now.memMB } : t;
+}
+
+// P348: 메모리 알약 펼침의 세션 목록 차례. 폭주 의심 → 무거움 → 나머지, 그 안에서 CPU 큰 순, 메모리 큰 순, 이름.
+//   잰 메모리가 없거나 잠든 세션은 뺀다(잠든 세션은 리포 묶음의 잠든 줄로). rows: 자원 표본 줄, sessions: Map(판의 세션). 순수 함수
+const RANK = { suspect: 0, heavy: 1 };
+export function resOrder(rows, sessions = new Map()) {
+  const live = (rows || []).filter((x) => x && x.memMB > 0 && !((sessions.get(x.sessionId) || {}).state === 'sleeping'));
+  const rank = (x) => (x.guard ? RANK[x.guard.kind] ?? 1 : 2);
+  const n = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : -1);
+  return live.slice().sort((a, b) => rank(a) - rank(b) || n(b.cpuPct) - n(a.cpuPct) || n(b.memMB) - n(a.memMB) || String(a.name).localeCompare(String(b.name)));
 }

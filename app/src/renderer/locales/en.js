@@ -2629,7 +2629,7 @@ export default {
     readAll: 'Mark all read',
     readAllTitle: 'Mark every finished turn in this list as seen',
     cpu: 'CPU: sessions {sessions} · whole PC {system}',
-    cpuTitle: 'CPU use of the sessions the board started and of the whole PC, measured with memory (about every 30 s)',
+    cpuTitle: 'CPU use of the sessions the board started and of the whole PC, measured with memory (usually every 5 s, 30 s without the helper)',
     credit: 'Credits {n}',
     creditUnlimited: 'Unlimited credits',
   },
@@ -3266,5 +3266,14 @@ export default {
     cross: 'Other workspace',
     peer: 'Peer',
     lineage: 'Independent',
+  },
+  // P348: resource guard 2 (transitions, instant badge, faster sampling)
+  p348: {
+    badgeCpuNow: 'CPU {pct}% now',
+    whyCpuNow: 'CPU {pct}% of a core right now (shown before the duration threshold)',
+    instantX: 'Show at once (multiple)', instantXHint: 'When CPU goes over this many times the CPU threshold, or memory over this many times the memory threshold, the badge shows at the next sample without waiting. Cards still follow the duration thresholds. (default {n}, 0: off)',
+    every: 'every {s}s',
+    rowCpuTitle: 'CPU relative to one core (100% = one full core). The "CPU: sessions · whole PC" line below is relative to the whole PC.',
+    everyTitle: 'Sampling interval. Reading the process table took {ms} ms last time.',
   },
 };

@@ -2633,7 +2633,7 @@ export default {
     readAll: '모두 읽기',
     readAllTitle: '목록의 작업 완료를 모두 본 것으로 표시합니다.',
     cpu: 'CPU: 세션 {sessions} · PC 전체 {system}',
-    cpuTitle: '판이 띄운 세션들과 PC 전체의 CPU 사용률입니다. 메모리와 같은 주기(약 30초)로 잽니다.',
+    cpuTitle: '판이 띄운 세션들과 PC 전체의 CPU 사용률입니다. 메모리와 같은 주기(보통 5초, 도우미가 없으면 30초)로 잽니다.',
     credit: '크레딧 {n}',
     creditUnlimited: '크레딧 무제한',
   },
@@ -3270,5 +3270,14 @@ export default {
     cross: '다른 워크스페이스',
     peer: '동료',
     lineage: '독립',
+  },
+  // P348: 자원 감시 2(전환 구분, 곧바로 배지, 빠른 측정)
+  p348: {
+    badgeCpuNow: 'CPU {pct}% 지금',
+    whyCpuNow: '코어 하나의 CPU {pct}%를 지금 사용 (지속 시간 전에 바로 표시)',
+    instantX: '곧바로 표시 배수', instantXHint: 'CPU가 CPU 기준의 이 배를 넘거나 메모리가 메모리 기준의 이 배를 넘으면 지속 시간을 기다리지 않고 바로 배지를 답니다. 카드는 지속 기준대로 만듭니다. (기본값 {n}, 0: 사용 안 함)',
+    every: '{s}초마다',
+    rowCpuTitle: '코어 하나 대비 CPU입니다(100% = 코어 하나를 다 씀). 아래 "CPU: 세션 · PC 전체"는 PC 전체 대비입니다.',
+    everyTitle: '측정 간격입니다. 마지막 측정의 프로세스 표 읽기에 {ms}ms 걸렸습니다.',
   },
 };

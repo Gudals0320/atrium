@@ -3182,3 +3182,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-mm-sw .mt-ta-edge.k-cross { stroke-width: 2.6; stroke-dasharray: 0.1 5; stroke-linecap: round; }
 .mt-mm-sw .mt-ta-edge.k-lineage { stroke-width: 1.6; stroke-dasharray: 2 4; stroke-linecap: round; }
 .mt-mm-sw-dot { fill: #b4b0a5; }
+/* P348: 메모리 알약 펼침의 세션 목록(판 전체 값 위, 폭주·무거움 먼저) */
+.mt-res-top { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line, rgba(255, 255, 255, .08)); }
+.mt-res-every { margin-left: auto; font-size: .85em; font-weight: 400; }

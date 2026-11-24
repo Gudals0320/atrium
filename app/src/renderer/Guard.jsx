@@ -112,6 +112,7 @@ export function ResourcesTab({ settings, schema }) {
         <GuardNum k="guardCpuMin" settings={settings} schema={schema} label="guard.set.cpuMin" hint="guard.set.cpuMinHint" dim={off} />
         <GuardNum k="guardMemGB" settings={settings} schema={schema} label="guard.set.memGB" hint="guard.set.memGBHint" dim={off} />
         <GuardNum k="guardGrowMin" settings={settings} schema={schema} label="guard.set.growMin" hint="guard.set.growMinHint" dim={off} />
+        {settings.guardInstantX != null && <GuardNum k="guardInstantX" settings={settings} schema={schema} label="p348.instantX" hint="p348.instantXHint" dim={off} />}
         {settings.guardBgCpuMin != null && <GuardNum k="guardBgCpuMin" settings={settings} schema={schema} label="guard.set.bgCpuMin" hint="guard.set.bgCpuMinHint" dim={off} />}
       </>}
     </div>
