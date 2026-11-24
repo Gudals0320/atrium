@@ -3212,3 +3212,18 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 /* P357: 터미널에서 답함(사람이 터미널에 친 글로 판이 닫은 손 카드) */
 .mt-ut-termtag { flex: none; padding: 0 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700; line-height: 16px; white-space: nowrap; background: var(--panel-2); color: var(--dim); border: 1px solid var(--panel-line-2); }
 .mt-ut-term .mt-ut-acts { display: flex; align-items: center; gap: 8px; }
+
+/* P359: API 키 과금 세션 표시(노드·세션 맵 카드·런처 목록·휴대폰)와 설정 › 런처의 API 키 칸 */
+.mt-api-tag { display: inline-flex; align-items: center; height: 1.45em; padding: 0 .4em; margin-left: .35em; border-radius: .35em; font-size: .78em; font-weight: 700; letter-spacing: .03em; line-height: 1; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); background: var(--warn-bg); white-space: nowrap; flex: none; vertical-align: middle; }
+.mt-badge.mt-api-tag.node { margin-left: 0; }
+.mt-api-tag.map { margin-left: .4em; font-size: .85em; }
+.mt-apikey { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--panel-line-2); border-radius: 10px; }
+.mt-apikey-head { display: flex; align-items: center; gap: 8px; }
+.mt-apikey-title { font-weight: 700; }
+.mt-apikey-head .mt-api-tag { margin-left: 0; }
+.mt-apikey-state { margin-left: auto; font-size: 12px; }
+.mt-apikey-state[data-present="1"] { color: var(--ok); font-weight: 600; }
+.mt-apikey-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mt-apikey-input { flex: 1 1 220px; min-width: 160px; height: 26px; padding: 0 8px; border: 1px solid var(--panel-line-2); border-radius: 7px; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; }
+.mt-apikey-relay { font-size: 12px; }
+.mt-apikey-note { font-size: 11.5px; line-height: 1.45; }

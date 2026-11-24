@@ -35,10 +35,11 @@ test('P72·P122 새 판: 호출자는 Claude Code(manual), Codex 둘이고 모�
     const ls = new Launchers({ store, gateway: { healthUrl: 'http://127.0.0.1:1/healthz' } });
     assert.deepEqual([ls.migrated.oldBoard, ls.migrated.favorites], [false, ['claude', 'codex']]);
     const l = ls.list();
-    assert.deepEqual(l.launchers.map((x) => [x.id, x.harness, x.favorite]), [['claude', 'claude', true], ['codex', 'codex', true]]);
+    assert.deepEqual(l.launchers.map((x) => [x.id, x.harness, x.favorite]), [['claude', 'claude', true], ['codex', 'codex', true], ['claude-api', 'claude', false]]); // P359: API 런처(레일 밖)
     assert.equal(l.launchers[0].preview.line, 'claude --permission-mode manual');
     assert.equal(ls.find('deepseek'), null, 'DeepSeek 예시가 없다');
-    assert.ok(l.launchers.every((x) => !Object.keys(x.env).length && !x.checkUrl));
+    assert.ok(l.launchers.filter((x) => x.id !== 'claude-api').every((x) => !Object.keys(x.env).length && !x.checkUrl));
+    assert.deepEqual(ls.get('claude-api').env, { ANTHROPIC_BASE_URL: '{{authRelay}}' }, 'P359: API 런처 env는 자리표시만(키 없음)');
     store.close();
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -60,7 +61,8 @@ test('P72 옛 판: 판 기록에 있는 호출자 목록(DeepSeek, bypassPermiss
     store.setMeta(META_KEY, saved);
     const ls = new Launchers({ store });
     assert.equal(ls.migrated, null, '이미 목록이 있으면 아무것도 하지 않는다');
-    assert.deepEqual(store.getMeta(META_KEY), saved);
+    const got = store.getMeta(META_KEY);
+    assert.deepEqual({ ...got, items: got.items.filter((x) => x.id !== 'claude-api') }, saved, 'P359: API 런처만 더한다');
     assert.equal(ls.get('deepseek').permissionMode, 'bypassPermissions');
     assert.equal(ls.get('claude').permissionMode, 'bypassPermissions');
     store.close();

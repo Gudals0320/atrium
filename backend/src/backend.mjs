@@ -38,6 +38,7 @@ import { ResourceMonitor, childProcesses, tableReader } from './resources.mjs';
 import { ResourceGuard, transitOf } from './resource-guard.mjs'; // P341: 폭주 감시·우선순위 낮추기
 import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
+import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금 런처)
 import { probeCodex, probeClaude, probeBalance, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
@@ -247,6 +248,13 @@ export class Backend {
       busy: (k) => [...this.sessions.values()].some((s) => !s.closedAt && (s.kind || 'claude') === k && s.rt && s.rt.term && s.rt.term.status === 'working'),
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
+    // P359: 판 중계기. 키는 OS 보호 저장소로 암호화한 암호문만 데이터 폴더에 두고, 푸는 것은 중계기 자식 프로세스뿐이다.
+    //   키 넣기·지우기는 이 PC의 창에서만(휴대폰 등 기기 연결은 거부). 답과 로그에는 키 값이 없다(있음/없음만)
+    this.authRelay = new AuthRelay({ dataDir: cfg.dataDir, upstream: cfg.authRelayUpstream || (cfg.profile === 'dev' ? process.env.ATRIUM_AUTH_RELAY_UPSTREAM || null : null), log: (m) => this.log(m), onChange: (st) => this.api.broadcast('relay.status', st), onNotice: (n) => this.relayNotice(n), onMoved: (urlOf) => this.relayMoved(urlOf) });
+    const pcOnly = (fn) => (p, c) => { if (c && c.auth && c.auth.kind !== 'local') throw apiError('forbidden', 'only the board on this PC can do this'); return fn(p || {}, c); };
+    this.api.handlers['relay.status'] = (p = {}) => ({ ...this.authRelay.status(), recent: this.authRelay.recent(Math.min(Math.max(Number(p && p.limit) || 10, 1), 100)) });
+    this.api.handlers['relay.setKey'] = pcOnly((p) => this.authRelay.setKey(p.key));
+    this.api.handlers['relay.removeKey'] = pcOnly(() => this.authRelay.removeKey());
     this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
     // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄, decisions.mjs autoTurn). 단위 시험 판에서는 끈다(진짜 claude를 부르지 않게)
     // P338: 할 일 정리 봇이 런처를 골랐으면 하네스·모델·노력은 그 런처(settings.mjs resolveBotSettings)
@@ -449,6 +457,7 @@ export class Backend {
     stopMigration(this);
     this.resources.stop();
     if (this.usage) this.usage.stop(); // P211
+    if (this.authRelay) await this.authRelay.stop().catch(() => {}); // P359: 판과 함께 끈다
     this.queue.stop();
     if (this.features) this.features.stop();
     if (this.perfTrace) this.perfTrace.stop();
@@ -475,6 +484,21 @@ export class Backend {
     await closeHttp(this.http);
     try { const b = JSON.parse(fs.readFileSync(this.cfg.backendFile, 'utf8')); if (b.pid === process.pid) fs.rmSync(this.cfg.backendFile); } catch {}
     this.store.close();
+  }
+
+  // P359: 중계기가 죽었다(다시 띄움 restarted | 그만 둠 down). 판 로그·기록과 창 알림 한 줄(relay.notice)
+  relayNotice(n) {
+    this.store.addEvent(null, `auth_relay_${n.kind}`, { code: n.code ?? null });
+    this.api.broadcast('relay.notice', { kind: n.kind, code: n.code ?? null, at: Date.now() });
+  }
+  // P359: 중계기 포트가 바뀌었다(옛 포트가 막힘). 열린 API 세션의 설정 파일 주소를 새 주소로 고친다(이미 도는 claude는 다시 띄울 때 읽는다)
+  relayMoved(urlOf) {
+    let n = 0;
+    for (const s of this.sessions.values()) {
+      if (s.billing !== 'api' || !s.settingsPath) continue;
+      try { const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8')); if (j.env && j.env.ANTHROPIC_BASE_URL) { j.env.ANTHROPIC_BASE_URL = urlOf(s.sessionId); fs.writeFileSync(s.settingsPath, JSON.stringify(j, null, 2)); n++; } } catch {}
+    }
+    this.log(`auth relay moved: rewrote ${n} API session settings`);
   }
 
   // 터미널 서버(hc)가 없으면 띄우고(깨끗한 환경, 고정 빌드가 없으면 받는다) 버전을 확인한다(ARCH 1절).
@@ -616,6 +640,7 @@ export class Backend {
       // P4
       kind: s.kind || 'claude', origin: s.origin || 'board', parentSessionId: this.workParentOf(s.sessionId), lineageParentSessionId: s.parentSessionId || null, hooked: this.hooked(s), agentName: s.agentName, // P159: 보이는 부모는 일 부모, 계보(띄운 세션)는 사실로 따로
       flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
+      billing: s.billing || null, // P359: 'api'면 판 중계기를 거쳐 API 키로 과금(카드·맵·휴대폰의 API 표시)
       // P92: 도는 Claude Code 뒤 일. P164: Stop hook 목록과 claude 아래 도구 명령 프로세스를 합친 것 { n, kinds, items: [{ kind, label }], at, via } | null(세션 맵 표시)
       background: this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !rt.sleep ? backgroundList(rt.bg, null) : null,
 
@@ -1717,6 +1742,9 @@ export class Backend {
       if (shell && p.prompt) throw keyed(apiError('not_agent', "셸에는 첫 요청을 자동 전송하지 않습니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요."), 'shellNoPrompt');
       // P25·P33: env에 게이트웨이 주소(ANTHROPIC_BASE_URL)를 둔 claude 런처는 그 주소가 닿아야 띄운다. P255: 모델 연결은 걷어 냈다
       if (claude && plan.gateway && plan.gateway.url) await checkGateway({ ...plan.gateway, name: plan.launcher || '' });
+      // P359: API 런처(env에 중계기 자리표시)는 중계기가 떠 있어야 띄운다. 키가 없거나 못 띄우면 세션을 만들지 않고 까닭을 보인다
+      const viaRelay = claude && !!(plan.gateway && plan.gateway.relay);
+      if (viaRelay) await this.authRelay.ensure();
       // G1: 시작 폴더의 워크스페이스
       const ws = await workspaceOf(cwd);
       // P183: 사람이 띄우며 준 첫 요청(창의 새 세션 대화상자, 사람의 atrium spawn --prompt)은 사람의 deliver다(session.send와 같은 규칙).
@@ -1730,7 +1758,7 @@ export class Backend {
       if (claude) {
         hookToken = crypto.randomBytes(24).toString('hex');
         const extra = this.branch.settingsExtra(sessionId);
-        if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수. 판의 값이 이긴다
+        if (env) extra.env = { ...(viaRelay ? await this.authRelay.fillEnv(env, sessionId) : env), ...(extra.env || {}) }; // P33: 호출자의 환경 변수. 판의 값이 이긴다. P359: 중계기 자리표시는 이 세션의 주소로(기록에는 자리표시만)
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.pluginFor(orch ? { sessionId, name, kind, orch } : null, orchScope) }; // P296
@@ -1745,7 +1773,7 @@ export class Backend {
       if (shell) rt.phase = 'running';
       let s;
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
-        s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan, orch }; // P296: orch
+        s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan, orch, ...(viaRelay ? { billing: 'api' } : {}) }; // P296: orch. P359: billing(API 키 과금)
         this.store.insertSession({ ...s, runtime: rt });
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션

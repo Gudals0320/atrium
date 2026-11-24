@@ -55,6 +55,7 @@ export function rowOf(s) {
   if (s.waking) r.waking = true;
   if (s.hooked === false) r.hooked = false; // 스티어링할 수 없다(lib/steer.js steerBlock)
   if (s.flavor) r.flavor = s.flavor;
+  if (s.billing === 'api') r.billing = 'api'; // P359: API 키 과금 세션(카드의 API 표시)
   if (s.model) r.model = String(s.model).replace(/^claude-/, '').slice(0, 40);
   if (s.effort) r.effort = String(s.effort).slice(0, 12); // P356: 카드의 모델·노력 수준(판 세션 맵과 같은 글)
   if (s.waitingSince) r.waitingSince = s.waitingSince;
