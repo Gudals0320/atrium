@@ -22,7 +22,7 @@
 //      (textarea 글자는 투명, 커서는 그대로). 녹음 중 Enter는 녹음을 끝내고 남은 확정 글을 1초까지 받은 뒤 보낸다
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
-import { useStore, toast, setBottomShown } from './store.js';
+import { useStore, getState, toast, setBottomShown } from './store.js';
 import { deliveryText } from './lib/labels.js';
 import { DeliveryEdit, QueueGroup, useDeliveryEditing } from './DeliveryQueue.jsx'; // P158 고치기, P172 같은 세션 대기 묶음
 import { queueView } from './lib/delivery-queue.js'; // P172
@@ -38,7 +38,8 @@ import { useVoice, VoiceButton } from './Voice.jsx'; // P165
 import { splitLive } from './lib/voice-text.js'; // P165
 import { steerTargets, steerParam, steerFellBack } from './lib/steer.js'; // P248: 스티어링 선택
 import { cmdHead } from './lib/cmd-head.js'; // P274: 바 위 테두리 띠(받는 세션 칩, 스티어링 상태·Ctrl+Enter 안내)
-import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange, autoTag } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
+import { mentionTokens, recipients, mirrorParts, isNewlineKey, insertNewline, maxFieldHeight, fieldHeight, toggleTag, switchText, tagDeleteRange, autoTag, autoTagText } from './lib/cmd-input.js'; // P142. P153: toggleTag. P155: tagDeleteRange
+import { gazeTag } from './lib/gaze-pick.js'; // P354: 시선 태그
 
 const isCoarse = () => { try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; } };
 
@@ -119,6 +120,16 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const textRef = useRef(text); // P176: 저절로 넣는 태그가 지금 글을 본다
   textRef.current = text;
   const autoRef = useRef(null); // P176: 저절로 넣은 태그의 세션 이름(사람이 고치면 null)
+  // P354: 저절로 넣은 태그가 어디서 왔나('click' 누른 세션 | 'gaze' 시선 | null). 칩 모양과 아래 바 숨기기, 판 노드 표시(GazeTag.jsx 'auto')가 본다
+  const [autoBy, setAutoBy] = useState(null);
+  const autoByRef = useRef(null);
+  const setAuto = (name, by) => {
+    const b = name ? by : null;
+    if (autoRef.current === name && autoByRef.current === b) return;
+    autoRef.current = name; autoByRef.current = b; setAutoBy(b);
+    commandDraft.dispatchEvent(new CustomEvent('auto', { detail: { name, by: b } }));
+  };
+  const setAutoRef = useRef(setAuto); setAutoRef.current = setAuto;
   useImperativeHandle(ref, () => ({ focus: () => taRef.current && taRef.current.focus() }));
   useEffect(() => {
     const onDraft = (e) => {
@@ -132,7 +143,17 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     const onAutoTag = (e) => {
       if (isCoarse()) return;
       const r = autoTag({ text: textRef.current, auto: autoRef.current }, e.detail || null);
-      autoRef.current = r.auto;
+      setAutoRef.current(r.auto, 'click');
+      if (r.text !== textRef.current) { textRef.current = r.text; setText(r.text); setPick(0); }
+    };
+    // P354: 시선 태그(GazeTag.jsx). 누른 세션의 태그는 고름이 풀릴 때(release)만 바꾼다. 세션 맵이 열린 동안·설정을 끈 동안은 넣지 않는다
+    const onGaze = (e) => {
+      if (isCoarse()) return;
+      const st = getState();
+      if (!st.gazeOn || st.missionOpen) return;
+      const d = e.detail || {};
+      const r = gazeTag({ text: textRef.current, auto: autoRef.current, by: autoByRef.current }, d.name || null, { release: !!d.release }, autoTag);
+      setAutoRef.current(r.auto, r.by);
       if (r.text !== textRef.current) { textRef.current = r.text; setText(r.text); setPick(0); }
     };
     const onFocusBar = () => { const el = taRef.current; if (el && document.activeElement !== el) { el.focus(); const n = el.value.length; el.setSelectionRange(n, n); } };
@@ -140,14 +161,29 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
     commandDraft.addEventListener('tag', onTag);
     commandDraft.addEventListener('focus', onFocusBar);
     commandDraft.addEventListener('autotag', onAutoTag);
-    return () => { commandDraft.removeEventListener('draft', onDraft); commandDraft.removeEventListener('tag', onTag); commandDraft.removeEventListener('focus', onFocusBar); commandDraft.removeEventListener('autotag', onAutoTag); };
+    commandDraft.addEventListener('gaze', onGaze);
+    return () => { commandDraft.removeEventListener('draft', onDraft); commandDraft.removeEventListener('tag', onTag); commandDraft.removeEventListener('focus', onFocusBar); commandDraft.removeEventListener('autotag', onAutoTag); commandDraft.removeEventListener('gaze', onGaze); };
   }, []);
   // P153: 세션 맵이 지금 글(태그된 카드 표시)을 듣는다
   useEffect(() => { commandDraft.dispatchEvent(new CustomEvent('text', { detail: text })); }, [text]);
   const missionOpen = useStore((st) => st.missionOpen);
   // P153 r6: 판 ↔ 세션 맵을 오갈 때(열기·닫기·더블클릭 이동·M·Esc·닫기 단추 모두) 태그만 남은 명령줄은 비운다(switchText)
   const wasOpen = useRef(missionOpen);
-  useEffect(() => { if (wasOpen.current === missionOpen) return; wasOpen.current = missionOpen; setText((cur) => switchText(cur)); }, [missionOpen]);
+  useEffect(() => {
+    if (wasOpen.current === missionOpen) return; wasOpen.current = missionOpen;
+    if (!switchText(textRef.current)) setAuto(null); // P354: 비운 태그는 저절로 넣은 것도 아니다
+    setText((cur) => switchText(cur));
+    if (!missionOpen) setTimeout(() => commandDraft.dispatchEvent(new Event('gazeask')), 0); // P354: 판으로 돌아오면 다시 고른다
+  }, [missionOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P354: 설정을 끄면 시선으로 넣은 태그(사람이 고치지 않은 것)는 뺀다. 켜면 바로 다시 고른다
+  const gazeOn = useStore((st) => st.gazeOn);
+  useEffect(() => {
+    if (gazeOn) { commandDraft.dispatchEvent(new Event('gazeask')); return; }
+    if (autoByRef.current === 'gaze' && autoRef.current && textRef.current === autoTagText(autoRef.current)) { textRef.current = ''; setText(''); }
+    if (autoByRef.current === 'gaze') setAuto(null);
+  }, [gazeOn]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P354: 시선으로 넣은 태그만 있는 글(사람 것 아님)은 아래 바를 붙잡지 않는다
+  const gazeOnly = autoBy === 'gaze' && !!autoRef.current && text === autoTagText(autoRef.current);
 
   // 커서 앞 낱말이 @로 시작하면 대상 메뉴(전체, 각 세션)
   const caretWord = (() => {
@@ -195,7 +231,8 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
       setSentTexts((x) => ({ ...x, ...add }));
       hist.current.list = [out, ...hist.current.list.filter((x) => x !== out)].slice(0, 50);
       hist.current.i = -1;
-      setText('');
+      setText(''); textRef.current = ''; setAuto(null);
+      setTimeout(() => commandDraft.dispatchEvent(new Event('gazeask')), 0); // P354: 보낸 뒤 빈 명령줄에 다시 시선 태그
       setPreview(null);
       setSteer(false); // P248: 한 번 보낸 뒤 끈다(다음 글은 다시 대기열)
     } catch (e) { toast(t('cmd.sendFailed', { error: errText(e) }), 'error'); }
@@ -311,7 +348,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
   const edit = useDeliveryEditing(sentTexts);
   const { editing, startEdit } = edit;
   const setEditing = edit.stopEdit;
-  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0, popup: options.length > 0 || threadOpen || missionOpen, voice: voice.active }); // P153: 세션 맵이 열린 동안 늘 보인다. P176: 녹음 중에도
+  const shown = useAutoHide(rootRef, { draft: text.trim().length > 0 && !gazeOnly, popup: options.length > 0 || threadOpen || missionOpen, voice: voice.active }); // P153: 세션 맵이 열린 동안 늘 보인다. P176: 녹음 중에도
   // P83: 손가락 화면. 손잡이 단추, 키보드 위로 올리기, 바 밖을 탭하면 닫기
   const [coarse] = useState(isCoarse);
   const [lift, setLift] = useState(0);
@@ -418,10 +455,11 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
         {/* P142: 글칸. 위아래 여백은 이 틀이 쥐고, 상한에 닿으면 textarea 안쪽만 스크롤된다. 여백을 눌러도 입력칸에 초점 */}
         <div className="mt-cmd-field" ref={fieldRef} data-scroll={fh.scroll ? '1' : undefined} data-voice={voice.active ? '1' : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); taRef.current && taRef.current.focus(); } }}>
           <div className="mt-cmd-mirror" ref={mirRef} aria-hidden="true">
-            <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag && p.tag.img ? <span key={i} className={`mt-cmd-img${p.live ? ' mt-cmd-live' : ''}`} data-img={p.tag.n}>{p.text}</span> : p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}${p.live ? ' mt-cmd-live' : ''}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i} className={p.live ? 'mt-cmd-live' : undefined} data-live={p.live ? '1' : undefined}>{p.text}</span>))}{'\u200b'}</div>
+            <div className="mt-cmd-mirror-in" ref={mirInRef}>{parts.map((p, i) => (p.tag && p.tag.img ? <span key={i} className={`mt-cmd-img${p.live ? ' mt-cmd-live' : ''}`} data-img={p.tag.n}>{p.text}</span> : p.tag ? <span key={i} className={`mt-cmd-tag ${p.tag.lead ? 'to-' + p.tag.state : 'inline'}${p.live ? ' mt-cmd-live' : ''}${gazeOnly && p.tag.lead ? ' gaze' : ''}`} data-tag={p.tag.ref}>{p.text}</span> : <span key={i} className={p.live ? 'mt-cmd-live' : undefined} data-live={p.live ? '1' : undefined}>{p.text}</span>))}{'\u200b'}</div>
           </div>
           <textarea ref={taRef} className="mt-cmd-input" rows={1} style={fh.height ? { height: `${fh.height}px` } : undefined} value={text} placeholder={missionOpen ? t('mmTerr.barHint') : t('cmd.placeholder')} title={t('boardKeys.command')}
-            onChange={(e) => { autoRef.current = null; setText(e.target.value); setPick(0); }} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
+            onChange={(e) => { setAuto(null); setText(e.target.value); setPick(0); }}
+            onFocus={() => commandDraft.dispatchEvent(new Event('gazeask'))} onKeyDown={onKeyDown} onScroll={syncScroll} spellCheck={false} data-role="command"
             onPaste={(e) => {
               if (wantsDesktopPaste(e.clipboardData, { desktop: desktopPaste })) { e.preventDefault(); pasteDesktop(); return; } // P162
               const f = isWeb ? filesOf(e.clipboardData) : []; if (f.length) { e.preventDefault(); uploadInto(f); }
@@ -442,7 +480,7 @@ export const CommandBar = forwardRef(function CommandBar(_props, ref) {
             {toShown.length > 0 && (
               <div className="mt-cmd-to" data-role="cmd-to" aria-label={t('cmdTo.label')}>
                 <span className="mt-cmd-to-arrow" aria-hidden="true">→</span>
-                {toShown.map((r) => <span key={r.state + r.name} className={`mt-cmd-to-chip st-${r.state}`} data-to={r.name} data-state={r.state} title={toTitle(r)}>@{r.name}{r.state === 'all' ? <span className="n">{r.count}</span> : null}</span>)}
+                {toShown.map((r) => <span key={r.state + r.name} className={`mt-cmd-to-chip st-${r.state}${gazeOnly ? ' gaze' : ''}`} data-to={r.name} data-state={r.state} data-gaze={gazeOnly ? '1' : undefined} title={gazeOnly ? t('gaze.chipTitle', { name: r.name }) : toTitle(r)}>@{r.name}{r.state === 'all' ? <span className="n">{r.count}</span> : null}</span>)}
                 {toMore > 0 && <span className="mt-cmd-to-chip more" title={toList.slice(3).map((r) => '@' + r.name).join(' ')}>+{toMore}</span>}
               </div>
             )}

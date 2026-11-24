@@ -10,7 +10,7 @@
 //   자동 결정 카드는 봇 › 할 일 정리 봇 카드로 옮겼다. 설정 값과 저장(settings.set)은 그대로다.
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
-import { useStore, toast, setTermScale, setUiScale } from './store.js';
+import { useStore, toast, setTermScale, setUiScale, setGazeOn } from './store.js';
 import { pctOf, parsePct, stepScale, SCALE_MIN, SCALE_MAX, SCALE_STEP } from './lib/scale.js'; // P45
 import { useT, errText, setLanguage, getLanguage, LANGUAGES } from './lib/i18n.js';
 import { LaunchersTab } from './Launchers.jsx'; // P33: 호출자 탭
@@ -181,7 +181,14 @@ function PlanNotifySetting({ settings }) {
   );
 }
 
-// 일반: 화면(언어, 배율 P45, 작업 중 테두리 빛 P107), 앱(트레이 상주, 업데이트 P69)
+// P354: 시선 태그(판 가운데 세션을 명령줄 받는 이로). 이 창(프로필)의 설정(store.js gazeOn, localStorage)
+function GazeSetting() {
+  const t = useT();
+  const on = useStore((st) => st.gazeOn);
+  return <SetRow id="gazeTag" name={t('gaze.name')} hint={t('gaze.hint')} info={t('gaze.note')} role="gaze-setting"><Toggle checked={on} onChange={(v) => setGazeOn(v)} field="setting-gazeTag" /></SetRow>;
+}
+
+// 일반: 화면(언어, 배율 P45, 작업 중 테두리 빛 P107, 시선 태그 P354), 앱(트레이 상주, 업데이트 P69)
 function GeneralTab({ settings }) {
   const t = useT();
   const [pending, setPending] = useState(null); // 누른 값(백엔드가 settings.updated로 확정할 때까지 먼저 보인다)
@@ -198,6 +205,7 @@ function GeneralTab({ settings }) {
       <ScaleSetting kind="term" />
       {settings && <>
         <WorkLightSetting settings={settings} />
+        <GazeSetting />
         <SetSub>{t('setNav.sub.app')}</SetSub>
         <SetRow id="tray" name={t('settings.trayName')} hint={t('settings.tray')} info={t('settings.trayNote')} role="tray-setting"><Toggle checked={pending ?? !!settings.tray} onChange={set} field="setting-tray" /></SetRow>
         {'updateCheck' in settings && <UpdateSettings settings={settings} />}

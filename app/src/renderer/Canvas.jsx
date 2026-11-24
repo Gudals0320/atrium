@@ -28,6 +28,7 @@ import { QuickLayer, openPaneMenu, openQuickWorktree } from './QuickWorktree.jsx
 import { shiftAreasLocal } from './store.js'; // P27
 import { useStore, getState, setNodeLocal, saveNode, setAttached, setCloseIds, setFocus, markSeen, toast, openDialog, selectWorkspace, noteWorkspace, matesNow, setViewNow, setSelected, setPendingInput, dockOf, loadBoard, setMemoLocal, setKanbanLocal, setConvoLocal, wsName } from './store.js';
 import { commandDraft } from './Thread.jsx'; // P176
+import { useGazeTag } from './GazeTag.jsx'; // P354
 import { ConvoNode, WorktreeBox, SpawnEdge } from './ConvoNode.jsx'; // P13
 import { worktreeBoxes, boardSpawnDup } from '../../../backend/src/convo-canvas.mjs';
 import { decorateEdges, edgeGap, innerEnds } from './lib/link-labels.js'; // P67. P98: edgeGap, innerEnds
@@ -299,6 +300,7 @@ export function Canvas() {
   const rf = useReactFlow();
   useEffect(() => { window.__mtFlow = rf; }, [rf]); // P251: 시험이 캔버스 시점을 맞춘다(fitView)
   useBoardMotion(); // P127: 판을 움직이는 동안 작업 중 둘레를 멈춘다
+  useGazeTag(); // P354: 화면 가운데 세션을 명령줄 받는 이로(GazeTag.jsx)
   const wrapRef = useRef(null);
   const [nodes, setNodes] = useState([]);
   const nodesRef = useRef(nodes); // P76: 길게 눌러 옮길 노드를 찾는다

@@ -3276,4 +3276,11 @@ export default {
     rowCpuTitle: 'CPU relative to one core (100% = one full core). The "CPU: sessions · whole PC" line below is relative to the whole PC.',
     everyTitle: 'Sampling interval. Reading the process table took {ms} ms last time.',
   },
+  // P354: gaze tag (the session in the middle of the board receives the command line)
+  gaze: {
+    name: 'Send to the session in the middle',
+    hint: 'When no session is picked and the command line is empty, the session in the middle of the board view is tagged as the receiver.',
+    note: 'After you move the board and pause, the tag follows the session in the middle. Nothing is tagged when several sessions look about equal or when you are zoomed far out. A session you click comes first, and once you type in the command line the tag stays. Applies to this window only.',
+    chipTitle: '@{name}: tagged because it is in the middle of the board. Moving the board changes it.',
+  },
 };
