@@ -48,7 +48,6 @@ import { Sidebar } from './Sidebar.jsx'; // P7(J5): 평소에 닫힌 왼쪽 사�
 import { SearchBox, SelectionBar } from './Search.jsx';
 import { keyToData, closeKeyTargets, boardArrowKey, boardShortcut, mapTabKey, spaceHoldReady, spaceHoldStep, SPACE_HOLD_MS } from './lib/keys.js';
 import { renameKeyTarget } from './lib/session-name.js'; // P66: F2로 고른 노드의 이름 바꾸기
-import { ReturnSummary, useReturnSummary } from './ReturnSummary.jsx';
 import { CloseDialog } from './SessionNode.jsx';
 import { AppBoundary } from './ErrorBoundary.jsx';
 import { budget, terms, termStats } from './TerminalView.jsx';
@@ -112,7 +111,6 @@ function App() {
   const toasts = useStore((st) => st.toasts);
   const cmd = useRef(null);
   const inbox = useInbox();
-  const [summary, closeSummary] = useReturnSummary();
   const splash = useSplash(loaded);
   const order = [...inbox.needsYou, ...inbox.problems].map((s) => s.sessionId);
   const orderRef = useRef(order);
@@ -233,7 +231,6 @@ function App() {
           {loaded && <LeftRail linking={linking} setLinking={setLinking} />}
           {loaded && <RightRail loopsOpen={loopsOpen} setLoopsOpen={setLoopsOpen} />}
           {loaded && loopsOpen && <LoopsPanel onClose={() => setLoopsOpen(false)} />}
-          <ReturnSummary summary={summary} onClose={closeSummary} />
           {loaded && <SelectionBar />}
           {loaded && <SearchBox />}
           {loaded && <ChipRow />}

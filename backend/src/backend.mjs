@@ -38,7 +38,7 @@ import { ResourceMonitor, childProcesses } from './resources.mjs';
 import { ResourceGuard } from './resource-guard.mjs'; // P341: 폭주 감시·우선순위 낮추기
 import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
-import { probeCodex, probeClaude, probeHermes, probeBalance, sameAccount, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
+import { probeCodex, probeClaude, probeBalance, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
 import { migrateWorkspaces } from './migrate.mjs';
@@ -239,12 +239,9 @@ export class Backend {
       probe: cfg.usageProbe === false ? {} : {
         codex: () => probeCodex({ command: cfg.usageCodexCommand || 'codex' }),
         claude: () => probeClaude({ command: cfg.usageClaudeCommand || 'claude', dir: path.join(cfg.dataDir, 'usage-probe'), projectsDir: cfg.usageClaudeProjects }),
-        hermes: () => probeHermes({ command: cfg.usageHermesCommand || 'hermes' }),
         balance: () => { const sr = findSecretRun(); return sr ? probeBalance({ secretRun: sr, grant: cfg.usageGrant || 'atrium-usage' }) : Promise.resolve(null); },
       },
       busy: (k) => [...this.sessions.values()].some((s) => !s.closedAt && (s.kind || 'claude') === k && s.rt && s.rt.term && s.rt.term.status === 'working'),
-      hermesWanted: () => !!(this.features && this.features.settings && this.features.settings.get().usageHermes) || [...this.sessions.values()].some((s) => !s.closedAt && s.kind === 'hermes'),
-      sameAccount,
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
     this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때

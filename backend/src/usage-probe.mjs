@@ -3,7 +3,6 @@
 // - Codex: codex app-server(stdio JSON-RPC) initialize → initialized → account/rateLimits/read (약 1~2초, JSON)
 // - Claude: claude -p "/usage" --output-format json(모델 턴 없음, 비용 0). 사용자 훅·플러그인·MCP를 끈 판 설정으로 띄우고
 //   대화를 남기지 않는다(--no-session-persistence). 판 데이터 아래 고정 폴더를 작업 폴더로 쓰고, Claude Code가 만든 빈 프로젝트 폴더는 치운다
-// - Hermes: hermes usage --json (그 Hermes에 설정된 프로바이더 하나)
 // - 키로만 읽히는 잔액(DeepSeek, OpenRouter): secret-run <grant> -- node bin/atrium-balance.mjs. 그 grant의 키만 읽개 프로세스가 받고 판은 잔액 숫자만 읽는다
 import fs from 'node:fs';
 import os from 'node:os';
@@ -85,39 +84,6 @@ export function claudeProbeUsageOf(text, at = Date.now()) {
   }
   if (!windows.length) return null;
   return { provider: 'claude', source: 'probe:claude', at, windows, credits: null, plan: null, model: null };
-}
-
-// hermes usage --json → 구독 값 | null. hermesProvider = 그 Hermes가 쓰는 프로바이더(openai-codex·anthropic·openrouter …)
-const HERMES_WIN = { session: ['5h', 300], '5h': ['5h', 300], weekly: ['week', 10080], week: ['week', 10080], daily: ['day', 1440], day: ['day', 1440] };
-export function hermesProbeUsageOf(o, at = Date.now()) {
-  if (!isObj(o) || !Array.isArray(o.windows)) return null;
-  const windows = [];
-  for (const w of o.windows) {
-    if (!isObj(w) || !num(w.used_percent)) continue;
-    const label = String(w.label || '').trim();
-    const [id, minutes] = HERMES_WIN[label.toLowerCase()] || [label || `w${windows.length + 1}`, null];
-    windows.push({ id, minutes, usedPct: pct(w.used_percent), resetsAt: toMs(w.resets_at) });
-  }
-  if (!windows.length) return null;
-  return { provider: 'hermes', source: 'probe:hermes', at, windows, credits: null, plan: typeof o.plan === 'string' ? o.plan : null, model: null, hermesProvider: typeof o.provider === 'string' ? o.provider : null };
-}
-
-// Hermes 값이 Codex 구독과 같은 ChatGPT 계정의 값인가. 계정 id는 읽지 않으므로(Hermes 자격 증명을 열지 않는다) 값으로 확인한다:
-//   Hermes 프로바이더가 openai-codex이고, 같은 창이 하나 이상 있고, 같은 창마다 리셋 시각이 2분 안·사용률이 3점 안(두 값이 10분 안에 잰 것)이며,
-//   요금제를 둘 다 알면 같아야 한다. 하나라도 어긋나거나 확인할 수 없으면 다른 계정으로 본다(따로 보인다)
-export function sameAccount(hermes, codex) {
-  if (!hermes || !codex || hermes.hermesProvider !== 'openai-codex') return false;
-  if (!num(hermes.at) || !num(codex.at) || Math.abs(hermes.at - codex.at) > 10 * 60000) return false;
-  if (hermes.plan && codex.plan && String(hermes.plan).toLowerCase() !== String(codex.plan).toLowerCase()) return false;
-  let matched = 0;
-  for (const w of hermes.windows || []) {
-    const c = (codex.windows || []).find((x) => x.id === w.id);
-    if (!c) continue;
-    if (!num(w.resetsAt) || !num(c.resetsAt) || Math.abs(w.resetsAt - c.resetsAt) > 2 * 60000) return false;
-    if (!num(w.usedPct) || !num(c.usedPct) || Math.abs(w.usedPct - c.usedPct) > 3) return false;
-    matched++;
-  }
-  return matched > 0;
 }
 
 // 잔액 읽개(bin/atrium-balance.mjs) 출력(한 줄에 JSON 하나) → [구독 값]. 키 값은 읽개가 내지 않고 판도 받지 않는다(숫자·통화·오류 꼴만 받는다)
@@ -219,14 +185,6 @@ export async function probeClaude({ command = 'claude', dir, projectsDir = path.
   let o; try { o = JSON.parse(r.out); } catch { return null; }
   if (!isObj(o) || o.is_error || (num(o.num_turns) && o.num_turns > 0)) return null; // 모델 턴이 돌았으면(/usage가 명령으로 읽히지 않음) 버린다
   return claudeProbeUsageOf(o.result, now());
-}
-// hermes usage --json → 구독 값 | null
-export async function probeHermes({ command = 'hermes', env = probeEnv(), timeoutMs = 30000, now = () => Date.now(), run = runOnce } = {}) {
-  const r = await run(command, ['usage', '--json'], { env, timeoutMs, shell: process.platform === 'win32' });
-  if (!r || r.code !== 0) return null;
-  const s = r.out.indexOf('{');
-  let o; try { o = JSON.parse(s >= 0 ? r.out.slice(s) : r.out); } catch { return null; }
-  return hermesProbeUsageOf(o, now());
 }
 // secret-run으로 잔액 읽개를 띄운다 → [구독 값] | null(grant가 없거나 실패). secretRun = { ps1 } 또는 { argv: [실행 파일, ...앞 인자] }(시험용 가짜)
 //   Windows: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File <secret-run.ps1> <grant> -- <node> <읽개>, 자식 env에서 PSModulePath를 뺀다

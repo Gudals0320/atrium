@@ -104,23 +104,10 @@ const cases = {
     };
     await tryEsc('newSession', async () => { const b = (await page.$$('[data-role="rail-favorites"] [data-action="launch"]'))[0]; await page.keyboard.down('Shift'); await b.click(); await page.keyboard.up('Shift'); }, '.mt-modal', { tab: true });
     await tryEsc('openProject', () => page.click('[data-action="ws-open"]'), '.mt-modal', { tab: true });
-    await tryEsc('changes', () => page.click('[data-action="changes"]'), '[data-role="return-summary"]');
     await tryEsc('settings', () => page.click('[data-action="settings-open"]'), '[data-role="settings"]', { tab: true });
     await tryEsc('loops', () => page.click('[data-action="loops-open"]'), '[data-role="loop-list"]');
     await tryEsc('desktopImport', async () => { await page.click('[data-action="ws-open"]'); await sleep(400); await page.click('[data-action="desktop-import-open"]'); }, '[data-role="desktop-import"]');
-    // 터미널에서 친 Esc는 터미널 몫이다(에이전트 끊기). 떠 있는 변경 내역은 그대로 남아야 한다
-    if (!(await sessionOf('fa'))) await spawn(T.DIR, 'fa', '--kind', 'shell');
-    const fid = (await sessionOf('fa')).id;
-    await page.evaluate((i) => window.__mt.getState().navigateTo(i, { focusTerminal: true }), fid); await sleep(1800);
-    const scr = await page.$(`.mt-term[data-session="${fid}"] .xterm-screen`); const sb = await scr.boundingBox();
-    await page.mouse.click(sb.x + sb.width / 2, sb.y + sb.height / 2); await sleep(300);
-    await page.evaluate(() => window.__mt.getState().showChanges(60)); await sleep(800);
-    const inTerm = await active();
-    await page.keyboard.press('Escape'); await sleep(400);
-    res.terminalEsc = { focus: inTerm, panelOpen: await page.evaluate(() => !!document.querySelector('[data-role="return-summary"]')), closedByEsc: true };
-    await page.click('[data-action="return-close"]').catch(() => {});
-    const termOk = res.terminalEsc.focus === 'terminal' ? res.terminalEsc.panelOpen : null;
-    if (termOk === false) res.terminalEsc.closedByEsc = false;
+    // P347: 터미널 Esc가 떠 있는 변경 내역을 닫지 않는지 보던 단계는 변경 내역 창과 함께 걷었다
     const notClosed = Object.entries(res).filter(([, v]) => !v.closedByEsc).map(([k]) => k);
     const modal = ['newSession', 'openProject', 'settings', 'desktopImport'];
     const noFocus = modal.filter((k) => res[k] && !/inside$/.test(res[k].focusOnOpen));

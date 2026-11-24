@@ -10,13 +10,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const PROVIDERS = ['claude', 'codex', 'agy'];
-// P314: 위 알약에 나오지 않고 펼침 아래쪽에만 나오는 것(Hermes 계정 한도, 키로 읽는 잔액)
-export const EXTRAS = ['hermes', 'deepseek', 'openrouter'];
+// P314: 위 알약에 나오지 않고 펼침 아래쪽에만 나오는 것(키로 읽는 잔액). P347: Hermes 계정 한도는 걷었다(판 기록에 남은 옛 hermes 값은 읽지 않는다)
+export const EXTRAS = ['deepseek', 'openrouter'];
 export const ALL_PROVIDERS = [...PROVIDERS, ...EXTRAS];
 // P314: 탐침(usage-probe.mjs)의 원천 순서와 낡음. 판 값(Codex rollout, Claude·AGY 상태 줄)이 먼저이고, 값이 usageProbeMin분 넘게 낡았고
-//   그 구독을 쓰는 판 세션이 일하지 않을 때만 하네스 명령을 부른다. Codex·Hermes는 주기적으로, Claude와 잔액은 알약을 펼칠 때만(usage.refresh)
-export const PERIODIC_PROBES = ['codex', 'hermes'];
-export const OPEN_PROBES = ['claude', 'codex', 'hermes', 'balance'];
+//   그 구독을 쓰는 판 세션이 일하지 않을 때만 하네스 명령을 부른다. Codex는 주기적으로, Claude와 잔액은 알약을 펼칠 때만(usage.refresh)
+export const PERIODIC_PROBES = ['codex'];
+export const OPEN_PROBES = ['claude', 'codex', 'balance'];
 const FAIL_BACKOFF_MS = 30 * 60 * 1000; // 탐침이 실패하면(명령 없음, grant 없음 등) 이만큼 다시 묻지 않는다
 export function staleOf(entry, now, staleMs) { return !entry || !num(entry.at) || now - entry.at > staleMs; }
 // 탐침을 부를지: 켜짐, 낡음, 그 구독 세션이 일하지 않음, 묻는 중이 아님, 최근에 묻지 않음(성공은 낡음 간격, 실패는 30분)
@@ -228,7 +228,7 @@ export class UsageBook {
     this.codex = new CodexUsageReader({ home: o.codexHome, now: this.now });
     const saved = o.store ? o.store.getMeta('usage') : null;
     this.data = Object.fromEntries(ALL_PROVIDERS.map((p) => [p, isObj(saved) && isObj(saved[p]) ? saved[p] : null]));
-    this.probe = o.probe || {}; // P314: { codex(), claude(), hermes(), balance() } → Promise<값 | [값] | null>
+    this.probe = o.probe || {}; // P314: { codex(), claude(), balance() } → Promise<값 | [값] | null>
     this.probing = new Set(); // 지금 묻는 중인 탐침
     this.tries = {}; // 탐침 → { at, ok }
     this.alerted = pruneAlerted(o.store ? o.store.getMeta('usageAlerted') : null, this.now());
@@ -254,7 +254,6 @@ export class UsageBook {
   maybeProbe(k, { force = false } = {}) {
     const fn = this.probe[k];
     if (typeof fn !== 'function') return Promise.resolve(false);
-    if (k === 'hermes' && !(this.o.hermesWanted ? this.o.hermesWanted() : false)) return Promise.resolve(false);
     const now = this.now();
     const t = this.tries[k] || {};
     const busy = k === 'balance' ? false : !!(this.o.busy && this.o.busy(k));
@@ -275,10 +274,6 @@ export class UsageBook {
     if (this.o.log) this.o.log(list.length ? `usage probe ${k}: ok ${Date.now() - t0}ms` : `usage probe ${k}: no value ${Date.now() - t0}ms`);
     let changed = false;
     for (const e of list) if (this.set(e, { force: true })) changed = true;
-    // Hermes가 ChatGPT(openai-codex) 계정이면 같은 때의 Codex 값과 견주어야 같은 계정인지 확인된다: Codex 값이 5분 넘게 낡았으면 Codex도 한 번 묻는다
-    const h = this.data.hermes;
-    if (k === 'hermes' && list.length && h && h.hermesProvider === 'openai-codex' && staleOf(this.data.codex, this.now(), 5 * 60000)) await this.maybeProbe('codex', { force: true });
-    if (k === 'hermes' || k === 'codex') this.relink();
     this.sendNow();
     return changed || list.length > 0;
   }
@@ -286,13 +281,6 @@ export class UsageBook {
   refresh() {
     for (const k of OPEN_PROBES) this.maybeProbe(k);
     return this.get();
-  }
-  // Hermes 값이 Codex와 같은 계정으로 확인되면 sameAs: 'codex'(창이 한 줄로 합친다). 확인되지 않으면 따로
-  relink() {
-    const h = this.data.hermes;
-    if (!h || typeof this.o.sameAccount !== 'function') return;
-    const same = this.o.sameAccount(h, this.data.codex) ? 'codex' : null;
-    if (h.sameAs !== same) { this.data.hermes = { ...h, sameAs: same }; this.save(); }
   }
   sendNow() { this.lastSent = this.now(); if (this.o.broadcast) this.o.broadcast('usage.updated', this.get()); }
   stop() { clearInterval(this.timer); this.timer = null; }
@@ -320,9 +308,9 @@ export class UsageBook {
     return { ok: true, changed: this.set(e) };
   }
   set(e, { force = false } = {}) {
+    if (!e || !ALL_PROVIDERS.includes(e.provider)) return false; // P347: 걷은 구독(옛 hermes 등)은 받지 않는다
     const prev = this.data[e.provider];
     if (prev && e.at < (prev.at || 0) && e.provider === 'codex') return false; // 옛 rollout이 더 나중 값을 덮지 않는다
-    if (prev && prev.sameAs && e.provider === 'hermes' && !('sameAs' in e)) e = { ...e, sameAs: prev.sameAs };
     const same = sameUsage(prev, e);
     this.data[e.provider] = e;
     const now = this.now();

@@ -51,12 +51,12 @@ let app = null, page = null;
 const spawned = [];
 const shot = async (n) => { const f = path.join(OUT, `${TAG}-${n}.png`); await page.screenshot({ path: f }); log('스크린숏', path.relative(REPO, f)); };
 const call = (m, p = {}) => page.evaluate(([mm, pp]) => window.__mt.api.call(mm, pp), [m, p]);
+// P347: 변경 내역 창은 걷었다. 판 API(changes.since)의 줄을 "종류: 글"로 본다(줄 이름표는 창 사전에 있었다)
 const changesText = async () => {
-  await page.evaluate(() => window.__mt.getState().showChanges(600)); await sleep(1200);
-  const t = await page.evaluate(() => { const e = document.querySelector('[data-role="return-summary"]'); return e ? [...e.querySelectorAll('.mt-return-line')].map((l) => l.innerText.replace(/\n/g, ' | ')) : []; });
+  const t = (await call('changes.since', { since: Date.now() - 600 * 60000 })).lines.map((l) => `${l.kind}: ${l.text}`);
   return t;
 };
-const closeChanges = () => page.click('[data-action="return-close"]').catch(() => {});
+const closeChanges = async () => {};
 
 try {
   ({ app, page } = await launch({ log, env }));
@@ -104,7 +104,7 @@ try {
   await shot('restart-2-after-one');
   await closeChanges();
   const rl = lines.filter((l) => /다시 시작/.test(l));
-  step('#10 한 번 다시 시작한 뒤 1회이고 줄 이름표가 앱 연결 서비스다', !!back && rl.length === 1 && /1회 다시 시작/.test(rl[0]) && /^앱 연결 서비스/.test(rl[0]) && !lines.some((l) => /^herdr/.test(l)), { backendStartedEvents: ev1, lines });
+  step('#10 한 번 다시 시작한 뒤 1회이고 줄 종류가 backend다', !!back && rl.length === 1 && /1회 다시 시작/.test(rl[0]) && /^backend:/.test(rl[0]) && !lines.some((l) => /^herdr/.test(l)), { backendStartedEvents: ev1, lines });
 } catch (e) {
   step('예외', false, String(e && (e.stack || e.message)).slice(0, 800));
   if (page) await shot('error').catch(() => {});

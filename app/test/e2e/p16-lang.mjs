@@ -108,7 +108,7 @@ async function screens(app, page, l) {
   await page.keyboard.press('Control+f') /* P214: 위 막대 검색 칸이 없어 Ctrl+F로 연다 */; await sleep(300); await page.fill('[data-role="search"] input, .mt-search input', 're').catch(() => {}); await sleep(800); await check('search'); await shot(page, `p16-${l}-12-search`); await page.press('[data-role="search"] input', 'Escape').catch(() => {}); // 초점이 검색칸에 있을 때만 Esc await sleep(200);
   await page.click('[data-action="thread-toggle"]').catch(() => {}); await sleep(600); await check('thread'); await shot(page, `p16-${l}-13-thread`); await page.click('[data-action="thread-toggle"]').catch(() => {});
   await page.click('[data-action="loops-open"]').catch(() => {}); await sleep(400); await check('loops'); await page.click('[data-action="loops-open"]').catch(() => {});
-  await page.click('[data-action="chip-changes"]').catch(() => {}); await sleep(800); await check('changes'); await shot(page, `p16-${l}-14-changes`); await page.click('[data-action="return-close"]').catch(() => {});
+  // P347: 변경 내역 알약·창은 걷었다
   // 트레이 메뉴 글
   await until(async () => (await app.evaluate(() => global.__mtTray.state())).lang === l, 5000).catch(() => {});
   const tray = await app.evaluate(() => global.__mtTray.state());
