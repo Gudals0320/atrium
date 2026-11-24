@@ -177,10 +177,26 @@ async function shots() {
         // 세션 화면 위의 할 일
         await pg.evaluate((id) => window.__mtMobile.open(id), ids.lead);
         await pg.waitForSelector('[data-role=mp-session]');
+        await pg.click('[data-action=mp-view-answer]').catch(() => {});
         await sleep(1200);
         const st = await pg.$$eval('[data-role=mp-session-todos] [data-role=mp-todo]', (els) => els.map((e) => e.dataset.kind));
         check('세션 화면: 그 세션의 열린 할 일 카드', st.includes('decide') && st.includes('check') && !st.includes('later'), st);
+        await pg.click('[data-action=mp-view-answer]').catch(() => {});
+        await sleep(600);
         await pg.screenshot({ path: path.join(OUT, 'phone-5-session.png') });
+        // 터미널 보기: 기본은 작은 알약(터미널을 가리지 않는다), 누르면 겹친 작은 창
+        await pg.click('[data-action=mp-view-term]');
+        await pg.waitForSelector('[data-role=mp-termview]');
+        await sleep(2500);
+        check('터미널 보기: 할 일은 기본으로 알약만', (await pg.$('[data-action=mp-todos-show]')) != null && (await pg.$('[data-role=mp-term-todos]')) == null);
+        await pg.screenshot({ path: path.join(OUT, 'phone-6-term-pill.png') });
+        await pg.click('[data-action=mp-todos-show]');
+        await sleep(500);
+        const ov = await pg.$$eval('[data-role=mp-term-todos] [data-role=mp-todo-kind]', (els) => els.map((e) => e.textContent));
+        check('터미널 보기: 누르면 겹친 할 일 창(꼬리표 포함)', ov.length === 2, ov);
+        await pg.screenshot({ path: path.join(OUT, 'phone-7-term-overlay.png') });
+        await pg.click('[data-action=mp-todos-hide]');
+        await pg.click('[data-action=mp-view-answer]').catch(() => {});
         check('휴대폰 화면 오류 없음', !errs.length, errs);
         await ctx.close();
       }
