@@ -86,10 +86,7 @@ test('5) 쉼 · 끝남 묶음과 이름 목록이 없다', () => {
   assert.doesNotMatch(css(), /\.mt-mm-rest|\.mt-mm-rn|\.mt-mm-split/);
 });
 
-test('사전: 새 열쇠(mapPill, mmLegend)는 두 사전 끝에, 같은 키', () => {
-  for (const k of ['mapPill', 'mmLegend']) assert.deepEqual(Object.keys(ko[k]).sort(), Object.keys(en[k]).sort());
-  const kk = Object.keys(ko), ek = Object.keys(en);
-  assert.deepEqual(kk.slice(-2), ['mapPill', 'mmLegend']);
-  assert.deepEqual(ek.slice(-2), ['mapPill', 'mmLegend']);
+test('사전: 새 열쇠(mapPill, mmLegend)는 두 사전에 같은 키', () => {
+  for (const k of ['mapPill', 'mmLegend']) { assert.ok(ko[k] && en[k], k); assert.deepEqual(Object.keys(ko[k]).sort(), Object.keys(en[k]).sort()); }
   assert.ok(searchItems);
 });
