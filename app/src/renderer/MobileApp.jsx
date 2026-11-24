@@ -10,7 +10,7 @@ import { useStore, toast } from './store.js';
 import { useMobile, getMobile, call, setCardsLocal, noteFail } from './mobile-store.js';
 import { useT, errText } from './lib/i18n.js';
 import { STATE_LABEL, shellStateText } from './lib/labels.js';
-import { homeOf, listOf, toneOf, needsYou, isDone, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, togglePin, readList, choiceButtons, shortChoice, uiFactor, pageBox } from './lib/mobile.js';
+import { homeOf, listOf, toneOf, needsYou, isDone, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, togglePin, readList, choiceButtons, shortChoice, uiFactor, pageBox, layScreen, OVERLAY_CHOICE_CHARS } from './lib/mobile.js';
 import { kbOpenOf } from './lib/phone.js';
 import { SessionScreen } from './MobileSession.jsx'; // P355: 세션 화면
 import { noteLayout } from './lib/phone-telemetry.js'; // P355: 배치 값 한 번(아래 잘림을 숫자로)
@@ -114,25 +114,33 @@ export function MobileApp() {
   useEffect(() => { document.documentElement.style.setProperty('--mp-fs', String(fs)); document.documentElement.style.setProperty('--mp-scale', String(scale / PHONE_SCALE_DEFAULT)); }, [fs, scale]);
   const bump = (d) => setScale((v) => { const n = clampPhoneScale(Math.round((v + d) * 100) / 100); try { store().setItem(SCALE_KEY, String(n)); } catch {} return n; });
   // 가상 키보드: 보이는 높이에 맞춘다(입력 줄과 빠른 키가 키보드 위에 남는다)
+  // P358: 홈 화면 앱은 키보드가 닫혀 있으면 늘 화면 높이(pageBox). html·body·#root도 같은 높이로 맞춘다(문서 높이 793에 걸려 아래가 잘리지 않게).
+  //   초점이 들고 날 때(키보드 열고 닫음)와 세션 화면이 열고 닫힐 때도 다시 잰다(iOS가 resize를 늦게 주거나 주지 않는다)
   useEffect(() => {
     const vv = window.visualViewport; const el = rootRef.current; const tall = { w: 0, h: 0 };
+    const de = document.documentElement;
     const fit = () => {
-      const b = pageBox({ vv, innerHeight: window.innerHeight, innerWidth: window.innerWidth, screenW: window.screen && window.screen.width, screenH: window.screen && window.screen.height, standalone: isStandalone() });
-      if (el) { el.style.height = b.height + 'px'; el.style.transform = b.top ? 'translateY(' + b.top + 'px)' : ''; }
-      // P355: 홈 화면 앱이 창 높이를 짧게 주면 html·body도 화면 높이까지(옛 휴대폰 화면 useScreenFix, phone.css html.mt-tall)
-      if (b.tall) { document.documentElement.style.setProperty('--mt-screen-h', b.height + 'px'); document.documentElement.classList.add('mt-tall'); } else document.documentElement.classList.remove('mt-tall');
       const vh = vv && vv.height > 0 ? vv.height : window.innerHeight;
       if (tall.w !== window.innerWidth) { tall.w = window.innerWidth; tall.h = 0; }
       tall.h = Math.max(tall.h, vh, window.innerHeight);
-      document.documentElement.classList.toggle('mt-kb-open', kbOpenOf({ vvHeight: vh, innerHeight: window.innerHeight, tallest: tall.h }));
+      const b = pageBox({ vv, innerHeight: window.innerHeight, innerWidth: window.innerWidth, screenW: window.screen && window.screen.width, screenH: window.screen && window.screen.height, standalone: isStandalone(), tallest: tall.h });
+      if (el) { el.style.height = b.height + 'px'; el.style.transform = b.top ? 'translateY(' + b.top + 'px)' : ''; }
+      de.style.setProperty('--mt-page-h', (b.height + (b.top || 0)) + 'px');
+      // P355: 홈 화면 앱이 창 높이를 짧게 주면 html·body도 화면 높이까지(옛 휴대폰 화면 useScreenFix, phone.css html.mt-tall)
+      if (b.tall || b.full) { de.style.setProperty('--mt-screen-h', b.height + 'px'); de.classList.add('mt-tall'); } else de.classList.remove('mt-tall');
+      // P358: 홈 화면 앱에서 키보드를 닫은 뒤 iOS가 남긴 스크롤(보이는 위치)을 0으로 되돌린다(되돌아오면 scroll 이벤트로 다시 잰다)
+      if (b.full && b.top > 0) { try { window.scrollTo(0, 0); } catch {} }
+      de.classList.toggle('mt-kb-open', b.kb === true || kbOpenOf({ vvHeight: vh, innerHeight: window.innerHeight, tallest: tall.h }));
     };
     fit();
+    const timers = [];
+    const later = () => { for (const ms of [60, 350, 900]) timers.push(setTimeout(fit, ms)); if (timers.length > 30) timers.splice(0, timers.length - 30).forEach(clearTimeout); };
     if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); }
     window.addEventListener('resize', fit);
-    document.documentElement.classList.add('mt-mp-on');
-    // P355: 자리가 잡힌 뒤 배치 값을 한 번 남긴다(창·보이는 높이, 화면, 안전 영역, 뿌리·아래 줄의 아래 끝)
-    const lay = setTimeout(() => noteLayout(), 2500);
-    return () => { clearTimeout(lay); if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } window.removeEventListener('resize', fit); document.documentElement.classList.remove('mt-mp-on', 'mt-kb-open', 'mt-tall'); };
+    document.addEventListener('focusin', later); document.addEventListener('focusout', later);
+    window.__mtMobileFit = later; // 세션 화면이 열고 닫힐 때 부른다
+    de.classList.add('mt-mp-on');
+    return () => { timers.forEach(clearTimeout); if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } window.removeEventListener('resize', fit); document.removeEventListener('focusin', later); document.removeEventListener('focusout', later); delete window.__mtMobileFit; de.classList.remove('mt-mp-on', 'mt-kb-open', 'mt-tall'); };
   }, []);
   // 세션 화면은 history에 둔다(뒤로 가기 = 목록)
   useEffect(() => { const onPop = (e) => setOpen((e.state && e.state.mtMobile) || null); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop); }, []);
@@ -156,6 +164,15 @@ export function MobileApp() {
 
   const home = useMemo(() => homeOf(rows), [rows]);
   const s = open ? rows.get(open) : null;
+  // P355·P358: 자리가 잡힌 뒤 배치 값을 화면마다 한 번 남긴다(홈·세션 목록·맵·세션 화면, 키보드 열림). 창·보이는 높이, 화면, 안전 영역, 뿌리·아래 줄의 아래 끝, html·body 높이
+  const layView = loaded ? (s ? 'session' : tab) : null;
+  useEffect(() => { if (!layView) return undefined; if (window.__mtMobileFit) window.__mtMobileFit(); const tm = setTimeout(() => noteLayout(layScreen({ view: layView })), 2500); return () => clearTimeout(tm); }, [layView]);
+  useEffect(() => {
+    const de = document.documentElement; let tm = 0;
+    const mo = new MutationObserver(() => { clearTimeout(tm); if (de.classList.contains('mt-kb-open')) tm = setTimeout(() => { if (de.classList.contains('mt-kb-open')) noteLayout('kb'); }, 800); });
+    mo.observe(de, { attributes: true, attributeFilter: ['class'] });
+    return () => { clearTimeout(tm); mo.disconnect(); };
+  }, []);
   const toastsView = <div className="mt-mp-toasts">{toasts.map((x) => <div key={x.id} className={'mt-mp-toast ' + x.kind}>{x.text}</div>)}</div>;
   return (
     <div className="mt-mp" ref={rootRef} data-role="mp" data-tab={tab} data-view={s ? 'session' : tab}>
@@ -273,7 +290,7 @@ function NeedCard({ s, ws, now, onOpen, todo = 0 }) {
 
 // 할 일 카드: 결정(보기·답 쓰기), 실행(했음), 확인(됐다·안 됐다), 미루기(한 시간, 내일 아침)
 // P357: 종류 꼬리표는 PC와 같은 말(userTasks.kind), 자동 카드는 작은 "자동". hot = 알림을 눌러 온 카드(잠깐 강조). later = 나중 묶음(꺼내기만)
-export function TodoCard({ d, now, cards, hot = false, later = false }) { // P357: 세션 화면(MobileSession.jsx)도 쓴다
+export function TodoCard({ d, now, cards, hot = false, later = false, compact = false }) { // P357: 세션 화면(MobileSession.jsx)도 쓴다. P358: compact = 세션 화면의 겹친 카드(보기 글을 짧게, 전체 글은 title)
   const t = useT();
   const [writing, setWriting] = useState(false);
   const [text, setText] = useState('');
@@ -298,7 +315,7 @@ export function TodoCard({ d, now, cards, hot = false, later = false }) { // P35
       <div className="mt-mp-q">{q}</div>
       {d.why && <div className="mt-mp-why">{d.why}</div>}
       <div className="mt-mp-acts">
-        {kindKey === 'decide' && (d.options || []).map((o, i) => <button key={o} type="button" className={'mt-mp-btn' + (i === 0 ? ' pri' : '')} disabled={busy} data-action="mp-todo-answer" onClick={() => run('decision.answer', { answer: o })}>{o}</button>)}
+        {kindKey === 'decide' && (d.options || []).map((o, i) => <button key={o} type="button" className={'mt-mp-btn' + (i === 0 ? ' pri' : '')} disabled={busy} data-action="mp-todo-answer" title={compact ? o : undefined} onClick={() => run('decision.answer', { answer: o })}>{compact ? shortChoice(o, OVERLAY_CHOICE_CHARS) : o}</button>)}
         {kindKey === 'do' && d.kind !== 'guard' && <button type="button" className="mt-mp-btn pri" disabled={busy} data-action="mp-todo-done" onClick={() => run('decision.done', {})}>{t('mobile.did')}</button>}
         {kindKey === 'check' && <><button type="button" className="mt-mp-btn pri" disabled={busy} onClick={() => run('decision.check', { ok: true })}>{t('mobile.checkOk')}</button><button type="button" className="mt-mp-btn" disabled={busy} onClick={() => run('decision.check', { ok: false })}>{t('mobile.checkFail')}</button></>}
         <span className="mt-mp-sp" />

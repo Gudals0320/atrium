@@ -152,18 +152,22 @@ export class TeleBuffer {
 // P355: 배치 값 한 줄(아래 잘림을 숫자로 보려고 부팅마다 한 번). 창 크기(iw·ih), 문서 높이(ch), 보이는 높이·위치(vh·vt, visualViewport),
 // 화면(sw·sh), 안전 영역 네 값(st·sr·sb·sl, env(safe-area-inset-*)), 페이지 뿌리의 아래 끝(rb), 맨 아래 줄(on: tabs | input | keys)의 아래 끝(tb),
 // 홈 화면 앱인지(sd), 키보드가 열렸는지(kb). 값은 CSS px(소수 한 자리). 잘림 = rb - (vt + vh)
-export const LAY_FIELDS = ['iw', 'ih', 'ch', 'vh', 'vt', 'sw', 'sh', 'st', 'sr', 'sb', 'sl', 'rb', 'tb'];
+// P358: 화면마다 한 번(sc: home | sessions | map | session | kb). 더한 값: 뿌리 높이(ph), html·body 높이(hh·bh), 화면 높이로 늘렸나(tl)
+export const LAY_FIELDS = ['iw', 'ih', 'ch', 'vh', 'vt', 'sw', 'sh', 'st', 'sr', 'sb', 'sl', 'rb', 'tb', 'ph', 'hh', 'bh'];
+export const LAY_SCREENS = ['home', 'sessions', 'map', 'session', 'kb'];
 const n1 = (v) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e5 ? Math.round(v * 10) / 10 : null);
 export function layoutLine(m = {}, at = Date.now()) {
   const lay = {};
   for (const f of LAY_FIELDS) { const v = n1(m[f]); if (v != null) lay[f] = v; }
   if (m.sd != null) lay.sd = !!m.sd;
   if (m.kb != null) lay.kb = !!m.kb;
+  if (m.tl != null) lay.tl = !!m.tl;
+  if (LAY_SCREENS.includes(m.sc)) lay.sc = m.sc;
   if (m.on === 'tabs' || m.on === 'input' || m.on === 'keys') lay.on = m.on;
   return { k: 'lay', at, lay };
 }
 // 지금 화면에서 잰다(휴대폰 페이지의 [data-role=mp] 뿌리와 맨 아래 줄)
-export function measureLayout(win = window, doc = document) {
+export function measureLayout(win = window, doc = document, sc = null) {
   const vv = win.visualViewport;
   const probe = doc.createElement('div');
   probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
@@ -182,14 +186,18 @@ export function measureLayout(win = window, doc = document) {
     rb: root ? root.getBoundingClientRect().bottom : null, tb: low ? low.getBoundingClientRect().bottom : null,
     on: low ? (low.classList.contains('mt-mp-tabs') ? 'tabs' : low.dataset.role === 'mp-input' ? 'input' : 'keys') : null,
     sd, kb: doc.documentElement.classList.contains('mt-kb-open'),
+    ph: root ? root.getBoundingClientRect().height : null, hh: doc.documentElement.getBoundingClientRect().height, bh: doc.body ? doc.body.getBoundingClientRect().height : null,
+    tl: doc.documentElement.classList.contains('mt-tall'), sc,
   };
 }
-// 기록을 켰으면(휴대폰 페이지) 배치 값을 한 번 남긴다. 돌려줌: 남긴 줄(이미 남겼거나 기록이 꺼졌으면 null)
-export function noteLayout() {
-  if (!rt || rt.layoutNoted) return null;
+// 기록을 켰으면(휴대폰 페이지) 배치 값을 화면마다 한 번 남긴다(P358: sc 화면 이름, 없으면 부팅 한 번). 돌려줌: 남긴 줄(이미 남겼거나 기록이 꺼졌으면 null)
+export function noteLayout(sc = null) {
+  if (!rt) return null;
+  const key = sc || '-';
+  if (rt.layoutNoted.has(key)) return null;
   let m;
-  try { m = measureLayout(); } catch { return null; }
-  rt.layoutNoted = true;
+  try { m = measureLayout(window, document, sc); } catch { return null; }
+  rt.layoutNoted.add(key);
   const line = layoutLine(m);
   rt.buf.out.push(line);
   rt.soon();
@@ -246,7 +254,7 @@ export function startPhoneTelemetry({ api, boot = {}, context = () => ({}), step
   // 보이는 채 죽은 뒤 다시 열림(가려진 채 죽음은 iOS의 정리라 빼고): 죽은 페이지의 상태(boot 줄과 같은 것)와 함께
   if (boot.crashed && !boot.hidden) snapNow('reload', boot.report ? { prev: boot.report } : {});
   rt = {
-    buf, flush, snapNow, soon, layoutNoted: false,
+    buf, flush, snapNow, soon, layoutNoted: new Set(),
     // 보내기·키 보내기 실패(Phone.jsx). 늘 상황을 함께 남긴다
     sendFail(m, e, { steer = false } = {}) { buf.note('send', { m, code: (e && e.code) || 'error', steer }); snapNow('send', { m: codeOf(m) }); },
   };

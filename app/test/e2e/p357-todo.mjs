@@ -174,29 +174,19 @@ async function shots() {
         check('알림 누르기(닫힌 카드) → 한 줄', gone === '이미 답했거나 닫힌 카드입니다.', gone);
         await pg.evaluate(() => { const e = document.querySelector('[data-role=mp-card-gone]'); if (e) e.scrollIntoView({ block: 'center' }); });
         await pg.screenshot({ path: path.join(OUT, 'phone-4-gone.png') });
-        // 세션 화면 위의 할 일
+        // 세션 화면(P358: 터미널만): 그 세션의 할 일은 오른쪽 아래 작은 단추(할 일 n) → 누르면 겹친 카드(넘기기)
         await pg.evaluate((id) => window.__mtMobile.open(id), ids.lead);
-        await pg.waitForSelector('[data-role=mp-session]');
-        await pg.click('[data-action=mp-view-answer]').catch(() => {});
-        await sleep(1200);
-        const st = await pg.$$eval('[data-role=mp-session-todos] [data-role=mp-todo]', (els) => els.map((e) => e.dataset.kind));
-        check('세션 화면: 그 세션의 열린 할 일 카드', st.includes('decide') && st.includes('check') && !st.includes('later'), st);
-        await pg.click('[data-action=mp-view-answer]').catch(() => {});
-        await sleep(600);
-        await pg.screenshot({ path: path.join(OUT, 'phone-5-session.png') });
-        // 터미널 보기: 기본은 작은 알약(터미널을 가리지 않는다), 누르면 겹친 작은 창
-        await pg.click('[data-action=mp-view-term]');
         await pg.waitForSelector('[data-role=mp-termview]');
         await sleep(2500);
-        check('터미널 보기: 할 일은 기본으로 알약만', (await pg.$('[data-action=mp-todos-show]')) != null && (await pg.$('[data-role=mp-term-todos]')) == null);
+        const ob = await pg.$eval('[data-action=mp-over-show]', (e) => ({ kind: e.dataset.kind, n: Number(e.dataset.count) })).catch(() => null);
+        check('세션 화면: 할 일은 기본으로 작은 단추만(겹친 카드는 접힘)', ob && ob.kind === 'todo' && ob.n === 2 && (await pg.$('[data-role=mp-over]')) == null, ob);
         await pg.screenshot({ path: path.join(OUT, 'phone-6-term-pill.png') });
-        await pg.click('[data-action=mp-todos-show]');
+        await pg.click('[data-action=mp-over-show]');
         await sleep(500);
-        const ov = await pg.$$eval('[data-role=mp-term-todos] [data-role=mp-todo-kind]', (els) => els.map((e) => e.textContent));
-        check('터미널 보기: 누르면 겹친 할 일 창(꼬리표 포함)', ov.length === 2, ov);
-        await pg.screenshot({ path: path.join(OUT, 'phone-7-term-overlay.png') });
-        await pg.click('[data-action=mp-todos-hide]');
-        await pg.click('[data-action=mp-view-answer]').catch(() => {});
+        const kinds2 = [];
+        for (let i = 0; i < 2; i++) { kinds2.push(await pg.$eval('[data-role=mp-over] [data-role=mp-todo]', (e) => e.dataset.kind).catch(() => null)); if (i === 0) { await pg.screenshot({ path: path.join(OUT, 'phone-7-term-overlay.png') }); await pg.click('[data-action=mp-over-next]').catch(() => {}); await sleep(300); } }
+        check('세션 화면: 누르면 겹친 할 일 카드(넘기기로 결정·확인, 나중은 없음)', kinds2.includes('decide') && kinds2.includes('check'), kinds2);
+        await pg.click('[data-action=mp-over-hide]');
         check('휴대폰 화면 오류 없음', !errs.length, errs);
         await ctx.close();
       }
