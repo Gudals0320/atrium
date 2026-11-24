@@ -3287,7 +3287,7 @@ export default {
     tab_home: '홈', tab_sessions: '세션', tab_map: '맵',
     count_need: '응답 필요', count_work: '작업 중', count_done: '작업 완료',
     todo: '할 일', later: '나중 {n}', noTodo: '할 일이 없습니다.', readAll: '모두 읽음',
-    kind_decide: '결정', kind_do: '할 일', kind_check: '확인',
+    cardGone: '이미 답했거나 닫힌 카드입니다.', // P357: 종류 꼬리표는 userTasks.kind 하나로
     did: '했음', checkOk: '됐다', checkFail: '안 됐다', writeAnswer: '답 쓰기', answerPh: '답',
     snooze: '미루기', snoozeHour: '1시간 뒤', snoozeMorning: '내일 오전 9시', todoFailed: '카드를 바꾸지 못했습니다: {error}',
     pin: '위에 고정', unpin: '고정 풀기', search: '세션 찾기', pinned: '고정', showSleeping: '잠든 세션 {n}개 보기', noMatch: '맞는 세션이 없습니다.',
@@ -3311,5 +3311,14 @@ export default {
     kind_api: 'API 실패',
     kind_send: '보내기 실패',
     kind_ws: '다시 연결',
+  },
+  // P357: 사람이 터미널에 직접 친 글로 닫은 손 카드(할 일 목록의 "터미널에서 답함" 줄)
+  termAnswered: {
+    head: '터미널에서 답함 {n}',
+    headTitle: '최근 하루 사이 사람이 세션 터미널에 직접 친 글로 판이 닫은 카드입니다. 답이 아니었으면 다시 여세요.',
+    tag: '터미널에서 답함',
+    reopen: '다시 열기',
+    reopenTitle: '이 카드를 할 일 목록에 다시 엽니다(세션에는 보내지 않습니다).',
+    reopened: '카드를 다시 열었습니다.',
   },
 };

@@ -3208,3 +3208,7 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-node.gazed.selected { outline: none; }
 .mt-cmd-tag.gaze { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: none; outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -1px; }
 .mt-cmd-to-chip.gaze { border-style: dashed; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* P357: 터미널에서 답함(사람이 터미널에 친 글로 판이 닫은 손 카드) */
+.mt-ut-termtag { flex: none; padding: 0 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700; line-height: 16px; white-space: nowrap; background: var(--panel-2); color: var(--dim); border: 1px solid var(--panel-line-2); }
+.mt-ut-term .mt-ut-acts { display: flex; align-items: center; gap: 8px; }

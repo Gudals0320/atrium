@@ -3283,7 +3283,7 @@ export default {
     tab_home: 'Home', tab_sessions: 'Sessions', tab_map: 'Map',
     count_need: 'Needs you', count_work: 'Working', count_done: 'Done',
     todo: 'To do', later: '{n} later', noTodo: 'Nothing to do.', readAll: 'Mark all read',
-    kind_decide: 'Decide', kind_do: 'To do', kind_check: 'Check',
+    cardGone: 'This card was already answered or closed.', // P357: kind tags use userTasks.kind
     did: 'Done', checkOk: 'Works', checkFail: 'Doesn’t work', writeAnswer: 'Write answer', answerPh: 'Your answer',
     snooze: 'Later', snoozeHour: 'In 1 hour', snoozeMorning: 'Tomorrow 9:00', todoFailed: 'Could not update the card: {error}',
     pin: 'Pin to top', unpin: 'Unpin', search: 'Find a session', pinned: 'Pinned', showSleeping: 'Show {n} sleeping sessions', noMatch: 'No session matches.',
@@ -3307,5 +3307,14 @@ export default {
     kind_api: 'API failure',
     kind_send: 'Send failure',
     kind_ws: 'Reconnect',
+  },
+  // P357: hand cards the board closed because a person typed in the session terminal
+  termAnswered: {
+    head: 'Answered in terminal {n}',
+    headTitle: 'Cards the board closed in the last day because someone typed directly in the session terminal. Reopen one if that was not the answer.',
+    tag: 'Answered in terminal',
+    reopen: 'Reopen',
+    reopenTitle: 'Reopen this card in the to-do list (nothing is sent to the session).',
+    reopened: 'Card reopened.',
   },
 };

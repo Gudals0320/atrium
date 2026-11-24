@@ -37,6 +37,10 @@ export const withoutCard = (cards, id) => (cards || []).filter((d) => d.id !== i
 
 // ---------- P292: 사용자 몫 ----------
 export const KINDS = ['decide', 'do', 'check', 'later', 'guard']; // P341: guard = 판이 만든 폭주 카드(Guard.jsx GuardBody)
+// P357: 종류 꼬리표의 사전 열쇠 하나(PC 할 일 목록·세션 맵 미니 창·휴대폰 카드가 같은 말: 결정·실행·확인·나중에·폭주)
+export const kindWord = (k) => `userTasks.kind.${KINDS.includes(k) ? k : 'decide'}`;
+// P357: 알림을 눌러 갈 카드가 지금 어디 있나 → 'active'(지금 목록) | 'later'(나중 묶음) | 'gone'(이미 답했거나 닫힘)
+export function cardPlace(cards, id) { const d = (cards || []).find((x) => Number(x.id) === Number(id)); return !d ? 'gone' : d.deferred ? 'later' : 'active'; }
 // 지금 목록(나중 줄이 아닌 카드)과 나중 줄(때가 이른 것 먼저, 조건 글은 끝)
 export const activeCards = (cards) => (cards || []).filter((d) => !d.deferred);
 export function laterCards(cards) {

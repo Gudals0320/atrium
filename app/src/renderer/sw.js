@@ -70,7 +70,7 @@ self.addEventListener('notificationclick', (e) => {
     const w = wins.find((c) => { try { return new URL(c.url).origin === self.location.origin; } catch { return false; } });
     if (w) {
       try { await w.focus(); } catch {}
-      if (data.sessionId) w.postMessage({ type: 'atrium-open', sessionId: data.sessionId });
+      if (data.sessionId) w.postMessage({ type: 'atrium-open', sessionId: data.sessionId, ...(data.decisionId ? { decisionId: data.decisionId } : {}) }); // P357: 결정 카드 알림은 그 카드로
       return;
     }
     await self.clients.openWindow(clickUrl(data, self.registration.scope));

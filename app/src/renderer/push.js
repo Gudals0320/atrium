@@ -4,14 +4,15 @@
 // - 켜기·끄기: 권한은 사람이 누른 동작 안에서만 묻는다(iOS). 그래서 VAPID 공개 키는 시트를 열 때 미리 받아 두고, 누르면 곧바로 권한부터 묻는다
 import { api } from './api.js';
 import { getState } from './store.js';
-import { supportOf, keyBytes, openParam, OPEN_PARAM, SID_RE } from './lib/push.js';
+import { supportOf, keyBytes, openParam, cardParam, cardIdOf, OPEN_PARAM, CARD_PARAM, SID_RE } from './lib/push.js';
 import { isIOS, isStandalone } from './lib/pwa.js';
 import { getLanguage, onLanguage } from './lib/i18n.js';
 
 let openFn = null;
 export function setOpenHandler(fn) { openFn = fn; return () => { if (openFn === fn) openFn = null; }; }
-function openSession(id) {
-  if (openFn) return openFn(id);
+// P357: card = 결정 카드 알림의 카드 번호(휴대폰 페이지는 홈의 할 일에서 그 카드로 간다)
+function openSession(id, card = null) {
+  if (openFn) return openFn(id, card ? { card } : {});
   const st = getState(); if (st.navigateTo && st.sessions.has(id)) st.navigateTo(id, { focusTerminal: true });
   return undefined;
 }
@@ -24,14 +25,15 @@ export function startPushClient() {
   document.addEventListener('visibilitychange', report);
   onLanguage((l) => { api.call('push.prefs', { lang: l }).catch(() => {}); }); // 화면 말을 바꾸면 알림 글의 말도
   try {
-    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (e) => { const d = e.data; if (d && d.type === 'atrium-open' && SID_RE.test(String(d.sessionId || ''))) openSession(d.sessionId); });
+    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (e) => { const d = e.data; if (d && d.type === 'atrium-open' && SID_RE.test(String(d.sessionId || ''))) openSession(d.sessionId, cardIdOf(d.decisionId)); });
   } catch {}
 }
 
 // 알림을 눌러 새로 연 주소의 세션(한 번만 쓴다)
 export const launchOpen = () => (typeof location !== 'undefined' ? openParam(location.search) : null);
+export const launchCard = () => (typeof location !== 'undefined' ? cardParam(location.search) : null); // P357
 export function clearLaunchOpen() {
-  try { const u = new URL(location.href); if (!u.searchParams.has(OPEN_PARAM)) return; u.searchParams.delete(OPEN_PARAM); history.replaceState(history.state, '', `${u.pathname}${u.search}${u.hash}`); } catch {}
+  try { const u = new URL(location.href); if (!u.searchParams.has(OPEN_PARAM) && !u.searchParams.has(CARD_PARAM)) return; u.searchParams.delete(OPEN_PARAM); u.searchParams.delete(CARD_PARAM); history.replaceState(history.state, '', `${u.pathname}${u.search}${u.hash}`); } catch {}
 }
 
 export const pushSupportNow = () => supportOf(typeof window !== 'undefined' ? window : null, { ios: isIOS(), standalone: isStandalone() });

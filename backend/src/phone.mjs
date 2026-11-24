@@ -65,7 +65,7 @@ export function rowOf(s) {
 
 // 할 일 카드를 짧게
 export function cardOf(d) {
-  return { id: d.id, kind: d.kind, sessionId: d.sessionId, name: d.name, question: d.question, options: d.options || [], why: d.why ? clip(String(d.why), 300) : null, createdAt: d.createdAt, deferred: !!d.deferred, wakeAt: d.wakeAt || null };
+  return { id: d.id, kind: d.kind, sessionId: d.sessionId, name: d.name, question: d.question, options: d.options || [], why: d.why ? clip(String(d.why), 300) : null, createdAt: d.createdAt, deferred: !!d.deferred, wakeAt: d.wakeAt || null, ...(d.auto ? { auto: true } : {}), ...(d.cond ? { cond: clip(String(d.cond), 120) } : {}) }; // P357: auto(자동 표시), cond(나중 묶음의 조건)
 }
 export const cardsOf = (list) => (list || []).map(cardOf);
 

@@ -216,3 +216,17 @@ html.mt-kb-open .mt-mp-input { padding-bottom: 8px; }
 .mt-mp-round.mt-ph-voice { width: 42px; height: 42px; }
 .mt-mp-round svg { width: 20px; height: 20px; }
 .mt-mp-sec button:disabled { opacity: .5; }
+
+/* P357: 할 일 카드의 종류 꼬리표(PC 할 일 목록과 같은 색: 결정·실행·확인·나중에·폭주), 자동 표시, 알림을 눌러 온 카드 강조, 나중 묶음, 세션 화면의 할 일 */
+.mt-mp-card-top .kind[data-k=decide] { color: var(--teal); background: var(--teal-bg); }
+.mt-mp-card-top .kind[data-k=do] { color: var(--accent-2); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.mt-mp-card-top .kind[data-k=check] { color: var(--warn); background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.mt-mp-card-top .kind[data-k=later] { color: var(--dim); background: var(--panel-2); border: 1px solid var(--panel-line-2); }
+.mt-mp-card-top .kind[data-k=guard] { color: var(--bad); background: var(--bad-bg); }
+.mt-mp-card-top .auto { padding: 0 5px; border-radius: 5px; border: 1px solid var(--panel-line-2); font-size: 0.6875rem; color: var(--dim); }
+.mt-mp-card.hot { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.mt-mp-card.later { background: var(--panel-2); }
+.mt-mp-later { margin: 6px 0 2px; }
+.mt-mp-later-head { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 4px; border: 0; background: none; color: var(--dim); font-size: 0.8438rem; font-weight: 650; }
+.mt-mp-gone { margin: 6px 0; padding: 9px 12px; border-radius: 12px; background: var(--panel-2); color: var(--text-2); font-size: 0.8438rem; }
+.mt-mp-stodos { padding: 0 0 4px; }
