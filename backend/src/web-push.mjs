@@ -191,7 +191,8 @@ export function pushText(items, lang = 'en') {
 export function pushPayload(items, lang, now = Date.now()) {
   const { title, body } = pushText(items, lang);
   const first = items.find((x) => x.kind === 'need') || items.find((x) => x.kind === 'decision') || items[0];
-  return { v: 1, title, body, tag: items.length === 1 ? `atrium-${first.sessionId}` : 'atrium-batch', sessionId: first.sessionId, kind: items.length === 1 ? first.kind : 'batch', n: items.length, at: now };
+  const card = items.find((x) => x.kind === 'decision' && Number.isInteger(x.decisionId)); // P357: 누르면 이 카드로(휴대폰 홈의 할 일). 묶음이면 첫 결정 카드
+  return { v: 1, title, body, tag: items.length === 1 ? `atrium-${first.sessionId}` : 'atrium-batch', sessionId: first.sessionId, kind: items.length === 1 ? first.kind : 'batch', n: items.length, at: now, ...(card ? { decisionId: card.decisionId } : {}) };
 }
 export const testPayload = (lang, now = Date.now()) => { const w = WORDS[langOf(lang)]; return { v: 1, title: w.testTitle, body: w.testBody, tag: 'atrium-test', sessionId: null, kind: 'test', n: 0, at: now }; };
 
@@ -305,7 +306,8 @@ export class Pusher {
     return kind;
   }
   // P284: 결정 카드 하나(atrium ask). 응답 필요(need) 스위치·묶음·보는 중·PC 사용 중 규칙 그대로, 카드마다 한 번. 결정 카드를 남기는 세션은 하위가 아니다
-  decision(it) { this.dispatch({ sessionId: it.sessionId, name: it.name, kind: 'decision', workspaceKey: it.workspaceKey || null, coolKey: `decision|${it.id}${it.wake ? `|w${it.wake}` : ''}` }, false); } // P292: 숨겼다 띄운 카드(wake)는 한 번 더
+  // P357: 같은 세션의 결정 카드 알림은 카드가 달라도 cooldownMs 안에 한 번만(sessionCool). 묶음 안에서 같은 세션은 마지막 카드 하나. 누르면 그 카드로 가게 카드 번호(decisionId)를 싣는다
+  decision(it) { this.dispatch({ sessionId: it.sessionId, name: it.name, kind: 'decision', workspaceKey: it.workspaceKey || null, decisionId: Number.isInteger(it.id) ? it.id : null, coolKey: `decision|${it.id}${it.wake ? `|w${it.wake}` : ''}`, sessionCool: `decision|s|${it.sessionId}` }, false); } // P292: 숨겼다 띄운 카드(wake)는 한 번 더
   // 판의 세션 나무. 막 바뀐 세션은 받은 요약(sum)의 상태로 맞춘다
   treeNow(sum = null) {
     let nodes = [];
@@ -327,10 +329,12 @@ export class Pusher {
     const t = this.now(); const ck = it.coolKey || `${it.sessionId}|${kind}`; // P284: 결정 카드는 카드마다(coolKey)
     const last = this.cool.get(ck);
     if (last != null && t - last < this.cooldownMs) { this.decide({ sessionId: it.sessionId, kind, deviceId: null, why: 'cooldown' }); return; }
-    this.cool.set(ck, t);
+    const sc = it.sessionCool ? this.cool.get(it.sessionCool) : null; // P357: 세션 하나의 결정 카드 알림 간격
+    if (sc != null && t - sc < this.cooldownMs) { this.decide({ sessionId: it.sessionId, kind, deviceId: null, why: 'cooldown' }); return; }
+    this.cool.set(ck, t); if (it.sessionCool) this.cool.set(it.sessionCool, t);
     if (this.cool.size > 500) for (const [k, v] of this.cool) if (t - v > this.cooldownMs) this.cool.delete(k);
     let ws = null; try { ws = it.workspaceKey ? this.wsName(it.workspaceKey) : null; } catch {}
-    const item = { sessionId: it.sessionId, name: it.name, kind, ws, at: t, ...(it.subs ? { subs: it.subs } : {}) };
+    const item = { sessionId: it.sessionId, name: it.name, kind, ws, at: t, ...(it.subs ? { subs: it.subs } : {}), ...(it.decisionId != null ? { decisionId: it.decisionId } : {}) };
     for (const r of subs) {
       const pr = prefsOf(r);
       if (!pr.kinds[prefKind(kind)]) { this.decide({ sessionId: item.sessionId, kind, deviceId: r.deviceId, why: 'kind_off' }); continue; }

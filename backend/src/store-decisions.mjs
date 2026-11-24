@@ -50,6 +50,13 @@ export function installDecisions(Store) {
     setHeld(id, on) { this.st('UPDATE decisions SET held = ? WHERE id = ?').run(on ? 1 : null, Number(id)); },
     // P286: 한 세션이 t 뒤에 만든 카드(열림·끝남 모두). 그 턴에 손 카드(atrium ask)를 만들었는지 본다
     decisionsSince(sessionId, t) { return this.st('SELECT * FROM decisions WHERE session_id = ? AND created_at >= ? ORDER BY id').all(sessionId, Number(t) || 0).map(decisionRow); },
+    // P357: 끝난 카드 하나를 다시 연다(답·보낼 차례도 지운다. 이미 열렸으면 null) → 연 줄
+    reopenDecision(id) {
+      const r = this.st("UPDATE decisions SET state = 'open', answer = NULL, answered_at = NULL, via = NULL, held = NULL WHERE id = ? AND state != 'open'").run(Number(id));
+      return r.changes ? this.getDecision(id) : null;
+    },
+    // P357: t 뒤에 via로 끝난 카드(최근 것 먼저, n장까지). 할 일 목록의 "터미널에서 답함" 줄
+    endedVia(via, t, n = 20) { return this.st('SELECT * FROM decisions WHERE state != \'open\' AND via = ? AND answered_at >= ? ORDER BY answered_at DESC, id DESC LIMIT ?').all(String(via), Number(t) || 0, n).map(decisionRow); },
     // 열린 카드 하나를 끝낸다(이미 끝났으면 null) → 끝낸 줄
     endDecision(id, { state, answer = null, via = null, at = Date.now() }) {
       const r = this.st("UPDATE decisions SET state = ?, answer = ?, answered_at = ?, via = ? WHERE id = ? AND state = 'open'").run(state, answer, at, via, Number(id));
