@@ -26,7 +26,9 @@ export const DOC_DEFAULTS = {
 const ROOT_FILES = ['CLAUDE.md', 'AGENTS.md'];
 const LIVE = ['BRIEF.md', 'ARCH.md', 'PLAN.md', 'testing.md', 'README.md'];
 const MD = /\.(md|mdx|markdown)$/i;
-const PLAN_H2 = /^(지금|다음)(\s*[:：].*)?$|^열린 결정$/;
+// P346: 영어 틀(atrium docs init, 화면 언어 en)의 Now / Next / Open decisions도 세 절로 본다
+const PLAN_H2 = /^(지금|다음|Now|Next)(\s*[:：].*)?$|^(열린 결정|Open decisions)$/i;
+const PLAN_ALIASES = { '지금': ['지금', 'now'], '다음': ['다음', 'next'], '열린 결정': ['열린 결정', 'open decisions'] };
 const PLAN_DONE = /끝남|끝났다|완료했다|\(P\d+[a-z]?\)/g;
 
 const norm = (s) => String(s).replace(/\r\n/g, '\n');
@@ -170,7 +172,7 @@ export async function checkDocs(root, { config: given = null } = {}) {
     const hs = h2s(plan);
     const bad = hs.filter((h) => !PLAN_H2.test(h));
     if (bad.length) P('plan_sections', dirRel('PLAN.md'), dirRel('PLAN.md') + '에 세 절(지금 / 다음 / 열린 결정) 밖의 절 ' + bad.length + '개: "## ' + bad.slice(0, 3).join('", "## ') + '"', 'PLAN 절 밖 ' + bad.length + '개');
-    const missing = ['지금', '다음', '열린 결정'].filter((w) => !hs.some((h) => h === w || h.startsWith(w + ':') || h.startsWith(w + '：') || h.startsWith(w + ' ')));
+    const missing = ['지금', '다음', '열린 결정'].filter((w) => !hs.some((h0) => { const h = h0.toLowerCase(); return PLAN_ALIASES[w].some((a) => h === a || h.startsWith(a + ':') || h.startsWith(a + '：') || h.startsWith(a + ' ')); }));
     if (missing.length) P('plan_missing', dirRel('PLAN.md'), dirRel('PLAN.md') + '에 없는 절: ' + missing.join(', '), 'PLAN 절 없음: ' + missing.join('·'));
     const done = norm(plan).match(PLAN_DONE);
     if (done) P('plan_done', dirRel('PLAN.md'), dirRel('PLAN.md') + '에 끝남 표시 ' + done.length + '개(' + [...new Set(done)].slice(0, 4).join(', ') + '). 끝난 일은 PLAN에서 지운다', 'PLAN 끝남 표시 ' + done.length + '개');
@@ -213,7 +215,9 @@ export function warnLine(res) {
 }
 
 // 판이 싣는 짧은 규칙. done 알림에 붙는다(지휘 세션이 처음 받는 done에는 RULES, 그 뒤로는 한 줄)
-export const DOC_DONE_LINE = '[Atrium 보드] 문서: 이 보고가 ARCH·PLAN과 다르면 틀린 문장을 고친다(덧붙이지 않고 다시 쓴다, 그 코드와 같은 커밋에).';
+// P346: 문서는 그것을 바꾼 코드가 합쳐진 뒤 지휘 세션이 고친다(문서 자리가 따로 받은 저장소일 수 있어 "같은 커밋"을 요구하지 않는다)
+export const DOC_FIX_WHEN = '문서는 그것을 바꾼 코드가 합쳐진 뒤 지휘 세션이 고친다';
+export const DOC_DONE_LINE = '[Atrium 보드] 문서: 이 보고가 ARCH·PLAN과 다르면 틀린 문장을 고친다(덧붙이지 않고 다시 쓴다, 코드가 합쳐진 뒤).';
 export function docRules(dir = 'docs') {
   const d = dir === '.' ? '' : dir + '/';
   return '[Atrium 보드] 문서 규칙(' + (d || '뿌리') + '): 문서는 내용의 지금 상태만 담고, 다시 쓰고 덧붙이지 않는다. '
@@ -221,7 +225,7 @@ export function docRules(dir = 'docs') {
     + d + 'ARCH.md = 지금의 구조만(조율 값 없음), '
     + d + 'PLAN.md = 지금 / 다음 / 열린 결정만(정해지면 BRIEF 행, 끝난 일은 지운다). '
     + '작업 기록은 보드(일, done 보고)에 있고 문서가 아니다. 고치는 것은 지휘 세션(너)이고 워커는 바꿀 문장을 보고만 한다. '
-    + '문서 고침은 그 코드와 같은 커밋에 넣는다. 이 보고가 ARCH·PLAN과 다르면 틀린 문장을 고친다.';
+    + DOC_FIX_WHEN + '. 이 보고가 ARCH·PLAN과 다르면 틀린 문장을 고친다.';
 }
 // 일 머리 셋째 줄 끝(일을 받는 쪽: 문서는 고치지 않고 보고만)
 export const workerTail = (dir = 'docs') => '문서(' + (dir === '.' ? 'BRIEF·ARCH·PLAN' : dir + '/') + ')는 고치지 않고 바꿀 문장을 done 보고에 적는다.';
@@ -267,3 +271,111 @@ export function reportLines(res) {
   else { lines.push('어긴 것 ' + res.problems.length + '개(막지 않는다. 지휘 세션이 고친다):'); for (const p of res.problems) lines.push('- ' + p.text); }
   return lines;
 }
+
+// ---------- P346: 문서 시작(atrium docs init, 판 API docs.init) ----------
+// 살아 있는 문서가 없는 저장소에 BRIEF·ARCH·PLAN 틀을 만들고 .atrium/docs.json에 예산을 적어 점검을 켠다.
+// - 없는 파일만 만든다. 있는 파일은 절대 덮지 않는다(건너뛴 것으로 알린다).
+// - 틀은 제목과 한 줄 풀이만(문서 규칙: BRIEF 정한 것 표, ARCH 지금 구조, PLAN 지금 / 다음 / 열린 결정). 화면 언어(ko | en)를 따른다.
+// - docs.json: 만든 문서와 CLAUDE.md·AGENTS.md(있으면)·문서 자리의 기존 *.md를 예산과 함께 적는다. 기존 문서는 지금 크기보다 넉넉히.
+//   있던 docs.json은 사람이 적은 값을 그대로 두고 빠진 예산만 더한다(off는 지운다: init이 곧 켜기다).
+export const INIT_KINDS = { brief: 'BRIEF.md', arch: 'ARCH.md', plan: 'PLAN.md' };
+export const DOC_TEMPLATES = {
+  ko: {
+    'BRIEF.md': '# BRIEF\n\n이 저장소가 왜 있고 무엇을 하며 무엇을 정했는가. 지금 상태만 담고, 바뀌면 그 문장·행을 다시 쓴다(덧붙이지 않는다).\n\n## 왜\n\n## 무엇\n\n## 정한 것\n\n| 주제 | 정한 것 | 까닭 |\n|---|---|---|\n',
+    'ARCH.md': '# ARCH\n\n코드·데이터·흐름의 지금 구조. 길을 찾는 데 필요한 것만 적고, 조율 값(수치·상한)과 지난 경위는 적지 않는다.\n',
+    'PLAN.md': '# PLAN\n\n지금 하는 일, 다음 할 일, 열린 결정. 끝난 일은 지우고, 정해진 결정은 BRIEF 정한 것 표의 행으로 옮긴다.\n\n## 지금\n\n## 다음\n\n## 열린 결정\n',
+  },
+  en: {
+    'BRIEF.md': '# BRIEF\n\nWhy this repository exists, what it does, and what has been decided. Keep only the current state; when something changes, rewrite that sentence or row (do not append).\n\n## Why\n\n## What\n\n## Decided\n\n| Topic | Decision | Reason |\n|---|---|---|\n',
+    'ARCH.md': '# ARCH\n\nThe current structure of the code, data and flows. Only what is needed to find your way; no tuning values (numbers, limits) and no history.\n',
+    'PLAN.md': '# PLAN\n\nWhat is being done now, what comes next, and open decisions. Delete finished work; move settled decisions into a row of the BRIEF decision table.\n\n## Now\n\n## Next\n\n## Open decisions\n',
+  },
+};
+// 지금 크기보다 넉넉한 예산(천 자 단위로 올림)
+export const roomyBudget = (chars, floor = 0) => Math.max(floor, Math.ceil((chars * 1.25 + 1000) / 1000) * 1000);
+// --only "brief,arch" → ['BRIEF.md', 'ARCH.md']. 모르는 이름은 오류
+export function parseOnly(only) {
+  if (only == null || only === '' || only === true) return Object.values(INIT_KINDS);
+  const list = (Array.isArray(only) ? only : String(only).split(/[,\s]+/)).map((x) => String(x).trim().toLowerCase().replace(/\.md$/, '')).filter(Boolean);
+  const bad = list.filter((x) => !INIT_KINDS[x]);
+  if (bad.length || !list.length) throw Object.assign(new Error('--only는 brief, arch, plan 가운데서 고른다(쉼표로): ' + (bad.join(', ') || '빈 값')), { code: 'bad_request' });
+  return [...new Set(list.map((x) => INIT_KINDS[x]))];
+}
+// 문서 자리 이름 다듬기. 저장소 밖(.., 절대 경로)은 받지 않는다
+export function normDocDir(dir) {
+  const d = String(dir || 'docs').trim().replace(/\\/g, '/').replace(/^\.\/|\/+$/g, '') || '.';
+  if (path.isAbsolute(d) || /^[a-zA-Z]:/.test(d) || d.split('/').includes('..')) throw Object.assign(new Error('--dir은 저장소 안의 상대 경로다: ' + dir), { code: 'bad_request' });
+  return d;
+}
+export const INIT_NEXT = [
+  'CLAUDE.md(AGENTS.md)의 목적·원칙·확인된 사실은 BRIEF로 옮기고, CLAUDE.md에는 짧은 규칙과 문서 가리킴만 둔다',
+  '마일스톤과 다음 할 일은 PLAN의 지금 / 다음 / 열린 결정으로(또는 atrium plan 레인으로)',
+  '일의 결과(조사·감사·측정·인계)는 문서로 커밋하지 않고 atrium done ok "<보고>" --record <파일>로 붙인다',
+];
+// → { dir, created: [상대 경로], skipped: [상대 경로], config: DOCS_CONFIG, budgets, total, lang, next, lines }
+export function initDocs(root, { dir = null, only = null, lang = 'en' } = {}) {
+  if (!root || !exists(root)) throw Object.assign(new Error('워크스페이스 폴더가 없다.'), { code: 'not_found' });
+  const cfgPath = path.join(root, DOCS_CONFIG);
+  const cur = readJson(cfgPath);
+  if (cur && cur.__bad) throw Object.assign(new Error(DOCS_CONFIG + '을 읽지 못해 고치지 않는다: ' + cur.__bad), { code: 'bad_config' });
+  const d = normDocDir(dir || (cur && typeof cur.dir === 'string' && cur.dir.trim() ? cur.dir : 'docs'));
+  const files = parseOnly(only);
+  const tpl = DOC_TEMPLATES[lang === 'ko' ? 'ko' : 'en'];
+  const docsAbs = path.resolve(root, d);
+  const rel = (f) => (d === '.' ? f : d + '/' + f);
+  const created = []; const skipped = [];
+  for (const f of files) {
+    const abs = path.join(docsAbs, f);
+    if (exists(abs)) { skipped.push(rel(f)); continue; }
+    fs.mkdirSync(docsAbs, { recursive: true });
+    fs.writeFileSync(abs, tpl[f], { flag: 'wx' }); // wx: 그새 생긴 파일도 덮지 않는다
+    created.push(rel(f));
+  }
+  // 예산: 사람이 적은 값은 그대로, 빠진 것만
+  const next = cur && typeof cur === 'object' ? { ...cur } : {};
+  next.dir = d; delete next.off;
+  const budgets = { ...(next.budgets || {}) };
+  const keyOf = (k) => (k.startsWith(d + '/') ? k.slice(d.length + 1) : k);
+  const have = new Set(Object.keys(budgets).map(keyOf));
+  let sum = 0;
+  const note = (key, abs, floor) => {
+    const t = readText(abs); if (t == null) return;
+    const chars = countChars(t); sum += chars;
+    if (!have.has(key)) { budgets[key] = roomyBudget(chars, floor); have.add(key); }
+  };
+  for (const f of ROOT_FILES) note(f, path.join(root, f), DOC_DEFAULTS.budgets[f]);
+  for (const f of Object.values(INIT_KINDS)) note(f, path.join(docsAbs, f), DOC_DEFAULTS.budgets[f]);
+  if (d !== '.') for (const ent of (() => { try { return fs.readdirSync(docsAbs, { withFileTypes: true }); } catch { return []; } })()) {
+    if (!ent.isFile() || !MD.test(ent.name) || Object.values(INIT_KINDS).includes(ent.name)) continue;
+    note(ent.name, path.join(docsAbs, ent.name), DOC_DEFAULTS.budgets[ent.name] || 0);
+  }
+  next.budgets = budgets;
+  if (!(Number.isFinite(next.total) && next.total > 0)) next.total = roomyBudget(sum, DOC_DEFAULTS.total);
+  ensureAtriumDir(root);
+  fs.writeFileSync(cfgPath, JSON.stringify(next, null, 2) + '\n');
+  const lines = [
+    '문서 시작(' + (d === '.' ? '뿌리' : d + '/') + ', ' + (lang === 'ko' ? 'ko' : 'en') + ' 틀): 만든 파일 ' + (created.length ? created.join(', ') : '없음') + ', 건너뛴 파일(이미 있음, 덮지 않음) ' + (skipped.length ? skipped.join(', ') : '없음') + '.',
+    DOCS_CONFIG + '에 예산을 적고 점검을 켰다(자세히: atrium docs, 끄기: atrium docs off).',
+    '다음 할 일:', ...INIT_NEXT.map((l, i) => '  ' + (i + 1) + '. ' + l),
+  ];
+  return { dir: d, created, skipped, config: DOCS_CONFIG, budgets, total: next.total, lang: lang === 'ko' ? 'ko' : 'en', next: [...INIT_NEXT], lines };
+}
+// docs.json의 off를 켜고 끈다(dir을 주면 그 자리). 읽지 못한 설정은 빈 것에서
+export function setDocsOff(root, off, dir = null) {
+  const file = path.join(root, DOCS_CONFIG);
+  let cur = {};
+  try { cur = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { cur = {}; }
+  const next = { ...cur, ...(dir ? { dir } : {}), off };
+  if (!off) delete next.off;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n');
+  return next;
+}
+// 문서 시작 알림을 보낼 저장소인가: git 워크스페이스이고, 살아 있는 문서(BRIEF·ARCH·PLAN)도 docs.json(옛 예산 파일 포함)도 없다
+export function needsDocStart(root) {
+  if (!root || !excludeFileOf(root)) return false;
+  const { config, source, note } = loadDocConfig(root);
+  if (source || note || config.off || exists(path.join(root, DOCS_CONFIG))) return false;
+  return !docPlace(root, config).present;
+}
+export const DOC_START_LINE = '[Atrium 보드] 이 저장소에는 살아 있는 문서가 없다. `atrium docs init`으로 BRIEF(왜·무엇·정한 것)·ARCH(지금 구조)·PLAN(지금·다음·열린 결정) 틀을 만들고, CLAUDE.md는 짧은 규칙과 가리킴만 둔다(필요 없으면 `atrium docs off`).';

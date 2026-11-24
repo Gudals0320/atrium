@@ -472,7 +472,7 @@ test('P304 CLI: 설계 3.2 꼴의 출력, 레인 목록, 남이 바꾼 것, me �
 });
 
 test('P304 계약과 안내: plan 동사, 계약 9 그대로, 허용 규칙, 판 안내문은 그대로, 스킬 단락, help plan', async () => {
-  assert.equal(CONTRACT_VERSION, 9);
+  assert.equal(CONTRACT_VERSION, 10); // P346: docs init·on·off로 10.
   assert.ok(VERB_NAMES.includes('plan'));
   const v = VERBS.find((x) => x.name === 'plan');
   assert.match(v.does, /관리자/); assert.match(v.does, /--who user/); assert.ok(v.args.some((a) => a.includes('--plan')));

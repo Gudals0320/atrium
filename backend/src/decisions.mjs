@@ -455,6 +455,9 @@ export class Decisions {
     if (!d || !this.b.sessions.has(d.sessionId)) return null;
     // P317: 판 명령이 늘었다는 한 줄(verbs-notice.mjs)은 맨 앞에
     let vn = null; try { vn = this.b.briefNotices ? this.b.briefNotices.attach(d.sessionId, d.deliveryId) : null; } catch (e) { this.b.log('verbs notice error', e && e.stack); }
+    // P346: 문서 시작 알림 한 줄(doc-watch.mjs, 워크스페이스마다 한 번)은 판 명령 알림 다음
+    let ds = null; try { ds = this.b.docs && this.b.docs.attachFront ? this.b.docs.attachFront(d.sessionId, d.deliveryId) : null; } catch (e) { this.b.log('doc start error', e && e.stack); }
+    if (ds) vn = vn ? vn + '\n' + ds : ds;
     const front = (t) => (vn && t ? vn + '\n' + t : vn || t || null);
     // P306: 사람이 바꾼 목표 레인 알림(plan-notify.mjs)도 같은 자리에 싣는다(결정 답 뒤)
     let pn = null; try { pn = this.b.planNotes ? this.b.planNotes.attach(d.sessionId, d.deliveryId, 'ride') : null; } catch {}

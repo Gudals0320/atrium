@@ -150,7 +150,7 @@ test('P257 한 줄 경고: 판 알림 꼴 한 줄, 앞의 둘과 수, 상한', a
 test('P257 짧은 규칙: 길이와 내용(규칙 묶음 2천 자 이하, 한 줄, 일 머리 한 마디)', () => {
   const rules = docRules('docs');
   assert.ok(rules.length <= 2000 && rules.length >= 200, String(rules.length));
-  for (const w of ['BRIEF', 'ARCH', 'PLAN', '지금 / 다음 / 열린 결정', '같은 커밋', '보고만', 'ARCH·PLAN과 다르면']) assert.ok(rules.includes(w), w);
+  for (const w of ['BRIEF', 'ARCH', 'PLAN', '지금 / 다음 / 열린 결정', '합쳐진 뒤', '보고만', 'ARCH·PLAN과 다르면']) assert.ok(rules.includes(w), w);
   assert.ok(!rules.includes('\n'));
   assert.ok(DOC_DONE_LINE.startsWith('[Atrium 보드] ') && DOC_DONE_LINE.length < 200);
   const tail = workerTail('docs');
@@ -384,7 +384,7 @@ test('P257 판 API: docs.status, 켜기(.atrium/·exclude·docs.json)·끄기는
 test('P257 계약: docs 동사(더하기만), 옛 docs-guard는 없다', () => {
   assert.ok(VERB_NAMES.includes('docs'));
   const v = VERBS.find((x) => x.name === 'docs');
-  assert.deepEqual(v.args, ['[--json]']); assert.ok(v.out.includes('problems'));
+  assert.equal(v.args.at(-1), '[--json]'); assert.ok(v.out.includes('problems'));
   for (const r of ['Bash(atrium docs)', 'Bash(atrium docs *)', 'PowerShell(atrium docs)']) assert.ok(ATRIUM_ALLOW.includes(r), r + ': 판이 띄운 세션이 묻지 않고 친다');
   const here = path.dirname(fileURLToPath(import.meta.url));
   assert.equal(fs.existsSync(path.join(here, '..', '..', 'scripts', 'docs-guard.mjs')), false);
