@@ -174,7 +174,7 @@ test('세션 맵 창(PC·휴대폰)은 그래프를 graphKey가 바뀔 때만 �
     assert.match(s, /keepSameGraph\(prev, g\)/, f);
     assert.match(s, /keepFacts\(id, cardFacts\(/, f);
     assert.match(s, /keepCardBoxes\(lastLay\.current/, f);
-    assert.match(s, /holdLights\((root|vp), true\)/, f);
+    if (f === 'PhoneMap.jsx') assert.match(s, /holdLights\(vp, true\)/, f); // P349: PC 맵은 CSS가 움직이는 동안 빛 고리를 숨긴다(p349-lib.test.mjs)
   }
   const pt = fs.readFileSync(path.join(SRC, 'perf-trace.js'), 'utf8');
   assert.match(pt, /export function noteMap/);

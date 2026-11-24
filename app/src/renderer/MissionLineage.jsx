@@ -23,7 +23,6 @@ import { MissionLight, DoneMark } from './Mission.jsx';
 import { SummaryColumn } from './SummaryColumn.jsx';
 import { commandDraft } from './Thread.jsx';
 import { noteMap, timedLayout } from './perf-trace.js'; // P210: 배치 셈·그래프 읽기·카드 그리기 세기(성능 기록 map 묶음)
-import { holdLights } from './lib/work-light.js'; // P210: 움직이는 동안 빛 멈춤
 import { mapMergers } from './lib/merger.js'; // P276: merger를 head → 하위 줄기 위에
 import { DecisionMark } from './Decisions.jsx'; // P284: 결정 카드 표식
 import { ManagerChip } from './Plan.jsx'; // P306: 관리자 세션의 레인 칩(작게)
@@ -370,7 +369,7 @@ export function LineageMap() {
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
-    if (root && !glide) { if (root.dataset.moving !== '1') { root.dataset.moving = '1'; holdLights(root, true); } clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); checkStep(); holdLights(root, false); }, 160); }
+    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); checkStep(); }, 160); } // P349: 움직이는 동안 빛 고리는 CSS가 숨긴다(styles.css P349, 예전 P210 holdLights)
     if (placeRef.current) placeRef.current(glide); // P331: 미니 창이 카드를 따라간다
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // P178: 움직임이 멈춘 뒤 이름표 계단이 바뀌었으면 배치를 다시 센다. 화면 가운데에 가장 가까운 카드를 닻으로 남겨, 새 배치에서도 그 카드가 같은 화면 자리에 있게 한다
