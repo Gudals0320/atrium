@@ -11,6 +11,7 @@ import { clip, promptTask } from './text.mjs';
 import { tailLines } from './screen.mjs';
 import { readMessages } from './transcript.mjs';
 import { transcriptPathFor } from './launch.mjs';
+import { readGroups } from './ws-groups.mjs'; // P356: 맵 탭의 폴더(가상 그룹)
 
 export const LINE_MAX = 120;
 export const GONE_MAX = 500;
@@ -55,13 +56,53 @@ export function rowOf(s) {
   if (s.hooked === false) r.hooked = false; // 스티어링할 수 없다(lib/steer.js steerBlock)
   if (s.flavor) r.flavor = s.flavor;
   if (s.model) r.model = String(s.model).replace(/^claude-/, '').slice(0, 40);
+  if (s.effort) r.effort = String(s.effort).slice(0, 12); // P356: 카드의 모델·노력 수준(판 세션 맵과 같은 글)
   if (s.waitingSince) r.waitingSince = s.waitingSince;
   if (s.state === 'waiting' && s.ask) r.ask = askOf(s.ask);
   if (s.kind === 'shell' && s.shell) r.shell = { atPrompt: s.shell.atPrompt, program: !!s.shell.program };
   if (s.lastAnswerAt) r.lastAnswerAt = s.lastAnswerAt;
   if (s.cwdNow && s.git && s.git.isWorktree && s.git.branch) r.branch = String(s.git.branch).slice(0, 60);
+  if (s.state === 'working' && s.turn && s.turn.startedAt) r.turnAt = s.turn.startedAt; // P356: 맵 카드의 "일한 시간"
   return r;
 }
+
+// P356: 맵 탭(MobileMap.jsx)의 가벼운 구조 답. 판 세션 맵과 같은 그래프(mission.graph)에서 배치·카드에 드는 칸만 남긴다.
+// - 자주 바뀌는 값(상태, 분류, 활동·일 시작 시각, 묻는 것, 오류)과 휴대폰 줄에 이미 있는 값(이름, 워크스페이스, 모델·노력 수준, 브랜치)은 빼고 창이 줄에서 덧입힌다. 그래서 구조가 그대로면 답이 같다
+// - 세션끼리의 참조(부모, 계보 부모, 동료, 선의 두 끝)는 nodes 차례 번호로 준다(긴 세션 id를 되풀이하지 않게). 창 lib/mobile-map.js graphOf가 판 그래프 모양으로 편다
+// - 사람(명령 바)·루프 선과 선의 횟수·시각·지시 글은 맵 탭이 그리지 않으므로 뺀다. 역할 이름(label)은 역할 선에만
+// - 열쇠(key): 답 내용의 해시. 창이 같은 열쇠를 주면 { key, same: true }만 준다
+export const MAP_TEXT_MAX = 120;
+const MAP_EDGE_KINDS = new Set(['role', 'prompt', 'spawn', 'relation']);
+const MAP_NODE_KEEP = ['role', 'order', 'closedKids', 'assignAt', 'parentClosed', 'loops', 'orch']; // 모델·노력 수준·브랜치는 휴대폰 줄에 있다(rowOf)
+export function mapOf(graph, groups = []) {
+  const list = ((graph && graph.nodes) || []).filter((n) => n && n.kind === 'session');
+  const at = new Map(list.map((n, i) => [n.id, i]));
+  const ref = (id) => (at.has(id) ? at.get(id) : undefined);
+  const nodes = list.map((n) => {
+    const x = { s: n.sessionId, t: n.createdAt || 0 };
+    if (n.agentKind && n.agentKind !== 'claude') x.k = n.agentKind;
+    if (ref(n.parentId) !== undefined) x.p = ref(n.parentId);
+    if (ref(n.lineageParent) !== undefined) x.lp = ref(n.lineageParent);
+    const peers = (n.peers || []).map(ref).filter((v) => v !== undefined);
+    if (peers.length) x.peers = peers;
+    for (const k of MAP_NODE_KEEP) if (n[k]) x[k] = n[k];
+    if (n.lastPrompt) x.lastPrompt = clip(String(n.lastPrompt), MAP_TEXT_MAX);
+    if (n.background && n.background.n) x.bg = { n: n.background.n, kinds: n.background.kinds || [] };
+    return x;
+  });
+  const edges = [];
+  for (const e of (graph && graph.edges) || []) {
+    if (!e || !MAP_EDGE_KINDS.has(e.kind) || ref(e.from) === undefined || ref(e.to) === undefined) continue;
+    const y = { f: ref(e.from), t: ref(e.to), k: e.kind };
+    if (e.kind === 'role' && e.label) y.label = clip(String(e.label), 40);
+    if (e.relation) y.r = e.relation;
+    if (e.relationSource) y.rs = e.relationSource;
+    if (ref(e.relationUp) !== undefined) y.up = ref(e.relationUp);
+    edges.push(y);
+  }
+  return { nodes, edges, groups: (groups || []).map((g) => ({ id: g.id, name: g.name, members: g.members || [] })) };
+}
+export const mapKeyOf = (m) => crypto.createHash('sha1').update(JSON.stringify(m)).digest('hex').slice(0, 12);
 
 // 할 일 카드를 짧게
 export function cardOf(d) {
@@ -142,6 +183,13 @@ export function phoneHandlers(b) {
       const st = b.features && b.features.settings ? b.features.settings.get() : {};
       return { phone: true, ...d, ...view(), settings: { language: st.language || null }, me: (c && c.clientId) || null, current: b.currentWorkspace() };
     },
+    // P356: 맵 탭의 구조(열 때와 세션 구조가 바뀔 때). key가 같으면 same만
+    'phone.map': (p) => {
+      const g = b.api && b.api.handlers['mission.graph'] ? b.api.handlers['mission.graph']() : { nodes: [], edges: [] };
+      const m = mapOf(g, readGroups(b).groups);
+      const key = mapKeyOf(m);
+      return p && p.key === key ? { key, same: true } : { key, ...m };
+    },
     // 세션 화면. 연 세션의 전달 이벤트만 받는다(c.phoneOpen)
     'phone.session': async (p, c) => {
       const s = b.resolve(p.session);
@@ -149,15 +197,16 @@ export function phoneHandlers(b) {
       const rt = s.rt || {};
       const sum = b.summary(s);
       const lines = Math.min(Math.max(Number(p.lines) || TAIL_DEFAULT, 1), TAIL_MAX);
+      const brief = p.brief === true; // P355: 터미널 보기(xterm이 화면을 보인다)는 기다리는 요청·대기 글만. 마지막 답·지시·터미널 끝 줄은 빼고 화면도 읽지 않는다
       const q = b.queue && b.queue.list ? b.queue.list(s.sessionId) : [];
       const deliveries = q.map((d) => { const full = (b.store.getDelivery && b.store.getDelivery(d.deliveryId)) || {}; return { deliveryId: d.deliveryId, sessionId: s.sessionId, status: d.status, reason: d.reason || null, text: clip(String(full.text || ''), 120), seq: d.seq ?? d.createdAt ?? null, steerWhy: d.steerWhy || null }; });
       const a = sum.ask;
       return {
         sessionId: s.sessionId, row: rowOf(sum), cwd: sum.cwdNow || s.cwd, model: sum.model || null, effort: sum.effort || null,
-        lastAnswer: rt.lastAnswer ? clip(String(rt.lastAnswer), ANSWER_MAX) : null, lastAnswerAt: rt.lastAnswerAt || null,
-        lastPrompt: rt.lastPrompt ? clip(promptTask(rt.lastPrompt), PROMPT_MAX) : null, promptAt: (rt.turn && rt.turn.startedAt) || null,
+        lastAnswer: !brief && rt.lastAnswer ? clip(String(rt.lastAnswer), ANSWER_MAX) : null, lastAnswerAt: rt.lastAnswerAt || null,
+        lastPrompt: !brief && rt.lastPrompt ? clip(promptTask(rt.lastPrompt), PROMPT_MAX) : null, promptAt: (rt.turn && rt.turn.startedAt) || null,
         ask: a ? { ...askOf(a), summary: a.summary ? clip(String(a.summary), 600) : null, plan: a.plan ? clip(String(a.plan), PROMPT_MAX) : null, questions: Array.isArray(a.questions) ? a.questions.slice(0, 4).map((x) => ({ question: clip(String(x.question || ''), 300), options: (x.options || []).slice(0, 6).map((o) => clip(String(o.label || o), 80)) })) : null } : null,
-        tail: await tailOf(b, s, lines), deliveries,
+        tail: brief ? null : await tailOf(b, s, lines), deliveries, ...(brief ? { brief: true } : {}),
       };
     },
     // 세션 화면을 떠났다

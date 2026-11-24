@@ -3295,6 +3295,10 @@ export default {
     lastAnswer: '마지막 답', prompt: '지시', terminal: '터미널 · 마지막 40줄', fontDown: '글자 작게', fontUp: '글자 크게', refresh: '새로 고침',
     history: '이전 기록', moreHistory: '이전 기록 더 보기', sendNow: '바로 보내기',
     key_esc: 'Esc', key_enter: 'Enter', key_up: '위 화살표', key_down: '아래 화살표', key_1: '1번 키', key_2: '2번 키', key_3: '3번 키', key_y: 'y 키', key_n: 'n 키',
+    // P355: 세션 화면의 보기(답 | 터미널), 바로 치기, 키 줄
+    viewLabel: '세션 보기', viewAnswer: '답', viewTerm: '터미널', typeDirect: '바로 치기', typeDirectOff: '키보드 닫기', typeDirectTitle: '화면 키보드로 터미널에 바로 칩니다',
+    termLoading: '터미널을 여는 중…', termFailed: '터미널을 열지 못했습니다: {error}', askHide: '접기', keysMore: '키 더 보기', keysLess: '키 접기',
+    key_4: '4번 키', key_ctrl_c: 'Ctrl+C (중단)', key_tab: 'Tab', key_shift_tab: 'Shift+Tab (모드 전환)', key_left: '왼쪽 화살표', key_right: '오른쪽 화살표', key_backspace: '백스페이스', key_slash: '슬래시(/)', key_space: '스페이스',
   },
   // P354: 시선 태그(판 가운데 세션을 명령줄 받는 이로)
   gaze: {
@@ -3321,4 +3325,6 @@ export default {
     reopenTitle: '이 카드를 할 일 목록에 다시 엽니다(세션에는 보내지 않습니다).',
     reopened: '카드를 다시 열었습니다.',
   },
+  // P357: 세션 화면 터미널 보기의 할 일 알약(누르면 겹친 작은 창)
+  termTodos: { pill: '할 일 {n}' },
 };

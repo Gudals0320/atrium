@@ -43,13 +43,13 @@ test('"혼자" 낱말은 세션 맵·휴대폰에서 "솔로"(영어 Solo)', () 
   assert.equal(ko.mmTerr.solo, '솔로'); // P260: 솔로 칸 머리(mmLine.colSolo)는 없앴다
   assert.equal(en.mmTerr.solo.toLowerCase(), 'solo');
   for (const k of ['closedKids', 'assigned', 'parentClosed', 'altMoveHint']) { assert.ok(ko.mmLine[k], k); assert.ok(en.mmLine[k], k); }
-  for (const f of ['MissionLineage.jsx', 'lib/mission-lineage.js']) assert.ok(!read(f).includes('혼자'), f);
+  for (const f of ['MissionLineage.jsx', 'MapCard.jsx', 'lib/mission-lineage.js']) assert.ok(!read(f).includes('혼자'), f);
   // 다른 뜻의 "혼자"(절전)는 그대로
   assert.match(JSON.stringify(ko), /혼자 절전/);
 });
 
 test('카드에 마우스를 올리면 미리 보기 하나만(브라우저 풍선 title 없음)', () => {
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   const card = src.slice(src.indexOf('className="mt-ta-card"'), src.indexOf('{tier === \'work\' && <MissionLight'));
   assert.ok(card.length > 50);
   assert.ok(!/\btitle=/.test(card), '카드에 title이 없다');
@@ -88,7 +88,7 @@ test('폴더 기둥: 너비는 가장 긴 폴더 이름에 맞추고, 짧으면 
   const css = read('styles.css');
   assert.match(css, /\.mt-sm-spine \.fn \{ overflow: visible; text-overflow: clip; \}/);
   assert.match(css, /\.mt-sm-spine \.fs \{ display: flex; flex-direction: column;/);
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(src, /className="mt-sm-spine" style=\{\{ width: lay\.spine \}\}/);
   assert.match(src, /data-role="ln-band-stat"(?: style=\{\{ fontSize: lay\.px\.stat \}\})?><span>\{t\('mmTerr\.workspaces'/); // P178: 글 크기는 배치(lay.px)
   assert.ok(!src.includes("t('mmTerr.workspaces', { n: b.nWs })} · ${"), '가운뎃점 없음');
@@ -106,7 +106,7 @@ test('폴더 띠 최소 높이: 워크스페이스 하나인 폴더도 BANDMIN �
 test('세션 맵에서 판으로: 날아가기 없이 한 번에(instant)', () => {
   assert.equal(navDuration({ instant: true }), 0);
   assert.equal(navDuration(), NAV_MS);
-  assert.match(read('MissionLineage.jsx'), /st\.navigateTo\(b\.node\.sessionId, \{ instant: true \}\)/);
+  assert.match((read('MissionLineage.jsx') + read('MapCard.jsx')), /st\.navigateTo\(b\.node\.sessionId, \{ instant: true \}\)/);
   const cv = read('Canvas.jsx');
   assert.match(cv, /st\.navigateTo = \(id, \{ focusTerminal = false, viewOnly = false, instant = false \} = \{\}\)/);
   assert.match(cv, /const duration = navDuration\(\{ instant \}\);/);

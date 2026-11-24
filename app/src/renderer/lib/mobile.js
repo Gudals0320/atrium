@@ -4,9 +4,34 @@
 // - 세션 목록: 찾기, 고정(이 기기 localStorage), 워크스페이스 묶음(살아 있는 세션 먼저, 잠든 세션은 접어 둔다)
 // - 맵: 세션 관계를 들여쓰기 나무로(부모가 다른 워크스페이스에 있으면 그 워크스페이스에서는 뿌리)
 // - 빠른 키: 백엔드 session.keys의 허용 키(keys.mjs KEY_NAMES)만
-import { needsYou, isBusy, toneOf, lastLineOf } from './phone.js';
+// - P355: 세션 화면의 보기(답 | 터미널)와 키 줄(늘 보이는 한 줄 + 펼치는 두 줄), 화면 높이(pageBox)
+import { needsYou, isBusy, toneOf, lastLineOf, screenBox } from './phone.js';
 
-export const QUICK_KEYS = ['esc', 'enter', 'up', 'down', '1', '2', '3', 'y', 'n'];
+// P355: 키 줄. 늘 보이는 한 줄(KEY_MAIN, 앞에 펼침 단추)과 펼치면 보이는 두 줄(KEY_MORE). 모두 session.keys 이름으로 보낸다
+// (판이 패널 바이트로 바꾼다. 터미널을 붙이지 않은 답 보기에서도 된다). 숫자는 응답 필요일 때 노랗게
+export const KEY_MAIN = ['esc', 'enter', 'up', 'down', '1', '2', '3'];
+export const KEY_MORE = ['ctrl+c', 'tab', 'shift+tab', 'left', 'right', '4', 'backspace', 'y', 'n', 'slash', 'space'];
+export const MOBILE_KEYS = [...KEY_MAIN, ...KEY_MORE];
+export const KEY_GLYPH = { esc: 'Esc', enter: '⏎', up: '↑', down: '↓', left: '←', right: '→', 'ctrl+c': 'Ctrl C', tab: 'Tab', 'shift+tab': '⇧Tab', backspace: '⌫', slash: '/', space: 'Space' };
+export const KEY_WIDE = { backspace: 2, space: 3 }; // 여러 칸을 쓰는 키
+export const keyId = (k) => String(k).replace(/\+/g, '_'); // 사전 열쇠(mobile.key_ctrl_c)
+export const isNumKey = (k) => /^[0-9]$/.test(k);
+export const KEYS_OPEN_KEY = 'mt.mobileKeysOpen'; // 키 줄을 펼쳐 둘까(이 기기)
+export const VIEW_KEY = 'mt.mobileView'; // 세션 화면의 보기: 'answer' | 'term'(이 기기, 마지막에 고른 쪽)
+// 세션 화면이 지금 보일 보기. 터미널은 살아 있는 세션만(잠들었거나 끝났으면 답 보기)
+export const isLive = (s) => !!s && s.state !== 'sleeping' && s.state !== 'exited';
+export function viewOf(stored, s) { return stored === 'term' && isLive(s) ? 'term' : 'answer'; }
+export function readView(st) { try { const v = st && st.getItem(VIEW_KEY); return v === 'term' ? 'term' : 'answer'; } catch { return 'answer'; } }
+export function readFlag(st, key) { try { return !!st && st.getItem(key) === '1'; } catch { return false; } }
+
+// P355: 페이지 높이. screenBox(P83: 홈 화면 앱이 창 높이를 짧게 주면 화면 높이)에 더해, 보이는 높이(분수 px, dpr 3)는
+// 반올림하지 않고 내린다(올리면 아래 끝이 보이는 영역 밖으로 0.5px까지 밀린다). 보이는 높이가 창 높이보다 크면 창 높이를 쓴다
+export function pageBox({ vv, innerHeight, innerWidth, screenW, screenH, standalone = false }) {
+  const b = screenBox({ vv, innerHeight, innerWidth, screenW, screenH, standalone });
+  if (b.tall) return b;
+  const raw = vv && vv.height > 0 ? Math.min(vv.height, innerHeight > 0 ? innerHeight : vv.height) : innerHeight || 0;
+  return { height: Math.max(0, Math.floor(raw)), top: b.top };
+}
 export const PINS_KEY = 'mt.mobilePins';
 export const TAB_KEY = 'mt.mobileTab';
 export const OPEN_GROUPS_KEY = 'mt.mobileGroups';

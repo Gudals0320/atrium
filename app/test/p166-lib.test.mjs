@@ -155,7 +155,7 @@ test('시점 기억: 화면 크기마다 저장소에, 다시 열면 그대로, 
 });
 
 test('화면 연결: 기본은 PhoneMap(classic은 숨은 설정), PC 카드·미리 보기를 그대로, 터치 조작, Alt 끌기·명령줄 없음, 옛 목록은 지웠다', () => {
-  const pm = read('PhoneMission.jsx'), map = read('PhoneMap.jsx'), ml = read('MissionLineage.jsx');
+  const pm = read('PhoneMission.jsx'), map = read('PhoneMap.jsx'), ml = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(pm, /style === 'classic' \? <ClassicPhoneMission \{\.\.\.props\} \/> : <PhoneMap \{\.\.\.props\} \/>/);
   for (const f of ['PhoneLineage.jsx', 'lib/phone-lineage.js', 'PhoneTerr.jsx']) assert.ok(!fs.existsSync(path.join(R, f)), `${f}는 지웠다`);
   assert.match(ml, /export const Card = memo\(function Card\(/); assert.match(ml, /export function Peek\(/);

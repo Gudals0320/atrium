@@ -52,7 +52,7 @@ test('뒤 일이 있는 세션은 얇은 줄(P163)로 줄이지 않는다(PC)', 
 });
 
 test('창 연결: PC 카드·멀리 타일·미리 보기, 두 사전, 움직임 없음', () => {
-  const ml = read('MissionLineage.jsx'), css = read('styles.css');
+  const ml = (read('MissionLineage.jsx') + read('MapCard.jsx')), css = read('styles.css');
   assert.match(ml, /bgShow\(n, live, tier\)/);
   assert.match(ml, /<BgBadge f=\{f\} role="ta-bg" \/>/);
   assert.match(ml, /data-role="ta-bg-tile"/);

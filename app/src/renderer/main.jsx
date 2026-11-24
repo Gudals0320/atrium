@@ -29,7 +29,8 @@ import './tokens.css';
 import './styles.css';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ReactFlowProvider } from '@xyflow/react';
+import { ReactFlowProvider, useStoreApi } from '@xyflow/react';
+import { FlowApi } from './term-flow.js'; // P355: TerminalView가 판 배율을 이 길로 읽는다
 import { api } from './api.js';
 import { useStore, getState, openDialog, setKillAsk, setRenaming, setDebugThrow, setSearchOpen, pendingFor, setMissionOpen, setConvoNodes, setFocus, setBottomPin, ensureThread } from './store.js';
 import { OutputPanel } from './Output.jsx';
@@ -59,6 +60,8 @@ import { startUsageAlerts } from './Usage.jsx'; // P211: 구독 사용량 90% �
 import * as perf from './perf.js';
 import { useT } from './lib/i18n.js';
 import { BRAND_WORDMARK } from './lib/icons.jsx'; // 처음 화면의 텍스트 로고
+// P355: 판 화면의 xyflow 스토어를 TerminalView에 넘긴다(term-flow.js)
+function FlowBridge({ children }) { return <FlowApi.Provider value={useStoreApi()}>{children}</FlowApi.Provider>; }
 
 const editable = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable || (t.closest && t.closest('.xterm')));
 
@@ -274,7 +277,7 @@ const fontsReady = Promise.race([
 // P87: 휴대폰은 보드를 그리지 않으므로 단계를 걸지 않는다(미션 맵의 가벼운 움직임은 남긴다)
 { const pl = boardPlan(); if (pl.level && !(isWeb && phoneScreen())) { document.documentElement.dataset.level = String(pl.level); if (!pl.effects) document.documentElement.classList.add('mt-lite'); } }
 function boot() {
-  fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
+  fontsReady.then(() => root.render(<ReactFlowProvider><FlowBridge><App /></FlowBridge></ReactFlowProvider>));
   // P352: 휴대폰 화면이면 이상 동작(화면 오류, 실패한 API, 보내기 실패, 다시 붙기, 받은 크기)을 모아 판에 보낸다. 첫 연결의 받은 크기부터 세도록 연결 전에 켠다
   if (isWeb && phoneScreen()) {
     const ph = () => document.querySelector('[data-role=phone]');

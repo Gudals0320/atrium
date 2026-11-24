@@ -99,7 +99,7 @@ test('관리자 레인, 측정값 막대, 펼칠 마일스톤', () => {
 test('창 자리와 두 사전', () => {
   assert.match(read('Regions.jsx'), /<LaneChips wsKey=\{key\} \/>/);
   assert.match(read('SessionNode.jsx'), /<ManagerChip sessionId=\{s\.sessionId\} \/>/);
-  assert.match(read('MissionLineage.jsx'), /<ManagerChip sessionId=\{n\.sessionId\} map \/>/);
+  assert.match((read('MissionLineage.jsx') + read('MapCard.jsx')), /<ManagerChip sessionId=\{n\.sessionId\} map \/>/);
   assert.match(read('Chrome.jsx'), /<PlanPanelHost \/>/);
   assert.match(read('Decisions.jsx'), /PlanCardRow/);
   const en = fs.readFileSync(new URL('../src/renderer/locales/en.js', import.meta.url), 'utf8');

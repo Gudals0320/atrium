@@ -478,7 +478,7 @@ export function loadMerger(delay = MERGER_LOAD_MS) {
 export function putMergerAsk(card) { state.merger = withAsk(state.merger, card); mergerSig = ''; changed(); }
 export function dropMergerAsk(ws) { if (!state.merger) return; state.merger = withoutAsk(state.merger, ws); mergerSig = ''; changed(); }
 export function dismissMergerAsk(key) { state.mergerDismissed = new Set(state.mergerDismissed).add(key); changed(); }
-api.on('$open', () => loadMerger(0));
+api.on('$open', (r) => { if (r && r.phone) return; loadMerger(0); }); // P355: 휴대폰 전용 페이지는 merger를 읽지 않는다(전체 맵은 판 구독으로 다시 붙어 읽는다)
 api.on('merger.ask', (card) => { putMergerAsk(card); loadMerger(); });
 api.on('merger.problem', (p) => { if (p && p.why) toast(t('merger.problem', { name: p.workspaceName || p.workspace || '?', why: p.why }), 'error'); loadMerger(); }); // P275
 api.on('merger.answered', (d) => { if (d && d.workspace) dropMergerAsk(d.workspace); loadMerger(); });
@@ -510,7 +510,7 @@ state.planPanel = null; // 열린 목표 판 { planId, wsKey, x, y }(화면 기�
 export function putLane(raw) { const old = state.plans.get(raw && raw.planId); const l = laneOf(raw, old); if (!l) return; state.plans = new Map(state.plans); if (l.deletedAt) state.plans.delete(l.planId); else state.plans.set(l.planId, l); changed(); }
 export const loadPlans = () => api.call('plan.list', { all: true }).then((r) => { const m = new Map(); for (const raw of (r && r.plans) || []) { const l = laneOf(raw, state.plans.get(raw.planId)); if (l) m.set(l.planId, l); } state.plans = m; changed(); }).catch(() => {});
 api.on('plan.changed', (ev) => putLane(ev));
-api.on('$open', () => loadPlans());
+api.on('$open', (r) => { if (r && r.phone) return; loadPlans(); }); // P355: 휴대폰 전용 페이지는 목표 레인을 읽지 않는다
 // 판의 문서와 바뀜 기록(판을 열 때). → 레인
 export async function loadPlanDoc(planId) { const v = await api.call('plan.get', { planId, log: 20 }); putLane(v); return v; }
 export async function planOp(planId, ops, via = null) { const r = await api.call('plan.op', { planId, ops: Array.isArray(ops) ? ops : [ops], ...(via ? { via } : {}) }); if (r && r.plan) putLane(r.plan); return r; }
