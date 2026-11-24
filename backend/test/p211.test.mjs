@@ -349,7 +349,7 @@ function runCli(args, env) {
 }
 
 test('P211 atrium usage(계약에 더하기만)와 /branch/usage-report: 상태 줄 명령이 알린 값이 atrium usage에 보인다', async () => {
-  assert.equal(CONTRACT_VERSION, 9); // P296: 오케스트레이션 허용 동사로 9. // P292. P284. P269
+  assert.equal(CONTRACT_VERSION, 10); // P346: docs init·on·off로 10. // P296: 오케스트레이션 허용 동사로 9. // P292. P284. P269
   assert.ok(VERB_NAMES.includes('usage'));
   assert.deepEqual(VERBS.find((v) => v.name === 'usage').out, ['providers', 'alertsOn', 'at']);
   const { b, s, stop } = await board();

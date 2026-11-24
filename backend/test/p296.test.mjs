@@ -169,7 +169,7 @@ test('P296 런처 칸과 기본값: orchestrates·reportFallback·busy, 종류 �
 });
 
 test('P296 help·안내문: 허용 동사만, 계약 9, 안내문은 줄바꿈·큰따옴표 없이', () => {
-  assert.equal(CONTRACT_VERSION, 9);
+  assert.equal(CONTRACT_VERSION, 10); // P346: docs init·on·off로 10.
   const sub = { orchestrates: true, scope: 'sub', allowed: [...ORCH_SUB_VERBS] };
   const h = shortHelp(sub);
   assert.doesNotMatch(h, /\n  atrium child /); assert.doesNotMatch(h, /atrium ask /); assert.match(h, /atrium done/); assert.match(h, /부모하고만/);
