@@ -9,6 +9,13 @@ import { noticeOf } from './lib/remote.js';
 export const remoteNotices = []; // 시험이 읽는다
 
 export function startRemoteNotice() {
+  // P352: 휴대폰 화면에서 처음 보는 오류 종류가 오면 조용한 토스트 한 줄(같은 종류는 백엔드가 다시 보내지 않는다). OS 알림은 띄우지 않는다
+  api.on('remote.errorKind', (ev) => {
+    const kind = t(`phoneErrors.kind_${ev && ev.k}`);
+    const text = t('phoneErrors.newKind', { kind: [kind, ev && ev.m, ev && ev.code].filter(Boolean).join(' ') });
+    remoteNotices.push({ at: Date.now(), kind: 'errorKind', text }); if (remoteNotices.length > 50) remoteNotices.shift();
+    toast(text);
+  });
   api.on('remote.connected', (ev) => {
     const n = noticeOf(ev);
     if (!n) return;

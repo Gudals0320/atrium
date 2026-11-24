@@ -38,6 +38,7 @@ import { PhoneMission } from './PhoneMission.jsx'; // P87: 휴대폰 미션 맵
 import { useConnSteady } from './steady.js'; // P82: 짧은 끊김에는 연결 알약을 바꾸지 않는다
 import { PushButton, PushSheet, SessionMuteButton } from './PhonePush.jsx'; // P88: 알림(웹 푸시), P92: 세션 하나 끄기
 import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js'; // P88: 알림을 누르면 그 세션으로
+import { teleSendFail } from './lib/phone-telemetry.js'; // P352: 보내기 실패를 이상 동작 기록에
 import { reopenBoard, boardLevel, boardHeavier, boardReset, bootState } from './crash-watch.js'; // P84: 반복해서 죽으면 가벼운 화면(목록). P86: 보드 단계
 import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx'; // P165: 음성 입력
 import './phone.css';
@@ -323,7 +324,7 @@ function PhoneSession({ s, onBack, onGo }) {
   const pad = live && padOpen(s, padPref);
   // P104: 키 패드의 키는 차례로(앞 요청이 돌아오기 전에 누른 키는 모아 다음 요청 하나로). 실패하면 모아 둔 키를 버린다
   const tRef = useRef(t); tRef.current = t;
-  const keys = useMemo(() => keyQueue((list) => api.call('session.keys', { session: id, keys: list }), (e) => { if (e.code !== 'disconnected') toast(tRef.current('phoneKeys.failed', { error: errText(e) }), 'error'); }), [id]);
+  const keys = useMemo(() => keyQueue((list) => api.call('session.keys', { session: id, keys: list }), (e) => { teleSendFail('session.keys', e); if (e.code !== 'disconnected') toast(tRef.current('phoneKeys.failed', { error: errText(e) }), 'error'); }), [id]);
   const padPress = (k) => { markInteracted(id); keys.push(k); };
 
   // 터미널 칸의 크기(TerminalView가 패널 크기를 맞춘다)
@@ -374,7 +375,7 @@ function PhoneSession({ s, onBack, onGo }) {
     const data = keyBytes(k, { appCursor: !!(term && term.modes && term.modes.applicationCursorKeysMode) });
     if (!data) return;
     markInteracted(id);
-    api.call('terminal.input', { session: id, data }).catch((e) => { if (e.code !== 'disconnected') toast(errText(e), 'error'); }); // P82: 끊긴 동안은 띠가 알린다
+    api.call('terminal.input', { session: id, data }).catch((e) => { teleSendFail('terminal.input', e); if (e.code !== 'disconnected') toast(errText(e), 'error'); }); // P82: 끊긴 동안은 띠가 알린다
   };
   const bump = (d) => setScale((v) => { const n = clampPhoneScale(Math.round((v + d) * 100) / 100); try { store().setItem(PHONE_SCALE_KEY, String(n)); } catch {} return n; });
   const voice = useVoice({ text, setText, taRef, inline: false }); // P165: 확정 글만 입력칸에, 미확정 글은 위 한 줄에 흐리게
@@ -398,7 +399,7 @@ function PhoneSession({ s, onBack, onGo }) {
       }
       setText('');
       requestAnimationFrame(() => { if (taRef.current) taRef.current.style.height = ''; });
-    } catch (e) { if (e.code !== 'disconnected') toast(t('phone.sendFailed', { error: errText(e) }), 'error'); } // P82: 끊긴 동안은 글을 두고 띠가 알린다
+    } catch (e) { teleSendFail(plan.method, e, { steer: !!plan.steer }); if (e.code !== 'disconnected') toast(t('phone.sendFailed', { error: errText(e) }), 'error'); } // P82: 끊긴 동안은 글을 두고 띠가 알린다
     setBusy(false);
   }
   // 보낸 것의 전달 상태(대기열, 보냄, 확인 …)를 잠깐 보인다

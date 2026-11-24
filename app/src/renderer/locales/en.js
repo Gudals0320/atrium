@@ -3292,4 +3292,20 @@ export default {
     history: 'Earlier', moreHistory: 'Show earlier messages', sendNow: 'Send now',
     key_esc: 'Esc', key_enter: 'Enter', key_up: 'Up arrow', key_down: 'Down arrow', key_1: 'Key 1', key_2: 'Key 2', key_3: 'Key 3', key_y: 'Key y', key_n: 'Key n',
   },
+  // P354: gaze tag (the session in the middle of the board receives the command line)
+  gaze: {
+    name: 'Send to the session in the middle',
+    hint: 'When no session is picked and the command line is empty, the session in the middle of the board view is tagged as the receiver.',
+    note: 'After you move the board and pause, the tag follows the session in the middle. Nothing is tagged when several sessions look about equal or when you are zoomed far out. A session you click comes first, and once you type in the command line the tag stays. Applies to this window only.',
+    chipTitle: '@{name}: tagged because it is in the middle of the board. Moving the board changes it.',
+  },
+  // P352: 휴대폰 이상 동작 기록
+  phoneErrors: {
+    newKind: 'New phone error: {kind} (atrium remote errors)',
+    kind_err: 'Screen error',
+    kind_rej: 'Unhandled rejection',
+    kind_api: 'API failure',
+    kind_send: 'Send failure',
+    kind_ws: 'Reconnect',
+  },
 };

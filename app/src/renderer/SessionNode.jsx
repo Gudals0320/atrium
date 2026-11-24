@@ -556,6 +556,7 @@ function SessionNodeInner({ id, selected }) {
   const viewWs = useStore((st) => st.viewWs);
   const isFocus = useStore((st) => st.focusId === id);
   const picked = useStore((st) => st.selected.includes(id));
+  const gazed = useStore((st) => st.gazeId === id); // P354: 시선으로 명령줄 받는 이가 된 노드(GazeTag.jsx)
   const mate = useStore((st) => matesNow(st).has(id)); // P124: 초점·고른 노드와 같은 덩어리, 부모·자식이면 터미널을 가질 수 있다
   const prevNear = useRef(false);
   const near = useSettledFlow((st) => !!n && veryClose(n, { x: st.transform[0], y: st.transform[1], zoom: st.transform[2] }, { width: st.width, height: st.height }, prevNear.current));
@@ -579,7 +580,7 @@ function SessionNodeInner({ id, selected }) {
   const tier = tierOf(s); // P85
 
   return (
-    <div data-tier={tier} data-dist={dist} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zSmall ? ' z-small' : ''}`} data-session={id} data-name={s.name} data-face={face} data-brief={brief ? '1' : undefined} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
+    <div data-tier={tier} data-dist={dist} className={`mt-node t-${tier} st-${s.state} face-${face} kind-${kindOf(shownKind(s)).id}${s.unseen ? ' unseen' : ''}${selected ? ' selected' : ''}${idle ? ' idle' : ''}${asleep ? ' asleep' : ''}${s.waking ? ' waking' : ''}${docked ? ` docked dock-${docked.dir}${dockLinked ? ' dock-linked' : ''}` : ''}${zSmall ? ' z-small' : ''}${gazed ? ' gazed' : ''}`} data-gazed={gazed ? '1' : undefined} data-session={id} data-name={s.name} data-face={face} data-brief={brief ? '1' : undefined} data-asleep={asleep ? '1' : undefined} data-dock={docked ? docked.dockId : undefined} onMouseDown={() => { markSeen(id); enterSession(id); }}>
       <NodeResizer isVisible={selected && face === 'close' && !docked} minWidth={420} minHeight={260} lineClassName="mt-resize-line" handleClassName="mt-resize-handle"
         onResize={(_e, p) => setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height })}
         onResizeEnd={(_e, p) => { setNodeLocal(id, { x: p.x, y: p.y, w: p.width, h: p.height, hand: { at: Date.now(), w: Math.round(p.width), h: Math.round(p.height) } }); saveNode(id, 'resize'); }} />

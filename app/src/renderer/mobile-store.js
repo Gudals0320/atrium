@@ -7,6 +7,7 @@ import { api } from './api.js';
 import { setLanguage } from './lib/i18n.js';
 import { applySync, applyRow, applyGone } from './lib/mobile.js';
 import { perfLog } from './perf.js';
+import { teleSendFail } from './lib/phone-telemetry.js'; // P352: 보내기·키 보내기 실패는 상황과 함께(API 실패와 화면 오류는 api.js tap과 window가 저절로 남긴다)
 
 const state = { loaded: false, rows: new Map(), rev: null, boot: null, cards: [], workspaces: [], current: null, me: null, deliveries: new Map(), toasts: [], fails: [], v: 0 };
 const subs = new Set();
@@ -28,9 +29,9 @@ export function noteFail(kind, method, e) {
   perfLog('mobile_fail', x);
   try { if (failSink) failSink(x, e); } catch {}
 }
-// 판 API 부르기(실패를 남긴다. 끊긴 동안은 띠가 알리니 남기기만)
+// 판 API 부르기(실패를 남긴다). 보내기·키·답(kind send|keys|todo|spawn)은 P352 기록의 send 줄로도
 export function call(method, params = {}, { kind = 'api' } = {}) {
-  return api.call(method, params).catch((e) => { noteFail(kind, method, e); throw e; });
+  return api.call(method, params).catch((e) => { noteFail(kind, method, e); if (kind !== 'api' && e && e.code !== 'disconnected') teleSendFail(method, e, { steer: !!params.steer }); throw e; });
 }
 
 function putSync(r) {

@@ -33,6 +33,7 @@ export class Api {
     this.rtts = []; this.rtt = null; this.pingSentAt = null;
     this.openedAt = null; this.lastClose = null; this.closeLog = []; // P82
     this.onStep = null; // P86: 단계 기록(crash-watch.js가 둔다). (이름, 값) → 동기로 적는다
+    this.tap = null; // P352: 휴대폰 이상 동작 기록(lib/phone-telemetry.js). (종류, 값): in 받은 크기, fail 실패한 요청, close·open 소켓
     if (typeof window !== 'undefined' && window.addEventListener) {
       const wake = () => this.wake();
       window.addEventListener('online', wake);
@@ -68,6 +69,7 @@ export class Api {
     perfLog('ws', { status: 'dead' });
     this.drop(ws); this.ws = null; this.pingSentAt = null; clearInterval(this.pingTimer);
     this.noteClose({ code: 'timeout', wasClean: false });
+    this.tapped('close', { code: 'timeout' }); // P352
     this.step({ type: 'close', code: 'timeout' });
     this.setStatus('closed'); this.emit('$close'); this.retry();
   }
@@ -111,6 +113,7 @@ export class Api {
       if (!live() || ws.readyState !== 0) return; // 0 = CONNECTING
       this.drop(ws);
       this.noteClose({ code: 'open_timeout', wasClean: false });
+      this.tapped('close', { code: 'open_timeout' }); // P352
       this.step({ type: 'close', code: 'open_timeout' });
       this.setStatus('closed'); this.emit('$close'); this.retry();
     }, CONNECT_TIMEOUT_MS);
@@ -120,6 +123,7 @@ export class Api {
       this.openedAt = Date.now(); this.lastClose = null; // P82: 알렸다
       if (this.onStep) this.onStep('open', { in: this.inB || 0 }); // P86: in = 지금까지 받은 바이트
       this.step({ type: 'open' });
+      this.tapped('open', {}); // P352
       this.pingSentAt = null; clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
       setTimeout(() => this.ping(), 1000);
       this.setStatus('open');
@@ -133,8 +137,10 @@ export class Api {
       let m; try { m = JSON.parse(ev.data); } catch { return; }
       // P86: 큰 메시지는 받자마자 종류 이름(이벤트 또는 요청 이름)과 바이트만 적는다(내용 없음)
       if (size >= BIG_MSG && this.onStep) { const w0 = m.event ? null : this.wait.get(m.id); this.onStep('msg', { k: m.event || (w0 && w0.m) || 'reply', b: size }); }
-      if (m.event) return this.emit(m.event, m.data);
+      if (m.event) { this.tapped('in', { k: m.event, b: size }); return this.emit(m.event, m.data); }
       const w = this.wait.get(m.id); if (!w) return; this.wait.delete(m.id);
+      this.tapped('in', { k: w.m, b: size }); // P352: 메서드별 받은 크기
+      if (m.error) this.tapped('fail', { m: w.m, code: m.error.code, ms: Date.now() - (w.t || Date.now()) });
       if (m.error) w.rej(Object.assign(new Error(m.error.message), { code: m.error.code, key: m.error.key, vars: m.error.vars })); else w.res(m.result); // key·vars: 화면 글 열쇠(P16, lib/i18n.js errText)
     };
     ws.onclose = (ev) => {
@@ -142,12 +148,15 @@ export class Api {
       clearTimeout(this.openTimer);
       clearInterval(this.pingTimer); this.pingSentAt = null;
       this.noteClose({ code: ev && ev.code, wasClean: ev && ev.wasClean }); // P82
+      this.tapped('close', { code: ev && ev.code }); // P352
       this.step({ type: 'close', code: ev && ev.code }); // P49: 4401이면 짝이 끊겼다
-      for (const w of this.wait.values()) w.rej(Object.assign(new Error('disconnected'), { code: 'disconnected' }));
+      for (const w of this.wait.values()) { this.tapped('fail', { m: w.m, code: 'disconnected', ms: Date.now() - (w.t || Date.now()) }); w.rej(Object.assign(new Error('disconnected'), { code: 'disconnected' })); }
       this.wait.clear();
       this.setStatus('closed'); this.emit('$close'); this.retry();
     };
   }
+  // P352: 이상 동작 기록에 알린다(휴대폰 화면만 tap을 둔다). 기록의 오류가 연결을 깨지 않게
+  tapped(ev, d) { if (this.tap) try { this.tap(ev, d); } catch {} }
   // 옛 소켓을 떼어 내고 닫는다. 기다리던 요청은 끊김으로 끝낸다
   drop(ws) {
     if (!ws) return;
@@ -179,7 +188,7 @@ export class Api {
   call(method, params = {}) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return Promise.reject(Object.assign(new Error('not connected to the backend'), { code: 'disconnected' }));
     const id = ++this.n;
-    return new Promise((res, rej) => { this.wait.set(id, { res, rej, m: method }); this.ws.send(JSON.stringify({ id, method, params })); });
+    return new Promise((res, rej) => { this.wait.set(id, { res, rej, m: method, t: Date.now() }); this.ws.send(JSON.stringify({ id, method, params })); });
   }
 }
 

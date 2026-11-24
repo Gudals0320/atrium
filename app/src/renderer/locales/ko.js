@@ -3296,4 +3296,20 @@ export default {
     history: '이전 기록', moreHistory: '이전 기록 더 보기', sendNow: '바로 보내기',
     key_esc: 'Esc', key_enter: 'Enter', key_up: '위 화살표', key_down: '아래 화살표', key_1: '1번 키', key_2: '2번 키', key_3: '3번 키', key_y: 'y 키', key_n: 'n 키',
   },
+  // P354: 시선 태그(판 가운데 세션을 명령줄 받는 이로)
+  gaze: {
+    name: '판 가운데 세션을 받는 이로',
+    hint: '따로 고른 세션이 없고 명령줄이 비어 있으면, 판 화면 가운데에 있는 세션을 받는 이로 미리 태그합니다.',
+    note: '판을 옮기고 잠시 멈추면 가운데 세션으로 바뀝니다. 여러 세션이 비슷하게 보이거나 멀리 축소해 보고 있으면 태그하지 않습니다. 누른 세션이 먼저이고, 명령줄에 글을 치면 그 태그는 더 바뀌지 않습니다. 이 창에만 적용됩니다.',
+    chipTitle: '@{name}: 판 가운데 세션이라 저절로 태그했습니다. 판을 옮기면 바뀝니다.',
+  },
+  // P352: 휴대폰 이상 동작 기록
+  phoneErrors: {
+    newKind: '휴대폰에서 새 오류가 생겼습니다: {kind} (atrium remote errors)',
+    kind_err: '화면 오류',
+    kind_rej: '처리되지 않은 거부',
+    kind_api: 'API 실패',
+    kind_send: '보내기 실패',
+    kind_ws: '다시 연결',
+  },
 };

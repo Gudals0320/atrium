@@ -10,6 +10,7 @@ import { readTailscale, diagnose, tailscaleBin, tailscaleHosts, serveCommand, se
 import { allowedHosts } from '../src/web.mjs';
 import { wsLabel } from '../src/remote-ws.mjs'; // P82
 import { crashLabel, stepsLabel } from '../src/web-crash.mjs'; // P84. P86: stepsLabel
+import { formatErrors, sinceMs } from '../src/phone-errors.mjs'; // P352: 휴대폰 이상 동작 요약
 
 const MARK = { ok: '[ok]  ', warn: '[주의]', fail: '[안 됨]', skip: '[-]   ' };
 
@@ -96,6 +97,7 @@ export function guideText(port, httpsPort = DEFAULT_HTTPS_PORT) {
     '- 등록 해제: "기기 등록 해제" 또는 atrium devices rm <ID>. 설정 > 연결된 기기에서도 해제할 수 있습니다.',
     '- 원격 접속 차단: atrium remote block. 트레이 메뉴 또는 설정 > 연결된 기기의 "원격 접속 허용"을 꺼도 됩니다. 접속 허용: atrium remote allow',
     '- 기록: atrium remote log (기기 등록, 연결·끊김, 거부와 사유)',
+    '- 휴대폰 이상 동작: atrium remote errors [--since 1d] (화면 오류, API·보내기 실패, 다시 연결, 상황 기록)',
     `- 끄기: atrium remote disable --yes (= tailscale ${serveOffCommand(port, httpsPort).join(' ')})`,
   ].join('\n');
 }
@@ -169,6 +171,18 @@ export async function remoteCommand(cfg, rest, flags, connect) {
     } finally { c.close?.(); }
     return;
   }
+  // P352: 휴대폰 이상 동작 요약(종류별 묶음, 횟수, 가장 가까운 상황 기록, 다시 열림 까닭, 받은 크기). --since 1d|6h|30m, --limit, --json
+  if (op === 'errors' || op === 'reports') {
+    let c;
+    try { c = await connect(); } catch (e) { console.log(`백엔드가 실행 중이 아닙니다 (${(e && e.message) || e})`); process.exitCode = 1; return; }
+    try {
+      const ms = sinceMs(flags.since);
+      const r = await c.call('remote.errors', { sinceMs: ms, limit: Number.parseInt(flags.limit, 10) || 20 });
+      if (flags.json) return console.log(JSON.stringify(r, null, 2));
+      console.log(formatErrors(r, { sinceText: `최근 ${flags.since || '1d'}` }));
+    } finally { c.close?.(); }
+    return;
+  }
   // P88: 알림을 켠 기기에 시험 알림을 보낸다. 기기를 주면(ID 앞부분, 이름, Tailscale 기기 이름) 그 기기에만
   if (op === 'push-test') {
     let c;
@@ -209,6 +223,6 @@ export async function remoteCommand(cfg, rest, flags, connect) {
     if (out.trim()) console.log(out.trim());
     return;
   }
-  console.log('사용: atrium remote status|guide|log|block|allow|enable|disable|push-test [기기] [--yes] [--https-port <포트>]');
+  console.log('사용: atrium remote status|guide|log|errors [--since 1d]|block|allow|enable|disable|push-test [기기] [--yes] [--https-port <포트>]');
   process.exitCode = 1;
 }

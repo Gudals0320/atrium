@@ -8,7 +8,9 @@ import { webGate } from './Pair.jsx';
 import { webMe } from './web.js';
 import { startMobileStore } from './mobile-store.js';
 import { startPushClient } from './push.js';
-import { setCrumbSampler, startCrashWatch } from './crash-watch.js';
+import { setCrumbSampler, startCrashWatch, bootState, crumbSteps } from './crash-watch.js';
+import { startPhoneTelemetry } from './lib/phone-telemetry.js'; // P352: 휴대폰 이상 동작 기록(화면 오류, 실패한 API, 보내기 실패, 다시 붙기, 받은 크기)
+import { getMobile } from './mobile-store.js';
 import { MobileApp } from './MobileApp.jsx';
 import { perfLog } from './perf.js';
 
@@ -18,6 +20,10 @@ window.addEventListener('unhandledrejection', (e) => { perfLog('unhandled', { me
 
 function boot() {
   startMobileStore();
+  // 첫 연결의 받은 크기부터 세도록 연결 전에 켠다. 화면·연 세션 이름은 휴대폰 페이지 것으로
+  startPhoneTelemetry({ api, boot: bootState(), steps: crumbSteps,
+    context: () => { const el = document.querySelector('[data-role=mp]'); const id = history.state && history.state.mtMobile; const s = id ? getMobile().rows.get(id) : null; return { view: el ? 'mobile-' + el.dataset.view : 'loading', session: s ? s.name : null }; },
+    versions: () => ({ app: api.info && api.info.appVersion }) });
   createRoot(document.getElementById('root')).render(<MobileApp />);
   api.connect();
   startPushClient();
