@@ -31,7 +31,6 @@ const state = {
   navigateTo: null, // Canvas가 넣는다: (id, { focusTerminal }) → 화면을 그 노드로
   toasts: [],
   // P3
-  boardSeenAt: null, // A3: 판을 마지막으로 본 시각(백엔드 기록)
   resources: null, // D1
   usage: null, // P211: 구독 사용량(usage.get, usage.updated)
   peers: null, // P47: 이 백엔드에 붙은 창·웹 클라이언트 { clients, notify(알림 받을 클라이언트 ID), me }
@@ -114,7 +113,7 @@ export async function loadBoard() {
   if (b.convoNodes) { state.convoNodes = new Map(b.convoNodes.map((c) => [c.convId, c])); state.convoEdges = b.convoEdges || []; } // P13
   if (!state.boardLoaded || !state.workspaces.some((w) => w.key === state.currentWs)) state.currentWs = b.current || (state.workspaces[0] || {}).key || null;
   if (!state.boardLoaded || !state.workspaces.some((w) => w.key === state.viewWs)) state.viewWs = state.currentWs; // P121: 판을 열면 판이 기억한 지금 워크스페이스
-  if (!state.boardLoaded) { state.viewport = b.viewport || null; state.boardSeenAt = b.seenAt || null; }
+  if (!state.boardLoaded) { state.viewport = b.viewport || null; }
   // P86: 판 상태 적용(종류별 수, 그리기 전). 웹 화면만 적는다
   step('board', { n: state.nodes.size, ss: state.sessions.size, cv: state.convoNodes.size, ce: state.convoEdges.length, m: state.memos.size, kb: state.kanbans.size, l: state.links.size, ws: state.workspaces.length });
   state.boardLoaded = true;

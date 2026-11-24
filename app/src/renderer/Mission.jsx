@@ -281,7 +281,7 @@ function ClassicMission() {
           )}
         </div>
         {lay && (
-          <SummaryColumn sum={sum} t={t} nameOf={nameOf} tierOf={(id) => tiers.get(id)} noOf={(id) => lay.teamNo.get(id)} hot={hot} teams={lay.teamNo.size} hint={t('mmMap.hint')}
+          <SummaryColumn sum={sum} t={t} nameOf={nameOf} tierOf={(id) => tiers.get(id)} noOf={(id) => lay.teamNo.get(id)} hot={hot} hint={t('mmMap.hint')}
             textOf={(id, key) => (key === 'turn' ? askText(id) : nowText(id))} onGo={(id) => go(lay.tree.byId.get(id))} onHot={setHot} />
         )}
       </div>

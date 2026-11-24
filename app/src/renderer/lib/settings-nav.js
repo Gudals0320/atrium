@@ -60,7 +60,6 @@ export const ITEMS = [
   { id: 'usageAlerts', page: 'alerts', name: 'usage.alertsName', hint: 'usage.alertsHint' },
   { id: 'usageProbe', page: 'alerts', name: 'usageProbe.name', hint: 'usageProbe.hint' },
   { id: 'usageProbeMin', page: 'alerts', name: 'usageProbe.minName', hint: 'usageProbe.minHint', parent: 'usageProbe' },
-  { id: 'usageHermes', page: 'alerts', name: 'usageProbe.hermesName', hint: 'usageProbe.hermesHint', parent: 'usageProbe' },
   { id: 'planNotify', page: 'alerts', name: 'plan.notifyName', hint: 'plan.notifyHint' },
   { id: 'bot-merge', page: 'bots', name: 'bots.name.merge', hint: 'merger.desc', note: 'merger.modeNote' },
   { id: 'bot-merge-repos', page: 'bots', name: 'bots.repos', hint: 'merger.repoNote', parent: 'bot-merge' },

@@ -42,6 +42,8 @@ const OPEN_MAX = 0.85; // 처음 화면(폭 맞춤) 배율 상한
 const READ_K = 0.26; // 멀리 타일 이름 11.5px·상태 10px(화면)가 지켜지는 배율 하한(폭 맞춤이 이보다 작으면 이 배율로 왼쪽 위에서)
 const DOT_GAP = 92, DOT_R = 1.8, DOT_MIN_GAP = 28; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다. 멀리서는 솎는다
 const ATTN_MAX = 4;
+// P347: 요약 열 바닥 범례(선 종류 → 사전 열쇠). 견본은 맵 선과 같은 모양(.mt-ta-edge.k-*)
+const LEGEND = [['spawn', 'mmLegend.spawn'], ['role', 'mmLegend.role'], ['prompt', 'mmLegend.prompt'], ['cross', 'mmLegend.cross'], ['peer', 'mmLegend.peer'], ['lineage', 'mmLegend.lineage']];
 // P178·P179: 오른쪽 상태 요약 열(옛 열 지도 요약 열, SummaryColumn.jsx). 열려 있으면 맞춤·가운데 맞추기가 그 폭을 비워 둔다. 접힘은 이 기기(창)에 기억한다
 const SUM_W = 288, SUM_GAP = 12; // P179: 옛 요약 열 폭
 const SUM_KEY = 'atrium.sessionMap.summary';
@@ -754,7 +756,6 @@ export function LineageMap() {
   const nWork = ids.filter((id) => tiers.get(id) === 'work').length, nDone = ids.filter((id) => tiers.get(id) === 'review').length;
   const tagOf = (id) => { const b = lay.cards.get(id); return !!b && tagSet.has(String(b.node.name).toLowerCase()); };
   const sum = summaryColumn(ids, (id) => tiers.get(id));
-  const nTeams = [...roles.values()].filter((m) => m.rank === 'lead').length; // 바닥 줄 팀 수 = 하위가 있는 맨 위 세션
   // P178: 요약 칸 줄에 마우스를 올리면 그 카드를 강조한다(DOM에 바로, 다시 그리지 않는다)
   const sumHot = (id) => { const root = rootRef.current; if (!root) return; for (const x of root.querySelectorAll('.mt-ta-slot.sum-hot')) if (x.dataset.id !== id) x.classList.remove('sum-hot'); if (id) { const el = root.querySelector(`.mt-ta-slot[data-id="${CSS.escape(id)}"]`); if (el) el.classList.add('sum-hot'); } };
   const toggleSum = () => { const on = !sumOpen; saveSumOpen(on); setSumOpen(on); };
@@ -848,7 +849,7 @@ export function LineageMap() {
       {/* P179: 오른쪽 요약 열 = 옛 열 지도의 요약 열(SummaryColumn.jsx, 같은 부품). 창 오른쪽 끝에 위 줄 아래부터 바닥까지 붙는다. 접기는 열 가장자리의 작은 단추 */}
       {lay && sumOpen ? (
         <SummaryColumn role="ln-summary" className="mt-ta-hud mt-sm-sum" style={{ width: SUM_W }} sum={sum} t={t} nameOf={(id) => lay.cards.get(id).node.name} tierOf={(id) => tiers.get(id)}
-          textOf={sumLine} teams={nTeams} hint={t('mmSum.hint')} itemTip={t('mmSum.itemTip')} onGo={(id) => focusCard(id)} onHot={sumHot} />
+          textOf={sumLine} legend={LEGEND.map(([k, key]) => ({ k, label: t(key) }))} legendTip={t('mmSum.hint')} itemTip={t('mmSum.itemTip')} onGo={(id) => focusCard(id)} onHot={sumHot} />
       ) : null}
       {lay && (
         <button type="button" className={`mt-ta-hud mt-sm-sum-edge${sumOpen ? ' on' : ''}`} data-action={sumOpen ? 'ln-sum-hide' : 'ln-sum-show'} style={sumOpen ? { right: SUM_W } : undefined}

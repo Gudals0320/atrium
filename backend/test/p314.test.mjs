@@ -1,5 +1,5 @@
-// P314 단위 시험: 사용량 탐침. 원천 순서·낡음(주기 탐침은 Codex·Hermes, Claude·잔액은 펼칠 때만, 일하는 세션이면 묻지 않음, 실패 뒤 쉼),
-// 출력 읽기(codex app-server, claude /usage 글과 리셋 시각, hermes usage --json), 계정 합치기(같은 계정으로 확인될 때만),
+// P314 단위 시험: 사용량 탐침. 원천 순서·낡음(주기 탐침은 Codex(P347: Hermes 사용량은 걷었다), Claude·잔액은 펼칠 때만, 일하는 세션이면 묻지 않음, 실패 뒤 쉼),
+// 출력 읽기(codex app-server, claude /usage 글과 리셋 시각), 옛 Hermes 값·설정은 읽어도 무시,
 // 잔액 읽개(출력 꼴, 키 미노출, grant 없음 → 없음, PSModulePath 빼기), Claude 탐침 인자·빈 프로젝트 폴더 치우기, atrium usage 글
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,8 +9,9 @@ import path from 'node:path';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { UsageBook, shouldProbe, staleOf, usageLines, PROVIDERS, EXTRAS } from '../src/usage.mjs';
-import { codexProbeUsageOf, claudeProbeUsageOf, parseResetText, hermesProbeUsageOf, sameAccount, balanceEntriesOf, probeCodex, probeClaude, probeHermes, probeBalance, balanceArgv, probeEnv, claudeProbeArgs, claudeProjectDirName, removeIfEmptyTree, CLAUDE_PROBE_SETTINGS } from '../src/usage-probe.mjs';
-import { SETTINGS, DEFAULTS } from '../src/settings.mjs';
+import * as probeMod from '../src/usage-probe.mjs';
+import { codexProbeUsageOf, claudeProbeUsageOf, parseResetText, balanceEntriesOf, probeCodex, probeClaude, probeBalance, balanceArgv, probeEnv, claudeProbeArgs, claudeProjectDirName, removeIfEmptyTree, CLAUDE_PROBE_SETTINGS } from '../src/usage-probe.mjs';
+import { SETTINGS, DEFAULTS, Settings } from '../src/settings.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIX = path.join(HERE, 'fixtures');
@@ -31,6 +32,7 @@ const CLAUDE_TEXT = [
   '  86%  Start fresh when you switch tasks · run /clear',
 ].join('\n');
 const CODEX_RESULT = { rateLimits: { limitId: 'codex', primary: { usedPercent: 20, windowDurationMins: 300, resetsAt: 1795328730 }, secondary: { usedPercent: 17, windowDurationMins: 10080, resetsAt: 1795854467 }, credits: { hasCredits: true, unlimited: false, balance: '34781.12' }, planType: 'plus' }, accountId: 'not-read' };
+// P347: 옛 판 기록에 남은 Hermes 값의 꼴(hermes usage --json을 읽은 값). 읽어도 무시하는지 본다
 const HERMES_JSON = { provider: 'openai-codex', source: 'usage_api', title: 'Account limits', plan: 'Plus', fetched_at: '2026-11-22T02:42:47Z', windows: [{ label: 'Session', used_percent: 20.0, resets_at: '2026-11-22T06:25:30+00:00', detail: null }, { label: 'Weekly', used_percent: 17.0, resets_at: '2026-11-28T08:27:47+00:00', detail: null }], details: [], unavailable_reason: null };
 
 test('P314 codex app-server 결과 → 5h·주간·크레딧·요금제, 출처 probe:codex(계정 id는 싣지 않는다)', () => {
@@ -64,27 +66,6 @@ test('P314 리셋 시각 글: 날짜+시각, 시각만(지났으면 다음 날),
   assert.equal(parseResetText('Foo 3, 6am', NOW), null);
 });
 
-test('P314 hermes usage --json → Session·Weekly 창, 프로바이더와 요금제', () => {
-  const e = hermesProbeUsageOf(HERMES_JSON, NOW);
-  assert.equal(e.provider, 'hermes'); assert.equal(e.hermesProvider, 'openai-codex'); assert.equal(e.plan, 'Plus');
-  assert.deepEqual(e.windows.map((w) => [w.id, w.minutes, w.usedPct]), [['5h', 300, 20], ['week', 10080, 17]]);
-  assert.equal(hermesProbeUsageOf({ windows: [] }, NOW), null);
-  assert.equal(hermesProbeUsageOf(null, NOW), null);
-});
-
-test('P314 계정 합치기: 같은 창의 리셋 2분 안·사용률 3점 안·요금제 같음·10분 안에 잰 값일 때만 같은 계정', () => {
-  const codex = codexProbeUsageOf(CODEX_RESULT, NOW);
-  const h = hermesProbeUsageOf(HERMES_JSON, NOW + MIN);
-  assert.equal(sameAccount(h, codex), true);
-  assert.equal(sameAccount({ ...h, hermesProvider: 'anthropic' }, codex), false, 'ChatGPT 계정이 아니면 따로');
-  assert.equal(sameAccount({ ...h, windows: h.windows.map((w) => ({ ...w, resetsAt: w.resetsAt + 30 * MIN })) }, codex), false, '리셋이 다르면 다른 계정');
-  assert.equal(sameAccount({ ...h, windows: h.windows.map((w) => ({ ...w, usedPct: w.usedPct + 10 })) }, codex), false, '사용률이 크게 다르면');
-  assert.equal(sameAccount({ ...h, plan: 'Pro' }, codex), false, '요금제가 다르면');
-  assert.equal(sameAccount({ ...h, at: NOW + 30 * MIN }, codex), false, '잰 때가 멀면 확인할 수 없다');
-  assert.equal(sameAccount({ ...h, windows: [{ id: 'day', usedPct: 1, resetsAt: NOW }] }, codex), false, '같은 창이 없으면 확인할 수 없다');
-  assert.equal(sameAccount(h, null), false);
-});
-
 test('P314 낡음·부를지: 켜짐·낡음·일하지 않음·묻는 중 아님·간격(실패 뒤는 30분)', () => {
   const staleMs = 10 * MIN;
   assert.equal(staleOf(null, NOW, staleMs), true);
@@ -102,7 +83,7 @@ test('P314 낡음·부를지: 켜짐·낡음·일하지 않음·묻는 중 아�
   assert.equal(shouldProbe({ ...base, lastTry: NOW - 31 * MIN, lastOk: false }), true);
 });
 
-function book({ settings = {}, busy = () => false, hermesWanted = () => false, data = {} } = {}) {
+function book({ settings = {}, busy = () => false, data = {} } = {}) {
   let now = NOW;
   const calls = [];
   const sent = [];
@@ -110,16 +91,16 @@ function book({ settings = {}, busy = () => false, hermesWanted = () => false, d
   const vals = {
     codex: () => codexProbeUsageOf(CODEX_RESULT, now),
     claude: () => claudeProbeUsageOf(CLAUDE_TEXT, now),
-    hermes: () => hermesProbeUsageOf(HERMES_JSON, now),
+    hermes: () => ({ provider: 'hermes', source: 'probe:hermes', at: now, windows: [{ id: '5h', usedPct: 20, resetsAt: now + 60 * MIN }] }), // P347: 옛 탐침을 주어도 부르지 않는다
     balance: () => balanceEntriesOf('{"provider":"deepseek","balance":"12.345","currency":"USD"}', now),
   };
   const probe = Object.fromEntries(Object.entries(vals).map(([k, f]) => [k, async () => { calls.push(k); return f(); }]));
-  const b = new UsageBook({ store: { getMeta: (k) => meta[k] ?? null, setMeta: (k, v) => { meta[k] = v; } }, broadcast: (e, v) => sent.push([e, v]), settings: () => settings, now: () => now, pollMs: 0, probe, busy, hermesWanted, sameAccount });
+  const b = new UsageBook({ store: { getMeta: (k) => meta[k] ?? null, setMeta: (k, v) => { meta[k] = v; } }, broadcast: (e, v) => sent.push([e, v]), settings: () => settings, now: () => now, pollMs: 0, probe, busy });
   return { b, calls, sent, meta, setNow: (t) => { now = t; }, vals };
 }
 const flush = () => new Promise((r) => setTimeout(r, 5));
 
-test('P314 원천 순서: 주기(tick)는 Codex만(Hermes는 원할 때), Claude·잔액은 펼칠 때(refresh)만. 새 값이면 묻지 않는다', async () => {
+test('P314 원천 순서: 주기(tick)는 Codex만, Claude·잔액은 펼칠 때(refresh)만. 새 값이면 묻지 않는다', async () => {
   const x = book();
   x.b.tick(); await flush();
   assert.deepEqual(x.calls, ['codex']);
@@ -162,19 +143,28 @@ test('P314 실패한 탐침(값 없음)은 30분 쉬고 다시 묻는다', async
   assert.deepEqual(x.calls, ['codex', 'codex']);
 });
 
-test('P314 Hermes: 판에 Hermes 세션이 있거나 설정에서 켰을 때만. 같은 계정으로 확인되면 sameAs codex, 아니면 따로', async () => {
-  const x = book();
-  x.b.tick(); x.b.refresh(); await flush();
-  assert.ok(!x.calls.includes('hermes'));
-  assert.equal('hermes' in x.b.get().providers, false, '값이 없으면 싣지 않는다');
-  const y = book({ hermesWanted: () => true });
-  y.b.tick(); await flush(); await flush();
-  assert.ok(y.calls.includes('hermes'));
-  assert.equal(y.b.get().providers.hermes.sameAs, 'codex');
-  const z = book({ hermesWanted: () => true });
-  z.b.probe.hermes = async () => ({ ...hermesProbeUsageOf(HERMES_JSON, NOW), windows: [{ id: '5h', minutes: 300, usedPct: 70, resetsAt: NOW + 99 * MIN }] });
-  z.b.tick(); await flush(); await flush();
-  assert.equal(z.b.get().providers.hermes.sameAs, null, '다른 계정이면 따로');
+test('P347 Hermes 사용량을 걷었다: 탐침을 부르지 않고, 판 기록의 옛 hermes 값은 싣지 않고 다시 쓰지도 않는다', async () => {
+  const old = { provider: 'hermes', source: 'probe:hermes', at: NOW - MIN, hermesProvider: 'openai-codex', plan: 'Plus', sameAs: 'codex', windows: [{ id: '5h', minutes: 300, usedPct: 20, resetsAt: NOW + 60 * MIN }] };
+  const x = book({ settings: { usageHermes: true }, data: { hermes: old } });
+  x.b.tick(); x.b.refresh(); await flush(); await flush();
+  assert.ok(!x.calls.includes('hermes'), '설정에 옛 usageHermes가 켜져 있어도 묻지 않는다');
+  assert.equal('hermes' in x.b.get().providers, false);
+  x.b.save();
+  assert.equal('hermes' in x.meta.usage, false, '다시 저장하면 옛 값이 빠진다');
+  assert.equal(x.b.set({ ...old, at: NOW }), false, '옛 꼴의 값이 와도 오류 없이 버린다');
+  assert.equal('hermes' in x.b.get().providers, false, '보이지 않는다');
+  assert.equal('hermes' in x.meta.usage, false, '판 기록에도 남지 않는다');
+  for (const k of ['hermesProbeUsageOf', 'probeHermes', 'sameAccount']) assert.equal(k in probeMod, false, k);
+  assert.equal('hermes' in PROVIDERS || EXTRAS.includes('hermes'), false);
+});
+
+test('P347 옛 설정 usageHermes는 읽어도 무시(오류 없음)', () => {
+  assert.equal('usageHermes' in SETTINGS, false); assert.equal('usageHermes' in DEFAULTS, false);
+  const meta = { settings: { usageHermes: true, usageProbe: false } };
+  const s = new Settings({ store: { getMeta: (k) => meta[k] ?? null, setMeta: (k, v) => { meta[k] = v; } }, broadcast: () => {} });
+  const v = s.get();
+  assert.equal('usageHermes' in v, false);
+  assert.equal(v.usageProbe, false);
 });
 
 test('P314 Claude 상태 줄 값이 와도 탐침의 모델별 주간 창은 리셋 전까지 잇는다', async () => {
@@ -285,29 +275,23 @@ test('P314 codex app-server 탐침(가짜 서버): JSON-RPC 세 줄로 값을 �
   assert.equal(await probeCodex({ command: 'atrium-no-such-codex-p314', timeoutMs: 8000 }), null);
 });
 
-test('P314 hermes 탐침: 앞에 붙은 잡글을 넘기고 JSON을 읽는다. 실패(1로 끝)면 null', async () => {
-  const run = async (file, args) => { assert.deepEqual(args, ['usage', '--json']); return { code: 0, out: 'warn: something\n' + JSON.stringify(HERMES_JSON) }; };
-  assert.equal((await probeHermes({ run, now: () => NOW })).hermesProvider, 'openai-codex');
-  assert.equal(await probeHermes({ run: async () => ({ code: 1, out: '' }) }), null);
-});
-
-test('P314 설정: usageProbe(기본 켬), usageProbeMin(10분, 2~240), usageHermes(기본 끔)', () => {
-  assert.equal(DEFAULTS.usageProbe, true); assert.equal(DEFAULTS.usageProbeMin, 10); assert.equal(DEFAULTS.usageHermes, false);
+test('P314 설정: usageProbe(기본 켬), usageProbeMin(10분, 2~240)', () => {
+  assert.equal(DEFAULTS.usageProbe, true); assert.equal(DEFAULTS.usageProbeMin, 10);
   assert.equal(SETTINGS.usageProbeMin.min, 2); assert.equal(SETTINGS.usageProbeMin.max, 240);
 });
 
-test('P314 atrium usage 글: 출처(직접 물음), 모델별 주간, Hermes 합침·따로, 잔액', () => {
+test('P314 atrium usage 글: 출처(직접 물음), 모델별 주간, 잔액. P347: 옛 hermes 값은 글에 없다', () => {
   const view = { providers: {
     claude: claudeProbeUsageOf(CLAUDE_TEXT, NOW), codex: codexProbeUsageOf(CODEX_RESULT, NOW), agy: null,
-    hermes: { ...hermesProbeUsageOf(HERMES_JSON, NOW), sameAs: 'codex' },
+    hermes: { provider: 'hermes', source: 'probe:hermes', at: NOW, hermesProvider: HERMES_JSON.provider, sameAs: 'codex', windows: [{ id: '5h', usedPct: 20 }] },
     deepseek: balanceEntriesOf('{"provider":"deepseek","balance":"7.25","currency":"USD"}', NOW)[0],
   }, alertsOn: true };
   const t = usageLines(view, NOW).join('\n');
   assert.match(t, /claude \/usage에 직접 물음/);
   assert.match(t, /주간\(Fable\) 13%/);
-  assert.match(t, /Hermes: Codex와 같은 ChatGPT 계정/);
+  assert.doesNotMatch(t, /Hermes|hermes/);
   assert.match(t, /DeepSeek 잔액: 7\.25 USD/);
   const t2 = usageLines({ providers: { ...view.providers, hermes: { ...view.providers.hermes, sameAs: null } } }, NOW).join('\n');
-  assert.match(t2, /Hermes\(openai-codex Plus\): 5시간 20%/);
-  assert.deepEqual(PROVIDERS, ['claude', 'codex', 'agy']); assert.deepEqual(EXTRAS, ['hermes', 'deepseek', 'openrouter']);
+  assert.doesNotMatch(t2, /Hermes/);
+  assert.deepEqual(PROVIDERS, ['claude', 'codex', 'agy']); assert.deepEqual(EXTRAS, ['deepseek', 'openrouter']);
 });

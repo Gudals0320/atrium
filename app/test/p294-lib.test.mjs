@@ -25,7 +25,7 @@ test('←·→는 판에서 아무것도 하지 않는다(↑·↓는 그대로)
   assert.ok(!/boardKeys\.ws/.test(read('Chrome.jsx')));
 });
 
-test('위 왼쪽 = 응답 필요·내 몫·작업 완료·문제·세션, 위 오른쪽 = 연결·기기·메모리·사용량·변경 내역·설정', () => {
+test('위 왼쪽 = 응답 필요·내 몫·작업 완료·문제·세션, 위 오른쪽 = 연결·기기·메모리·사용량·설정(P347: 변경 내역 걷음)', () => {
   const src = read('Chrome.jsx');
   const left = src.slice(src.indexOf('export function TopLeft('), src.indexOf('function useTopFit('));
   const right = src.slice(src.indexOf('export function TopRight('), src.indexOf('// ---------- 도구 레일'));
@@ -33,15 +33,16 @@ test('위 왼쪽 = 응답 필요·내 몫·작업 완료·문제·세션, 위 �
   assert.ok(order.every((i) => i > 0), order.join(','));
   assert.deepEqual([...order].sort((a, b) => a - b), order, '이 차례로');
   for (const x of ['<TurnPill', '<DecisionPill', 'ListPill', '<SessionsPill']) assert.ok(!right.includes(x), x);
-  const rorder = ['<ConnPill', '<DevicesPill', '<ResourcePill', '<UsagePill', 'data-action="changes"', 'data-action="settings-open"'].map((x) => right.indexOf(x));
+  const rorder = ['<ConnPill', '<DevicesPill', '<ResourcePill', '<UsagePill', 'data-action="settings-open"'].map((x) => right.indexOf(x));
+  assert.ok(!right.includes('data-action="changes"'), 'P347: 변경 내역 단추 없음');
   assert.ok(rorder.every((i) => i > 0), rorder.join(','));
   assert.deepEqual([...rorder].sort((a, b) => a - b), rorder);
   assert.deepEqual(PEOPLE_PILLS, ['sessions-pill', 'working', 'review', 'decisions', 'inbox', 'problems']); // P302
   assert.equal(STATUS_PILLS[0], 'conn');
-  // 세션 수는 세션 알약으로 옮겼고, 연결 알약은 연결이 좋으면 점만
+  // 세션 수는 세션 알약으로 옮겼고, 연결 알약은 점 + "세션 맵" 글(P347: 점만 두던 dot-only를 걷었다)
   assert.ok(src.includes('data-role="sessions-pill"') && src.includes("setMissionOpen(!mission)"));
   const conn = src.slice(src.indexOf('function ConnPill('), src.indexOf('function ResourcePill('));
-  assert.ok(conn.includes("' dot-only'") && !conn.includes("t('top.sessions'"));
+  assert.ok(!conn.includes('dot-only') && conn.includes("t('mapPill.label')") && !conn.includes("t('top.sessions'"));
 });
 
 test('워크스페이스 알약 줄(탭·묶음 칩·+n·+)은 없고, 새 워크스페이스 열기는 사이드바 워크스페이스 메뉴에 있다', () => {

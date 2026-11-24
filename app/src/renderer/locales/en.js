@@ -339,7 +339,6 @@ export default {
     reviewEmpty: 'No finished work to look at',
     issues: 'Issues',
     issuesEmpty: 'No issues',
-    changes: 'What changed in the last hour',
     settings: 'Settings',
   },
   rail: {
@@ -369,8 +368,6 @@ export default {
     groupMade: 'Created group @{name}',
     mission: 'Session map',
     missionTitle: 'Who directs whom, at a glance (Tab)',
-    changes: 'Changes',
-    changesTitle: 'What changed in the last hour',
     fit: 'Fit all',
     fitTitle: 'Bring every area into view',
   },
@@ -725,16 +722,7 @@ export default {
     redraw: 'Redraw',
     appError: 'Error drawing the board:',
     appRedraw: 'Redraw board',
-  },
-  change: {
-    needs_you: 'Needs you',
-    error: 'Error',
-    interrupted: 'Cut-off turn',
-    exited: 'Exited',
-    turn_done: 'Turn done',
-    terminal: 'terminal',
-  },
-  memo: {
+  },  memo: {
     confirmDelete: 'Delete',
     saveFail: 'Save memo: {error}',
     deleteFail: 'Delete memo: {error}',
@@ -1011,15 +999,7 @@ export default {
     claudeAdopted: 'claude (adopted)',
     shellLast: 'Last: {cmd}',
     shellPrompt: 'Waiting for command',
-  },
-  returnSummary: {
-    manual: { one: 'Changes in the last {n} minute', other: 'Changes in the last {n} minutes' },
-    away: 'Changes while you were away ({away})',
-    stillOpen: 'Still waiting',
-    resolved: 'Resolved now',
-    removed: 'Left the board',
-  },
-  search: {
+  },  search: {
     fail: 'Search: {error}',
     placeholder: 'Search names, workspaces, questions, prompts, answers, output, memos, kanban   (↑↓ pick · Enter go · Esc close)',
     empty: 'No matches (only board records are searched, not whole transcript files)',
@@ -1691,10 +1671,6 @@ export default {
   pwa: {
     install: 'Install app',
   },
-  // P53 (#10): label of the backend restart row in Changes (split from the terminal row)
-  changeSys: {
-    backend: 'Backend',
-  },
   emptyBoard: {
     title: 'The board is empty',
     body: 'Open a project folder with + at the top left, then start a session from a launcher on the left rail.',
@@ -2126,12 +2102,10 @@ export default {
     sumTurn: 'Needs you',
     sumWork: 'Working',
     sumReview: 'Done',
-    sumRest: 'Idle · done',
     sumNow: 'Now: {text}',
     sumNone: 'Nothing here',
     hint: 'Thin line: sub-session or role. Dashed: request or another project. Point at a session to see only its links.',
     edgeTip: '@{from} → @{to}',
-    restHidden: 'and {n} more',
     noModel: 'shell',
   },
   // P98: top bar chip for a group of workspaces (folder group or your group)
@@ -2352,12 +2326,6 @@ export default {
     worker: 'worker',
     head: 'head',
   },
-  // P141(#17): mission map footer, one plural per count
-  mmFoot: {
-    work: '{n} working',
-    sessions: { one: '{n} session', other: '{n} sessions' },
-    teams: { one: '{n} team', other: '{n} teams' },
-  },
   // P142: 명령 바의 받는 세션 칩
   cmdTo: {
     label: 'Sends to',
@@ -2572,9 +2540,7 @@ export default {
     hide: 'Hide the state column',
     show: 'Show the state column',
     itemTip: 'Click: fly to this card',
-    // P179: small split next to the Idle · done heading, and how to read the session map lines (foot of the column)
-    splitSleep: 'asleep {n}',
-    splitDone: 'exited {n}',
+    // P179: 세션 맵 선 읽는 법(P347: 범례의 풀이 title)
     hint: 'Green line: sub-session. Blue dashes: role. Orange: request. Purple dots: to another workspace. Dots at both ends: peers. Faint dots: where an independent session came from.',
   },
   // P175: relation picked when linking and in the link history (sub / peer)
@@ -3004,30 +2970,24 @@ export default {
     perHourSet: 'To-do tidy: up to {n} an hour',
     bad: { mode: 'Choose on or off', effort: 'Choose an effort from the list', kind: 'Choose a harness from the list', model: 'Model names use letters, digits, . _ : / [ ] - only', key: 'Unknown setting', perHour: 'Enter a whole number from 0 to 600' },
   },
-  // P314: ask for usage directly (when values are stale, ask each tool's usage command), lower rows of the dropdown (Hermes, key-only balances)
+  // P314: ask for usage directly (when values are stale, ask each tool's usage command), lower rows of the dropdown (key-only balances). P347: Hermes usage removed
   usageProbe: {
     probing: 'Asking…',
-    mergedWith: '{names} uses the same ChatGPT account (same values).',
     extrasHead: 'Other',
     balanceName: '{name} balance',
     balance: '{n} {cur}',
     source: {
       'probe:codex': 'Source: asked codex app-server',
       'probe:claude': 'Source: asked claude /usage',
-      'probe:hermes': 'Source: asked hermes usage',
       'probe:balance': 'Source: balance API (secret-run)',
     },
     name: 'Ask for usage directly',
-    hint: 'When values are stale, ask each tool\'s usage command: Codex and Hermes periodically, Claude and key-only balances when you open the usage pill. Skipped while a session of that kind is working.',
+    hint: 'When values are stale, ask each tool\'s usage command: Codex periodically, Claude and key-only balances when you open the usage pill. Skipped while a session of that kind is working.',
     setOn: 'Asking for usage directly.',
     setOff: 'Stopped asking for usage directly.',
     minName: 'Ask interval (minutes)',
     minHint: 'Ask again when the last value is older than this.',
     minSet: 'Usage ask interval: {n} min',
-    hermesName: 'Hermes usage',
-    hermesHint: 'Ask hermes usage for the Hermes account limits even when no Hermes session is on the board. If it is confirmed to be the same account as Codex, it is shown in the Codex block.',
-    hermesSetOn: 'Hermes usage on.',
-    hermesSetOff: 'Hermes usage off.',
   },
   // P310: a size the person chose (auto arrange keeps it)
   handSize: {
@@ -3294,6 +3254,18 @@ export default {
       guardLowerPriorityOn: 'Board sessions now run at below normal priority', guardLowerPriorityOff: 'Board sessions are back to normal priority',
       guardDetectOn: 'Runaway watch is on', guardDetectOff: 'Runaway watch is off',
     },
+  },
+  // P347: session map button at the top right (text next to the dot), line legend at the bottom right of the session map
+  mapPill: {
+    label: 'Session map',
+  },
+  mmLegend: {
+    spawn: 'Sub',
+    role: 'Role',
+    prompt: 'Request',
+    cross: 'Other workspace',
+    peer: 'Peer',
+    lineage: 'Independent',
   },
   // P348: resource guard 2 (transitions, instant badge, faster sampling)
   p348: {
