@@ -23,6 +23,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api.js';
 import { useStore, getState, takePendingInput, pendingFor } from './store.js';
+import { earlyInput } from './lib/term-early.js'; // P358: 휴대폰 페이지에서 붙기 전에 친 글
 import { wrapPaste, wheelToSgr, shellWheelLines, sgrWheel, wheelAction, setsMouseMode, filterMouse, REPORT_BUDGET, keyAction, frameBytes, unscalePoint, clearsSelection, copyText, copyOnRelease, REDRAW_PREFIX, joinBytes } from './lib/term-input.js';
 import { findShift, bigChange, historyAbove, scrollUpSeq, serializeScreen, stripAnsi } from './lib/term-select.js';
 import { TermSelection } from './term-selection.js';
@@ -233,10 +234,13 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     const onWinResize = () => st.sharpSoon();
     window.addEventListener('resize', onWinResize);
 
+    st.early = earlyInput(); st.ready = false;
     const send = (data) => {
       if (!data) return;
       markInput(sessionId);
       if (onInputRef.current) onInputRef.current();
+      // P358: 휴대폰 페이지(info)는 붙기 전에 친 글을 버리지 않고 모았다가 붙은 뒤 보낸다("터미널 연결 중" 한 줄)
+      if (infoRef.current && !st.ready) { st.early.push(data); hintEv({ type: 'show', hint: makeHint('flash', 'mobileOver.termConnecting') }); return; }
       api.call('terminal.input', { session: sessionId, data }).then(() => hintEv({ type: 'input-ok' }), (e) => hintEv({ type: 'show', hint: makeHint('inputFail', 'terminal.inputFail', { err: e }) })); // P206: 다음 입력이 되면 실패 힌트를 지운다
     };
     const flash = (key, vars) => hintEv({ type: 'show', hint: makeHint('flash', key, { vars }) }); // P206: 열쇠로 두고 그릴 때 번역
@@ -468,6 +472,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     const offDetached = api.on('terminal.detached', (d) => {
       if (d.sessionId !== sessionId || !st.alive || (st.pid !== null && d.controllerPid !== st.pid)) return;
       perfLog('term_detached', { sessionId, reason: d.reason });
+      st.ready = false;
       setStatus({ kind: 'detached', reason: d.reason });
     });
 
@@ -495,11 +500,13 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
           st.shared = r.shared || 1; st.ownerIsMe = r.ownerIsMe !== false; // P47
           if (r.shared > 1 || again) { setShare({ shared: st.shared, ownerIsMe: st.ownerIsMe, ownerName: r.owner || null }); requestAnimationFrame(() => st.alive && st.applyScale()); }
           setStatus({ kind: 'attached', pid: r.controllerPid });
+          st.ready = true;
+          { const early = st.early.take(); if (early) { perfLog('early_input', { sessionId, chars: early.length }); send(early); } } // P358
           if (again) { perfLog('term_reattached', { sessionId, pid: r.controllerPid }); return; }
           // H4: 들어가며 친 글이 있으면 넣고 터미널에 초점을 준다
           if (pendingFor(sessionId)) { const buf = takePendingInput(sessionId); if (buf) { perfLog('pending_input', { sessionId, chars: buf.length }); send(buf); } term.focus(); }
         })
-        .catch((e) => { if (st.alive) setStatus({ kind: 'error', reason: e.message }); });
+        .catch((e) => { st.ready = false; if (st.alive) setStatus({ kind: 'error', reason: e.message }); });
     };
     st.attach = attach;
     attach();

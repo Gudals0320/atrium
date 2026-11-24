@@ -4,8 +4,9 @@
 // - 세션 목록: 찾기, 고정(이 기기 localStorage), 워크스페이스 묶음(살아 있는 세션 먼저, 잠든 세션은 접어 둔다)
 // - 맵: 세션 관계를 들여쓰기 나무로(부모가 다른 워크스페이스에 있으면 그 워크스페이스에서는 뿌리)
 // - 빠른 키: 백엔드 session.keys의 허용 키(keys.mjs KEY_NAMES)만
-// - P355: 세션 화면의 보기(답 | 터미널)와 키 줄(늘 보이는 한 줄 + 펼치는 두 줄), 화면 높이(pageBox)
-import { needsYou, isBusy, toneOf, lastLineOf, screenBox } from './phone.js';
+// - P355: 세션 화면의 키 줄(늘 보이는 한 줄 + 펼치는 두 줄), 화면 높이(pageBox)
+// - P358: 세션 화면은 터미널만. 응답(기다리는 요청·할 일 카드)은 오른쪽 아래 작은 단추(overlayButton) → 겹친 카드 넘기기(overlayPages)
+import { needsYou, isBusy, toneOf, lastLineOf, screenBox, kbOpenOf, TALL_GAP_MAX } from './phone.js';
 
 // P355: 키 줄. 늘 보이는 한 줄(KEY_MAIN, 앞에 펼침 단추)과 펼치면 보이는 두 줄(KEY_MORE). 모두 session.keys 이름으로 보낸다
 // (판이 패널 바이트로 바꾼다. 터미널을 붙이지 않은 답 보기에서도 된다). 숫자는 응답 필요일 때 노랗게
@@ -17,16 +18,44 @@ export const KEY_WIDE = { backspace: 2, space: 3 }; // 여러 칸을 쓰는 키
 export const keyId = (k) => String(k).replace(/\+/g, '_'); // 사전 열쇠(mobile.key_ctrl_c)
 export const isNumKey = (k) => /^[0-9]$/.test(k);
 export const KEYS_OPEN_KEY = 'mt.mobileKeysOpen'; // 키 줄을 펼쳐 둘까(이 기기)
-export const VIEW_KEY = 'mt.mobileView'; // 세션 화면의 보기: 'answer' | 'term'(이 기기, 마지막에 고른 쪽)
-// 세션 화면이 지금 보일 보기. 터미널은 살아 있는 세션만(잠들었거나 끝났으면 답 보기)
+// 터미널을 붙일 수 있는 세션(잠들었거나 끝났으면 터미널 대신 깨우기·끝남 안내)
 export const isLive = (s) => !!s && s.state !== 'sleeping' && s.state !== 'exited';
-export function viewOf(stored, s) { return stored === 'term' && isLive(s) ? 'term' : 'answer'; }
-export function readView(st) { try { const v = st && st.getItem(VIEW_KEY); return v === 'term' ? 'term' : 'answer'; } catch { return 'answer'; } }
+
+// P358: 오른쪽 아래 작은 단추. 기다리는 요청(권한·질문)이 있으면 노란 "응답 필요", 할 일 카드만 있으면 하늘색 "할 일 n", 둘 다 없으면 없음
+export function overlayButton({ need = false, todos = 0 } = {}) {
+  const n = Math.max(0, todos | 0);
+  if (need) return { kind: 'need', n: n + 1 };
+  if (n > 0) return { kind: 'todo', n };
+  return null;
+}
+// 겹친 카드의 차례: 기다리는 요청이 맨 앞, 그 뒤 할 일 카드(받은 차례). 넘기기(‹ i/n ›)의 쪽 수
+export function overlayPages({ need = false, todos = [] } = {}) {
+  return [...(need ? [{ kind: 'ask', key: 'ask' }] : []), ...(todos || []).map((d) => ({ kind: 'todo', key: 'todo-' + d.id, d }))];
+}
+// 지금 쪽 번호를 쪽 수 안으로(카드가 줄면 앞으로)
+export const clampPage = (i, n) => (n > 0 ? Math.min(Math.max(0, i | 0), n - 1) : 0);
+// 겹친 카드 높이 상한: 터미널 칸 높이의 절반(넘으면 카드 안에서 스크롤)
+export const OVERLAY_MAX_FRAC = 0.5;
+export const overlayMaxPx = (areaH) => Math.max(120, Math.floor((areaH || 0) * OVERLAY_MAX_FRAC));
+// 겹친 카드의 보기 단추 글: 짧게(두 줄 안에 들어가게, 전체 글은 title)
+export const OVERLAY_CHOICE_CHARS = 16;
 export function readFlag(st, key) { try { return !!st && st.getItem(key) === '1'; } catch { return false; } }
 
 // P355: 페이지 높이. screenBox(P83: 홈 화면 앱이 창 높이를 짧게 주면 화면 높이)에 더해, 보이는 높이(분수 px, dpr 3)는
 // 반올림하지 않고 내린다(올리면 아래 끝이 보이는 영역 밖으로 0.5px까지 밀린다). 보이는 높이가 창 높이보다 크면 창 높이를 쓴다
-export function pageBox({ vv, innerHeight, innerWidth, screenW, screenH, standalone = false }) {
+// P358: 홈 화면 앱(standalone)은 브라우저 막대가 없다. 키보드가 닫혀 있으면(이 방향에서 본 가장 큰 높이 tallest로 판단, kbOpenOf)
+//   창·보이는 높이·보이는 위치(offsetTop)가 어떻게 오든 화면 높이를 쓴다. 실기기(iPhone 15 홈 화면 앱)는 창 852, 문서 793을 주고
+//   키보드를 닫은 뒤에는 보이는 위치가 0이 아닌 채 남거나 창이 793으로 줄어 P355 규칙이 화면 높이를 놓쳤다.
+//   보이는 위치(offsetTop)가 남아 있으면 그만큼 내려 그린다(top). 페이지는 그 스크롤을 0으로 되돌린다(MobileApp.jsx fit)
+export function pageBox({ vv, innerHeight, innerWidth, screenW, screenH, standalone = false, tallest = 0 }) {
+  if (standalone && screenW > 0 && screenH > 0) {
+    const vh = vv && vv.height > 0 ? vv.height : innerHeight || 0;
+    const full = Math.round((innerHeight || 0) >= (innerWidth || 0) ? Math.max(screenW, screenH) : Math.min(screenW, screenH));
+    const kb = kbOpenOf({ vvHeight: vh, innerHeight, tallest: Math.max(tallest || 0, full) });
+    const short = full - Math.min(Math.floor(vh), Math.round(innerHeight || vh));
+    if (!kb && short >= 0 && short <= TALL_GAP_MAX) return { height: full, top: Math.max(0, Math.round((vv && vv.offsetTop) || 0)), ...(short > 0 ? { tall: short } : {}), full: true };
+    if (kb) return { height: Math.max(0, Math.floor(vh)), top: Math.max(0, Math.round((vv && vv.offsetTop) || 0)), kb: true };
+  }
   const b = screenBox({ vv, innerHeight, innerWidth, screenW, screenH, standalone });
   if (b.tall) return b;
   const raw = vv && vv.height > 0 ? Math.min(vv.height, innerHeight > 0 ? innerHeight : vv.height) : innerHeight || 0;
@@ -164,3 +193,10 @@ export function shortChoice(label, n = 14) { const t = String(label || '').trim(
 export const uiFactor = (scale, base = 0.8) => Math.min(1.5, Math.max(0.75, Math.round((Number(scale) || base) / base * 100) / 100));
 
 export { lastLineOf };
+
+// P358: 배치 값을 남길 화면 이름(화면마다 한 번: 홈 탭·세션 목록·맵·세션 화면·키보드 열림)
+export const LAY_SCREENS = ['home', 'sessions', 'map', 'session', 'kb'];
+export function layScreen({ view, kb = false } = {}) {
+  if (kb) return 'kb';
+  return LAY_SCREENS.includes(view) ? view : null;
+}

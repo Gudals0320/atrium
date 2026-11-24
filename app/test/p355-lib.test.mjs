@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { KEY_MAIN, KEY_MORE, MOBILE_KEYS, KEY_GLYPH, KEY_WIDE, keyId, isNumKey, viewOf, readView, readFlag, VIEW_KEY, KEYS_OPEN_KEY, pageBox, isLive } from '../src/renderer/lib/mobile.js';
+import { KEY_MAIN, KEY_MORE, MOBILE_KEYS, KEY_GLYPH, KEY_WIDE, keyId, isNumKey, readFlag, KEYS_OPEN_KEY, pageBox, isLive } from '../src/renderer/lib/mobile.js';
 import { KEY_NAMES } from '../../backend/src/keys.mjs';
 import { keysToBytes } from '../../backend/src/hc/model.mjs';
 import { layoutLine, LAY_FIELDS, TELE_KINDS } from '../src/renderer/lib/phone-telemetry.js';
@@ -37,24 +37,13 @@ test('키 줄 배치: 8칸 격자에 늘 한 줄(펼침 + 7), 펼치면 꼭 두 
 test('키 이름의 사전 열쇠(+ → _), 두 사전에 다 있다', () => {
   assert.equal(keyId('ctrl+c'), 'ctrl_c'); assert.equal(keyId('shift+tab'), 'shift_tab');
   for (const k of MOBILE_KEYS) assert.ok(en.mobile['key_' + keyId(k)] && ko.mobile['key_' + keyId(k)], k);
-  for (const k of ['viewAnswer', 'viewTerm', 'typeDirect', 'typeDirectOff', 'termLoading', 'termFailed', 'askHide', 'keysMore', 'keysLess']) assert.ok(en.mobile[k] && ko.mobile[k], k);
+  for (const k of ['typeDirect', 'typeDirectOff', 'termLoading', 'termFailed', 'askHide', 'keysMore', 'keysLess']) assert.ok(en.mobile[k] && ko.mobile[k], k);
 });
 
-test('보기 기억: 마지막에 고른 쪽(이 기기). 터미널은 살아 있는 세션만', () => {
+test('키 줄 펼침 기억(이 기기), 터미널은 살아 있는 세션만(P358: 보기 고르기는 없어졌다)', () => {
   const mem = new Map();
   const st = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)) };
-  assert.equal(readView(st), 'answer', '처음은 답');
-  st.setItem(VIEW_KEY, 'term');
-  assert.equal(readView(st), 'term');
-  st.setItem(VIEW_KEY, 'weird');
-  assert.equal(readView(st), 'answer');
-  assert.equal(readView({ getItem: () => { throw new Error('denied'); } }), 'answer');
-  assert.equal(viewOf('term', { state: 'working' }), 'term');
-  assert.equal(viewOf('term', { state: 'waiting' }), 'term');
-  assert.equal(viewOf('term', { state: 'sleeping' }), 'answer');
-  assert.equal(viewOf('term', { state: 'exited' }), 'answer');
-  assert.equal(viewOf('answer', { state: 'working' }), 'answer');
-  assert.ok(isLive({ state: 'ready' }) && !isLive(null));
+  assert.ok(isLive({ state: 'ready' }) && isLive({ state: 'waiting' }) && !isLive({ state: 'sleeping' }) && !isLive({ state: 'exited' }) && !isLive(null));
   assert.equal(readFlag(st, KEYS_OPEN_KEY), false); st.setItem(KEYS_OPEN_KEY, '1'); assert.equal(readFlag(st, KEYS_OPEN_KEY), true);
 });
 
@@ -62,7 +51,7 @@ test('터미널 붙이고 떼기: xterm·TerminalView는 mterm 묶음에만, 세
   const ms = src('MobileSession.jsx');
   assert.doesNotMatch(ms, /from '\.\/(TerminalView\.jsx|mterm\.jsx)'/);
   assert.match(ms, /new URL\('mterm\.js', import\.meta\.url\)/);
-  assert.match(ms, /view === 'term' \? \(\s*<div className="mt-ms-termarea"/, '터미널 칸은 터미널 보기일 때만(답 보기로 바꾸면 내려가 떼고 버린다)');
+  assert.match(ms, /\{live && <TermPane /, '터미널 칸은 살아 있는 세션일 때(화면을 떠나면 내려가 떼고 버린다)');
   const mt = src('mterm.jsx');
   assert.match(mt, /<TerminalView [^>]*webgl=\{false\}[^>]*touchSelect/);
   assert.match(mt, /terminal\.focus/);

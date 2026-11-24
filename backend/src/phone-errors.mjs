@@ -20,12 +20,15 @@ const int = (v, max) => (Number.isFinite(v) && v >= 0 ? Math.min(Math.round(v), 
 const ver = (v) => (typeof v === 'string' && /^[0-9A-Za-z.+-]{1,32}$/.test(v) ? v : null);
 
 // P355: 배치 값(창 phone-telemetry.js layoutLine). CSS px 숫자(소수 한 자리)와 참·거짓 둘, 맨 아래 줄 이름만
-const LAY_FIELDS = ['iw', 'ih', 'ch', 'vh', 'vt', 'sw', 'sh', 'st', 'sr', 'sb', 'sl', 'rb', 'tb'];
+// P358: 뿌리·html·body 높이(ph·hh·bh), 화면 높이로 늘렸나(tl), 화면 이름(sc)
+const LAY_FIELDS = ['iw', 'ih', 'ch', 'vh', 'vt', 'sw', 'sh', 'st', 'sr', 'sb', 'sl', 'rb', 'tb', 'ph', 'hh', 'bh'];
+export const LAY_SCREENS = ['home', 'sessions', 'map', 'session', 'kb'];
 export function layOf(l) {
   if (!l || typeof l !== 'object') return null;
   const o = {};
   for (const f of LAY_FIELDS) { const v = l[f]; if (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e5) o[f] = Math.round(v * 10) / 10; }
-  for (const f of ['sd', 'kb']) if (typeof l[f] === 'boolean') o[f] = l[f];
+  for (const f of ['sd', 'kb', 'tl']) if (typeof l[f] === 'boolean') o[f] = l[f];
+  if (LAY_SCREENS.includes(l.sc)) o.sc = l.sc;
   if (['tabs', 'input', 'keys'].includes(l.on)) o.on = l.on;
   return Object.keys(o).length ? o : null;
 }
@@ -106,9 +109,16 @@ export function errorSummary(entries, { since = 0, limit = 20 } = {}) {
   const bytes = {};
   for (const e of tele) if (e.tele.k === 'bytes' && e.tele.bytes) bytes[e.deviceName || e.deviceId || '?'] = { at: e.at, bytes: e.tele.bytes };
   const layout = {}; // P355: 기기마다 마지막 배치 값
-  for (const e of tele) if (e.tele.k === 'lay' && e.tele.lay) layout[e.deviceName || e.deviceId || '?'] = { at: e.tele.at || e.at, lay: e.tele.lay };
+  const layoutBy = {}; // P358: 기기·화면마다 마지막 배치 값
+  for (const e of tele) {
+    if (e.tele.k !== 'lay' || !e.tele.lay) continue;
+    const dev = e.deviceName || e.deviceId || '?';
+    const x = { at: e.tele.at || e.at, lay: e.tele.lay };
+    layout[dev] = x;
+    if (e.tele.lay.sc) (layoutBy[dev] = layoutBy[dev] || {})[e.tele.lay.sc] = x;
+  }
   return {
-    since, groups: out, layout,
+    since, groups: out, layout, layoutBy,
     snaps: snaps.slice(-limit).reverse().map((s) => ({ at: s.tele.at || s.at, device: s.deviceName || null, ...s.tele })),
     boots: { n: boots.length, lite: boots.filter((b) => b.lite === true).length, why },
     bytes,
@@ -146,8 +156,11 @@ export function layLabel(l) {
   if (l.rb != null && l.vh != null) { const cut = Math.round((l.rb - ((l.vt || 0) + l.vh)) * 10) / 10; p.push(cut > 0 ? `잘림 ${cut}px` : '잘림 없음'); }
   p.push(l.sd ? '홈 화면 앱' : '브라우저 탭');
   if (l.kb) p.push('키보드 열림');
+  // P358: 뿌리가 문서 높이를 넘는지(홈 화면 앱은 문서를 상태 표시줄만큼 짧게 준다), 뿌리·html·body 높이
+  if (l.ph != null || l.hh != null || l.bh != null) p.push(`높이 뿌리 ${l.ph ?? '?'} · html ${l.hh ?? '?'} · body ${l.bh ?? '?'}${l.tl ? ' (화면 높이로 늘림)' : ''}`);
   return p.join(' · ');
 }
+const SCREEN_WORD = { home: '홈', sessions: '세션 목록', map: '맵', session: '세션 화면', kb: '키보드 열림' };
 // CLI 표
 export function formatErrors(s, { sinceText = '' } = {}) {
   const L = [];
@@ -178,7 +191,11 @@ export function formatErrors(s, { sinceText = '' } = {}) {
     }
   }
   for (const [dev, b] of Object.entries(s.bytes)) L.push(`받은 크기(${dev}, ${when(b.at)}까지): ${bytesLabel(b.bytes)}`);
-  for (const [dev, x] of Object.entries(s.layout || {})) L.push(`배치(${dev}, ${when(x.at)}): ${layLabel(x.lay)}`);
+  for (const [dev, x] of Object.entries(s.layout || {})) {
+    const by = (s.layoutBy || {})[dev];
+    if (!by) { L.push(`배치(${dev}, ${when(x.at)}): ${layLabel(x.lay)}`); continue; }
+    for (const sc of LAY_SCREENS) if (by[sc]) L.push(`배치(${dev}, ${SCREEN_WORD[sc]}, ${when(by[sc].at)}): ${layLabel(by[sc].lay)}`);
+  }
   return L.join('\n');
 }
 // --since 1d, 6h, 30m → ms
