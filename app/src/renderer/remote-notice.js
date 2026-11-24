@@ -9,6 +9,8 @@ import { noticeOf } from './lib/remote.js';
 export const remoteNotices = []; // 시험이 읽는다
 
 export function startRemoteNotice() {
+  // P359: 판 중계기가 멈췄다(다시 켬 | 멈춤). 토스트 한 줄
+  api.on('relay.notice', (ev) => { toast(t(ev && ev.kind === 'restarted' ? 'authRelay.noticeRestarted' : 'authRelay.noticeDown'), ev && ev.kind === 'restarted' ? undefined : 'error'); });
   // P352: 휴대폰 화면에서 처음 보는 오류 종류가 오면 조용한 토스트 한 줄(같은 종류는 백엔드가 다시 보내지 않는다). OS 알림은 띄우지 않는다
   api.on('remote.errorKind', (ev) => {
     const kind = t(`phoneErrors.kind_${ev && ev.k}`);

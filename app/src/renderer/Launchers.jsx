@@ -14,6 +14,8 @@ import { useT, errText } from './lib/i18n.js';
 import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES, harnessEfforts, COMMAND_FAMILIES, autoFamily, commandFamily, contractView, checkRows } from './lib/launchers.js'; // P299: harnessEfforts. P309: 하네스 계열. P330: 계약 안내·점검
 import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue, orchHarness } from './lib/orch.js'; // P296: 자체 오케스트레이션. P309: orchHarness
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
+import { ApiKeyPanel, ApiTag } from './AuthRelay.jsx'; // P359: API 키 칸, API 표시
+import { isApiLauncher } from './lib/auth-relay.js';
 
 const MODES = PERMISSION_MODES;
 
@@ -44,7 +46,7 @@ function LauncherList({ data, onEdit }) {
             <div key={l.id} className={`mt-ln-row${l.favorite ? ' fav' : ''}`} data-role="launcher-row" data-launcher={l.id} data-name={l.name}>
               <button type="button" className={`mt-ln-star${l.favorite ? ' on' : ''}`} data-action="launcher-favorite" title={l.favorite ? t('launchers.unfavorite') : t('launchers.favorite')} aria-pressed={l.favorite} onClick={() => call('launcher.favorite', { id: l.id, favorite: !l.favorite }, t)}>{l.favorite ? '★' : '☆'}</button>
               <LauncherIcon l={l} />
-              <span className="mt-ln-name" title={l.name}>{l.name}{launcherOrchestrates(data.harnesses, l) && <span className="mt-orch-tag" data-role="launcher-orch-tag" title={t('orch.fieldNote')}>{t('orch.tag')}</span>}{contractView(l.preview && l.preview.contract).flag && <span className="mt-ln-cflag" data-role="launcher-contract-flag" title={t('launcherContract.rowFlag')}>!</span>}<UsageLeft l={l} /></span>
+              <span className="mt-ln-name" title={l.name}>{l.name}{launcherOrchestrates(data.harnesses, l) && <span className="mt-orch-tag" data-role="launcher-orch-tag" title={t('orch.fieldNote')}>{t('orch.tag')}</span>}{contractView(l.preview && l.preview.contract).flag && <span className="mt-ln-cflag" data-role="launcher-contract-flag" title={t('launcherContract.rowFlag')}>!</span>}{isApiLauncher(l) ? <ApiTag /> : <UsageLeft l={l} />}</span>
               <span className="mt-ln-line mono" title={previewLine(l.preview, t('launchers.shellPreview'))}>{previewLine(l.preview, t('launchers.shellPreview'))}{l.preview && l.preview.env && l.preview.env.length ? <span className="dim"> · {t('launchers.envShort')}: {l.preview.env.join(', ')}</span> : null}</span>
               <span className="mt-ln-acts">
                 <button type="button" className="mt-btn small ghost" data-action="launcher-up" disabled={fi <= 0} title={t('launchers.up')} onClick={() => move(l.id, -1)}>↑</button>
@@ -276,5 +278,5 @@ export function LaunchersTab({ startNew = false }) {
   const data = useStore((st) => st.launchers);
   const [editing, setEditing] = useState(() => (startNew ? blankLauncher('claude') : null));
   if (!data) return <div className="dim">{t('settings.loading')}</div>;
-  return editing ? <LauncherForm key={editing.id || 'new'} init={editing} harnesses={data.harnesses} focusPaste={startNew} onDone={() => setEditing(null)} /> : <LauncherList data={data} onEdit={setEditing} />;
+  return editing ? <LauncherForm key={editing.id || 'new'} init={editing} harnesses={data.harnesses} focusPaste={startNew} onDone={() => setEditing(null)} /> : <><ApiKeyPanel /><LauncherList data={data} onEdit={setEditing} /></>;
 }

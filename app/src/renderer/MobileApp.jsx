@@ -73,7 +73,7 @@ function FaceTop({ s, face, extra = null }) {
   return <span className="c1"><span className="cname" data-role="mp-name">{s.name}</span>{extra}<span className="cst" data-role="mp-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span></span>;
 }
 // 둘째 줄: 하네스 표 · 하네스 · 모델(판 세션 맵 카드 c2와 같다)
-const FaceMeta = ({ face, children = null }) => <span className="c2" data-role="mp-meta"><span className="hb">{face.f.k.mark}</span><span>{face.f.harness}</span>{face.f.model ? <><span className="dotsep">/</span><span>{face.f.model}</span></> : null}{children}</span>;
+const FaceMeta = ({ face, children = null }) => <span className="c2" data-role="mp-meta"><span className="hb">{face.f.k.mark}</span><span>{face.f.harness}</span>{face.f.api ? <span className="mt-api-tag" data-role="mp-api">API</span> : null}{face.f.model ? <><span className="dotsep">/</span><span>{face.f.model}</span></> : null}{children}</span>;
 // 오른쪽 위 꼬리표 무리: 할 일 배지 위, 작업 완료 꼬리표(판 세션 맵 카드와 같은 차례·색)
 function FaceTags({ t, face, todo = 0 }) {
   const done = face.tier === 'review';

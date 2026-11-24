@@ -19,6 +19,7 @@ import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는
 import { adapterOf, reservedArg, wrapperInfo } from './harness.mjs'; // P115: 하네스 어댑터 표. P309: 감싼 호출자(omh)
 import { HERMES_EFFORTS, hermesEffortOf, hermesReasoningOf, reasoningIn, withoutReasoning, AGY_TIER_RE, agyModelArg } from './harness.mjs'; // P299: Hermes 노력 수준
 import { OMO_EFFORTS, omoEffortOf, thinkingIn } from './harness.mjs'; // P329: omo 생각 수준(--thinking)
+import { RELAY_PLACEHOLDER } from './auth-relay-core.mjs'; // P359: API 런처 표식
 import { V2_KEY, migrateLaunchers, legacyInitialLaunchers } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
 // P330: 하네스 계약 표(harness-contract.mjs, 근거 harness-contract.md). 칸 값 → 인자, 추가 인자와 칸의 겹침, 하네스 런처로 바꾸기, 점검
 import { CODEX_EFFORTS, PI_THINKING, CONTRACTS, contractOf, effortArgsFor, hasEffortArg, approvalArgsFor, hasApprovalArgs, argOverlaps, moveArgsToFields, harnessOfCommand, contractHint, runCheck, modelArgsFor } from './harness-contract.mjs';
@@ -28,6 +29,10 @@ export { LEGACY_KEYS } from './launcher-migrate.mjs';
 export const META_KEY = V2_KEY; // P115: 연결 참조가 든 목록. 옛 키(launchers)는 옛 코드가 쓴다
 export const LEGACY_META_KEY = 'launchers';
 export const AGY_BYPASS_META = 'launchers.agyBypass'; // P205: AGY 승인 방식 옮김 표시(한 번만)
+export const API_LAUNCHER_META = 'launchers.apiRelay'; // P359: API 런처를 한 번 더했다는 표시(사람이 지우면 다시 더하지 않는다)
+export const API_LAUNCHER_ID = 'claude-api';
+// P359: 런처 "Claude Code (API)": 구독 한도가 바닥날 때 새 워커만 API 키 과금으로. env의 자리표시를 판이 그 세션의 중계기 주소로 바꾼다. 워커 기본 모델은 sonnet(단가)
+export const apiLauncher = () => ({ id: API_LAUNCHER_ID, name: 'Claude Code (API)', harness: 'claude', icon: '', model: 'sonnet', effort: '', permissionMode: 'manual', args: '', env: { ANTHROPIC_BASE_URL: RELAY_PLACEHOLDER }, command: '' });
 export const VERSION = 2;
 export const COMMAND_MAX = 400;
 export const NAME_MAX = 40;
@@ -246,8 +251,10 @@ export function normalizeLauncher(input, { others = [] } = {}) {
 export { psEnvPrefix };
 
 // 띄울 때 확인할 곳: env에 ANTHROPIC_BASE_URL을 직접 둔 claude 런처는 그 주소가 닿는지만 본다
+// P359: 값이 중계기 자리표시({{authRelay}})면 판 중계기를 거치는 API 런처다({ relay: true }, 판이 띄울 때 중계기를 띄우고 주소를 채운다)
 export function gatewayOf(l) {
   const base = l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL;
+  if (base && String(base).includes(RELAY_PLACEHOLDER)) return { relay: true };
   return base ? { url: base, health: false } : null;
 }
 
@@ -502,6 +509,21 @@ export class Launchers {
     this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.piModels = piModels; this.omoModels = omoModels; this.log = log; // P329: omoModels // P192: agyModels
     this.migrated = this.ensure();
     this.agyBypassMoved = this.migrateAgyBypass();
+    this.apiLauncherAdded = this.addApiLauncher();
+  }
+  // P359: 한 번만, 목록 끝에 API 런처를 더한다(왼쪽 레일 즐겨찾기에는 넣지 않는다). 사용자 런처는 바꾸지 않는다. 지우면 다시 더하지 않는다
+  addApiLauncher() {
+    if (this.store.getMeta(API_LAUNCHER_META)) return false;
+    const d = this.store.getMeta(META_KEY);
+    let added = false;
+    if (d && Array.isArray(d.items) && !d.items.some((l) => l.id === API_LAUNCHER_ID)) {
+      const l = apiLauncher();
+      l.name = uniqueName(l.name, d.items);
+      this.store.setMeta(META_KEY, { ...d, items: [...d.items, l] });
+      added = true;
+    }
+    this.store.setMeta(API_LAUNCHER_META, { at: Date.now(), added });
+    return added;
   }
   // P205: 한 번만, AGY 호출자 가운데 승인 방식이 manual(또는 빈 값)인 것을 권한 생략으로 옮긴다(P203: AGY 샌드박스가 판 명령을 막는다).
   // meta에 옮김 표시를 남겨 사람이 그 뒤 manual로 되돌려도 다시 옮기지 않는다. 다른 하네스는 건드리지 않는다

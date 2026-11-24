@@ -15,6 +15,7 @@ export function liveFromRow(row) {
   const l = row.line || {};
   const live = { sessionId: row.sessionId, name: row.name, kind: row.kind || 'claude', state: row.state, lastActivityAt: row.lastActivityAt || null, createdAt: row.createdAt || 0, workspaceKey: row.workspaceKey || null };
   if (row.flavor) live.flavor = row.flavor;
+  if (row.billing === 'api') live.billing = 'api'; // P359
   if (row.unseen) live.unseen = true;
   if (row.model) live.model = row.model;
   if (row.effort) live.effort = row.effort;

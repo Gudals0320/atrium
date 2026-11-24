@@ -92,6 +92,7 @@ function Origin({ s }) {
     {/* P25: 띄운 방법(런처 아이콘). 판이 띄운 Claude Code면 hook이 붙고, 직접 명령이면 hook 없이 셸에서 뜬다 */}
     {s.flavor && <span className="mt-badge kind flavor" data-kind={s.flavor} data-role="flavor-badge" title={t(s.hooked ? 'node.flavorHookedTitle' : 'node.flavorCommandTitle', { kind: kindOf(s.flavor).label })}>{kindOf(s.flavor).label}</span>}
     {s.kind === 'shell' && <span className="mt-badge kind shell" data-kind="shell" title={t('node.shellTitle')}>{t('node.shell')}</span>}
+    {s.billing === 'api' && <span className="mt-badge mt-api-tag node" data-role="api-badge" title={t('authRelay.tagTitle')}>API</span>}{/* P359: 판 중계기를 거쳐 API 키로 과금 */}
     {s.kind && s.kind !== 'claude' && s.kind !== 'shell' && <span className="mt-badge kind" data-kind={s.kind} title={t('node.kindTitle')}>{s.kind}</span>}
     {s.fromShell && <span className="mt-badge kind" data-role="from-shell" title={t('node.fromShellTitle')}>{t('node.fromShell')}</span>}
     {s.imported && <span className="mt-badge adopted" data-role="imported-badge" title={t('node.importedTitle', { title: s.imported.title || '', gen: s.imported.gen })}>{t('node.imported')}</span>}

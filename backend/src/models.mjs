@@ -7,6 +7,7 @@
 // 서로 다른 모델이 맞으면 띄우지 않고 후보를 돌려주고, 없으면 가까운 후보를 돌려준다. 모르는 이름으로 조용히 띄우지 않는다.
 import { HARNESSES, harnessOf } from './launchers.mjs';
 import { launcherOrch } from './orchestration.mjs'; // P296
+import { RELAY_PLACEHOLDER } from './auth-relay-core.mjs'; // P359: API 런처
 
 // 짧은 별칭. opus·sonnet·haiku는 Claude Code가 아는 별칭이라 그대로 넘기고, fable은 전체 ID로 푼다
 export const CLAUDE_ALIASES = { fable: 'claude-fable-5-1' };
@@ -57,7 +58,7 @@ export function buildCatalog({ launchers = [], gateways = [], harnessModels = {}
     const h = harnessOf(l.harness);
     if (!AGENT_HARNESS(h)) continue;
     const t = targetOfModel(h.id, l.model || '');
-    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: (l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL) || null, connection: null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}`, startCommand: l.startCommand || '', orchestrates: launcherOrch(l, h.kind).orchestrates }); // P97: 실행 명령. P296: 자체 오케스트레이션
+    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: (l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL && !String(l.env.ANTHROPIC_BASE_URL).includes(RELAY_PLACEHOLDER) ? l.env.ANTHROPIC_BASE_URL : null), ...(l.harness === 'claude' && l.env && String(l.env.ANTHROPIC_BASE_URL || '').includes(RELAY_PLACEHOLDER) ? { billing: 'api' } : {}), connection: null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}`, startCommand: l.startCommand || '', orchestrates: launcherOrch(l, h.kind).orchestrates }); // P97: 실행 명령. P296: 자체 오케스트레이션
   }
   for (const h of Object.values(HARNESSES)) {
     for (const m of harnessModels[h.id] || h.models || []) {
@@ -108,6 +109,10 @@ export function resolveModel(query, catalog, { kind = null } = {}) {
   // 1. 정확한 ID: 호출자 이름·ID, 모델 ID. 모델 ID가 같으면 게이트웨이가 필요한 호출자 > 하네스 > 게이트웨이 > 그 밖의 호출자
   const byName = entries.filter((e) => e.keys.exact.some((k) => k && k.toLowerCase() === lq));
   if (byName.length) return { ok: true, how: 'exact', entry: byName[0] };
+  // P359: API 키 과금 런처는 런처 이름·ID로만 고른다(모델 이름으로 조용히 돈이 드는 길을 고르지 않는다)
+  return resolveByModel(raw, entries.filter((e) => e.billing !== 'api'), { lq, qv });
+}
+function resolveByModel(raw, entries, { lq, qv }) {
   const byModel = entries.filter((e) => e.keys.exactModel.some((k) => k.toLowerCase() === lq));
   if (byModel.length) {
     const rank = (e) => (e.source === 'launcher' ? (e.gateway ? 0 : 3) : SOURCE_RANK[e.source]);
@@ -160,7 +165,7 @@ function lev(a, b) {
 
 // 한 줄 설명(atrium models, 후보 목록)
 export function describeEntry(e) {
-  if (e.source === 'launcher') return `런처 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness}${e.orchestrates ? ' · 자체 오케스트레이션(하위로 띄우면 너하고만 말하고 하위 세션을 만들지 않는다)' : ''}${e.startCommand ? ` · 실행 명령 ${e.startCommand}` : ''} · 모델 ${e.model || '(하네스 기본)'}${e.connection ? ` · 연결 ${e.connection}(${e.gateway})` : e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}`;
+  if (e.source === 'launcher') return `런처 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness}${e.orchestrates ? ' · 자체 오케스트레이션(하위로 띄우면 너하고만 말하고 하위 세션을 만들지 않는다)' : ''}${e.startCommand ? ` · 실행 명령 ${e.startCommand}` : ''} · 모델 ${e.model || '(하네스 기본)'}${e.connection ? ` · 연결 ${e.connection}(${e.gateway})` : e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}${e.billing === 'api' ? ' · API 키 과금(판 중계기를 거친다, 사람이 설정 › 런처에 API 키를 넣어야 뜬다)' : ''}`;
   if (e.source === 'harness') return `${HARNESSES[e.harness].label} 모델 ${e.model}${e.aliases && e.aliases.length ? `(별칭 ${e.aliases.join(', ')})` : ['opus', 'sonnet', 'haiku'].includes(e.model) ? '(Claude Code 별칭)' : ''}`;
   return `연결 ${e.connection || e.gateway}의 모델 ${e.label || e.model} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness} · 런처 ${e.host}로 띄운다`;
 }
