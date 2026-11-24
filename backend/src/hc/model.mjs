@@ -226,6 +226,7 @@ export const KEY_BYTES = {
   enter: '\r', esc: '\x1b', escape: '\x1b', tab: '\t', 'shift+tab': '\x1b[Z', space: ' ', backspace: '\x7f',
   up: '\x1b[A', down: '\x1b[B', right: '\x1b[C', left: '\x1b[D', home: '\x1b[H', end: '\x1b[F',
   'ctrl+c': '\x03', 'ctrl+d': '\x04', 'ctrl+u': '\x15', 'ctrl+g': '\x07',
+  slash: '/', // P355: 휴대폰 키 줄의 /
 };
 export function keyBytes(name) {
   const k = String(name);

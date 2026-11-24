@@ -3291,6 +3291,10 @@ export default {
     lastAnswer: 'Last answer', prompt: 'Prompt', terminal: 'Terminal · last 40 lines', fontDown: 'Smaller text', fontUp: 'Larger text', refresh: 'Refresh',
     history: 'Earlier', moreHistory: 'Show earlier messages', sendNow: 'Send now',
     key_esc: 'Esc', key_enter: 'Enter', key_up: 'Up arrow', key_down: 'Down arrow', key_1: 'Key 1', key_2: 'Key 2', key_3: 'Key 3', key_y: 'Key y', key_n: 'Key n',
+    // P355: session screen views (answer | terminal), direct typing, key bar
+    viewLabel: 'Session view', viewAnswer: 'Answer', viewTerm: 'Terminal', typeDirect: 'Type', typeDirectOff: 'Hide keyboard', typeDirectTitle: 'Type straight into the terminal with the on-screen keyboard',
+    termLoading: 'Opening the terminal…', termFailed: "Couldn't open the terminal: {error}", askHide: 'Hide', keysMore: 'More keys', keysLess: 'Fewer keys',
+    key_4: 'Key 4', key_ctrl_c: 'Ctrl+C (interrupt)', key_tab: 'Tab', key_shift_tab: 'Shift+Tab (switch mode)', key_left: 'Left arrow', key_right: 'Right arrow', key_backspace: 'Backspace', key_slash: 'Slash (/)', key_space: 'Space',
   },
   // P354: gaze tag (the session in the middle of the board receives the command line)
   gaze: {

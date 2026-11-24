@@ -149,15 +149,16 @@ export function phoneHandlers(b) {
       const rt = s.rt || {};
       const sum = b.summary(s);
       const lines = Math.min(Math.max(Number(p.lines) || TAIL_DEFAULT, 1), TAIL_MAX);
+      const brief = p.brief === true; // P355: 터미널 보기(xterm이 화면을 보인다)는 기다리는 요청·대기 글만. 마지막 답·지시·터미널 끝 줄은 빼고 화면도 읽지 않는다
       const q = b.queue && b.queue.list ? b.queue.list(s.sessionId) : [];
       const deliveries = q.map((d) => { const full = (b.store.getDelivery && b.store.getDelivery(d.deliveryId)) || {}; return { deliveryId: d.deliveryId, sessionId: s.sessionId, status: d.status, reason: d.reason || null, text: clip(String(full.text || ''), 120), seq: d.seq ?? d.createdAt ?? null, steerWhy: d.steerWhy || null }; });
       const a = sum.ask;
       return {
         sessionId: s.sessionId, row: rowOf(sum), cwd: sum.cwdNow || s.cwd, model: sum.model || null, effort: sum.effort || null,
-        lastAnswer: rt.lastAnswer ? clip(String(rt.lastAnswer), ANSWER_MAX) : null, lastAnswerAt: rt.lastAnswerAt || null,
-        lastPrompt: rt.lastPrompt ? clip(promptTask(rt.lastPrompt), PROMPT_MAX) : null, promptAt: (rt.turn && rt.turn.startedAt) || null,
+        lastAnswer: !brief && rt.lastAnswer ? clip(String(rt.lastAnswer), ANSWER_MAX) : null, lastAnswerAt: rt.lastAnswerAt || null,
+        lastPrompt: !brief && rt.lastPrompt ? clip(promptTask(rt.lastPrompt), PROMPT_MAX) : null, promptAt: (rt.turn && rt.turn.startedAt) || null,
         ask: a ? { ...askOf(a), summary: a.summary ? clip(String(a.summary), 600) : null, plan: a.plan ? clip(String(a.plan), PROMPT_MAX) : null, questions: Array.isArray(a.questions) ? a.questions.slice(0, 4).map((x) => ({ question: clip(String(x.question || ''), 300), options: (x.options || []).slice(0, 6).map((o) => clip(String(o.label || o), 80)) })) : null } : null,
-        tail: await tailOf(b, s, lines), deliveries,
+        tail: brief ? null : await tailOf(b, s, lines), deliveries, ...(brief ? { brief: true } : {}),
       };
     },
     // 세션 화면을 떠났다

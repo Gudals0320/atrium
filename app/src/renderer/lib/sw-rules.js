@@ -7,7 +7,7 @@
 
 export const CACHE_PREFIX = 'atrium-shell-';
 const NEVER = [/^\/api(\/|$)/, /^\/web\//, /^\/hooks\//, /^\/branch\//, /^\/health$/, /^\/sw\.js$/];
-const SHELL = new Set(['/', '/index.html', '/renderer.js', '/renderer.css', '/boot.js', '/mobile.js', '/mobile.css', '/fullmap.js', '/fullmap.css']); // P353: 묶음 넷
+const SHELL = new Set(['/', '/index.html', '/renderer.js', '/renderer.css', '/boot.js', '/mobile.js', '/mobile.css', '/fullmap.js', '/fullmap.css', '/mterm.js', '/mterm.css']); // P353: 묶음 넷. P355: mterm(휴대폰 터미널 보기)
 const CHUNK = /^\/chunk-[A-Za-z0-9]+\.(js|css)$/; // P353: 함께 쓰는 묶음 조각(이름에 해시)
 const ASSET = [/^\/fonts\/[A-Za-z0-9._-]+$/, /^\/assets\/[A-Za-z0-9._\-/]+\.(svg|png|webmanifest|ico|webp|jpg)$/];
 

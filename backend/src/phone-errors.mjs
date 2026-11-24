@@ -6,7 +6,7 @@
 // - formatErrors: CLI의 짧은 표(한국어)
 import { crashInfo, stepsInfo, stepsLabel, crashLabel } from './web-crash.mjs';
 
-export const TELE_KINDS = ['err', 'rej', 'api', 'send', 'ws', 'bytes', 'snap', 'cap'];
+export const TELE_KINDS = ['err', 'rej', 'api', 'send', 'ws', 'bytes', 'snap', 'cap', 'lay']; // P355: lay(휴대폰 페이지의 배치 값, 부팅마다 한 번)
 export const ERROR_KINDS = ['err', 'rej', 'api', 'send', 'ws'];
 export const TELE_LINE_MAX = 2048;
 export const TELE_BATCH_MAX = 50; // 한 번에 받는 줄
@@ -19,6 +19,16 @@ const clip = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]
 const int = (v, max) => (Number.isFinite(v) && v >= 0 ? Math.min(Math.round(v), max) : null);
 const ver = (v) => (typeof v === 'string' && /^[0-9A-Za-z.+-]{1,32}$/.test(v) ? v : null);
 
+// P355: 배치 값(창 phone-telemetry.js layoutLine). CSS px 숫자(소수 한 자리)와 참·거짓 둘, 맨 아래 줄 이름만
+const LAY_FIELDS = ['iw', 'ih', 'ch', 'vh', 'vt', 'sw', 'sh', 'st', 'sr', 'sb', 'sl', 'rb', 'tb'];
+export function layOf(l) {
+  if (!l || typeof l !== 'object') return null;
+  const o = {};
+  for (const f of LAY_FIELDS) { const v = l[f]; if (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e5) o[f] = Math.round(v * 10) / 10; }
+  for (const f of ['sd', 'kb']) if (typeof l[f] === 'boolean') o[f] = l[f];
+  if (['tabs', 'input', 'keys'].includes(l.on)) o.on = l.on;
+  return Object.keys(o).length ? o : null;
+}
 function bytesOf(b) {
   if (!b || typeof b !== 'object') return null;
   const o = {};
@@ -49,6 +59,7 @@ export function teleInfo(x) {
   if (x.scr && typeof x.scr === 'object') { const s = {}; for (const f of ['w', 'h']) { const v = int(x.scr[f], 1e5); if (v != null) s[f] = v; } if (Number.isFinite(x.scr.dpr) && x.scr.dpr > 0 && x.scr.dpr <= 10) s.dpr = Math.round(x.scr.dpr * 100) / 100; if (Object.keys(s).length) o.scr = s; }
   if (Array.isArray(x.errs)) { const e = x.errs.slice(0, 5).map((v) => clip(v, 100)).filter(Boolean); if (e.length) o.errs = e; }
   const prev = crashInfo(x.prev); if (prev) o.prev = prev;
+  const lay = x.k === 'lay' ? layOf(x.lay) : null; if (lay) o.lay = lay;
   // 상한: 큰 것부터 버린다
   for (const f of ['errs', 'prev', 'steps', 'bytes']) { if (JSON.stringify(o).length <= TELE_LINE_MAX) break; delete o[f]; }
   if (JSON.stringify(o).length > TELE_LINE_MAX) return null;
@@ -94,8 +105,10 @@ export function errorSummary(entries, { since = 0, limit = 20 } = {}) {
   for (const b of boots) { const w = b.why || 'old'; why[w] = (why[w] || 0) + 1; }
   const bytes = {};
   for (const e of tele) if (e.tele.k === 'bytes' && e.tele.bytes) bytes[e.deviceName || e.deviceId || '?'] = { at: e.at, bytes: e.tele.bytes };
+  const layout = {}; // P355: 기기마다 마지막 배치 값
+  for (const e of tele) if (e.tele.k === 'lay' && e.tele.lay) layout[e.deviceName || e.deviceId || '?'] = { at: e.tele.at || e.at, lay: e.tele.lay };
   return {
-    since, groups: out,
+    since, groups: out, layout,
     snaps: snaps.slice(-limit).reverse().map((s) => ({ at: s.tele.at || s.at, device: s.deviceName || null, ...s.tele })),
     boots: { n: boots.length, lite: boots.filter((b) => b.lite === true).length, why },
     bytes,
@@ -117,6 +130,22 @@ export function ctxLabel(c) {
   if (c.boot && c.boot.why) p.push(`부팅 ${c.boot.why}${c.boot.lite ? ' 가볍게' : ''}`);
   if (c.app || c.board) p.push(`버전 ${c.app || '?'}/${c.board || '?'}`);
   if (c.scr) p.push(`${c.scr.w}x${c.scr.h}@${c.scr.dpr}`);
+  return p.join(' · ');
+}
+// P355: 배치 값 한 줄. 잘림 = 뿌리 아래 끝 - (보이는 위치 + 보이는 높이)
+export function layLabel(l) {
+  if (!l) return '';
+  const p = [];
+  if (l.iw != null || l.ih != null) p.push(`창 ${l.iw ?? '?'}x${l.ih ?? '?'}`);
+  if (l.vh != null) p.push(`보이는 ${l.vh}${l.vt ? `(+${l.vt})` : ''}`);
+  if (l.ch != null) p.push(`문서 ${l.ch}`);
+  if (l.sw != null || l.sh != null) p.push(`화면 ${l.sw ?? '?'}x${l.sh ?? '?'}`);
+  if (['st', 'sr', 'sb', 'sl'].some((f) => l[f] != null)) p.push(`안전 영역 위${l.st ?? 0} 오${l.sr ?? 0} 아래${l.sb ?? 0} 왼${l.sl ?? 0}`);
+  if (l.rb != null) p.push(`뿌리 아래 끝 ${l.rb}`);
+  if (l.tb != null) p.push(`${l.on || '아래 줄'} 아래 끝 ${l.tb}`);
+  if (l.rb != null && l.vh != null) { const cut = Math.round((l.rb - ((l.vt || 0) + l.vh)) * 10) / 10; p.push(cut > 0 ? `잘림 ${cut}px` : '잘림 없음'); }
+  p.push(l.sd ? '홈 화면 앱' : '브라우저 탭');
+  if (l.kb) p.push('키보드 열림');
   return p.join(' · ');
 }
 // CLI 표
@@ -149,6 +178,7 @@ export function formatErrors(s, { sinceText = '' } = {}) {
     }
   }
   for (const [dev, b] of Object.entries(s.bytes)) L.push(`받은 크기(${dev}, ${when(b.at)}까지): ${bytesLabel(b.bytes)}`);
+  for (const [dev, x] of Object.entries(s.layout || {})) L.push(`배치(${dev}, ${when(x.at)}): ${layLabel(x.lay)}`);
   return L.join('\n');
 }
 // --since 1d, 6h, 30m → ms
