@@ -382,7 +382,9 @@ test('K2·K3(P36): 상한 없음 — 한 세션이 하위 세션 32개, 8단계 
   const xs = [...new Set(places.map((p) => p.x))];
   assert.ok(xs.length > 1 && xs.length <= LINE_COLS, `P200: 열 ${xs.length}개`);
   for (const x of xs) { const col = places.filter((p) => p.x === x); for (let i = 1; i < col.length; i++) assert.ok(col[i].y > col[i - 1].y, `열 ${x} 띄운 순서 ${i}`); }
-  assert.equal(places.at(-1).x, places[0].x, '열이 모두 차면 첫 열 줄 끝 아래');
+  // P350(2단계): 열이 모두 차면 짧은 열의 끝(줄 끝보다 위의 빈 칸)부터 채운다(정리처럼 열을 고르게). 줄 끝 아래로 길게 늘이지 않는다
+  const lineEnd = Math.max(...places.slice(0, -1).map((p) => p.y + p.h));
+  assert.ok(places.at(-1).y + places.at(-1).h <= lineEnd, '줄 끝보다 위 빈 칸');
   // 깊이 사슬은 단계마다 오른쪽으로
   const chain = b.spawned.slice(32).map((x) => x.place);
   for (let i = 1; i < chain.length; i++) assert.ok(chain[i].x > chain[i - 1].x);
