@@ -54,9 +54,7 @@ try {
   await page.keyboard.press('Escape');
   await page.click('[data-action="thread-toggle"]');
   await page.click('[data-action="loops-open"]');
-  await page.click('[data-action="changes"]'); await sleep(1500);
-  result.changes = await small(page, '[data-role="return-summary"]');
-  await shot(page, 'p11-panel-changes');
+  // P347: 변경 내역 창은 걷었다
   log('12px보다 작은 패널 글', result);
 } finally { await closeApp(app); }
 writeJson('p11-panels.json', result);

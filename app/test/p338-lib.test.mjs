@@ -9,7 +9,7 @@ import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
 
 const lookup = (dict) => (k, v = {}) => { const s = k.split('.').reduce((o, p) => (o && typeof o === 'object' ? o[p] : undefined), dict); return typeof s === 'string' ? s.replace(/\{(\w+)\}/g, (m, n) => (n in v ? v[n] : m)) : k; };
-const FULL = { sleepAfterMin: 30, archiveDays: 14, usageAlerts: true, usageProbe: true, usageProbeMin: 10, usageHermes: false, planNotify: 'next', perfTrace: false, mergerMode: 'ask', todoTidyMode: 'on', updateCheck: true };
+const FULL = { sleepAfterMin: 30, archiveDays: 14, usageAlerts: true, usageProbe: true, usageProbeMin: 10, planNotify: 'next', perfTrace: false, mergerMode: 'ask', todoTidyMode: 'on', updateCheck: true };
 
 test('왼쪽 목록: 주제 묶음과 쪽, 옛 판이면 빠진다', () => {
   const nav = navOf(FULL, { launchers: [] }, true);
@@ -59,7 +59,6 @@ test('찾기: 이름에 든 것이 먼저, 풀이로도 찾고 없는 쪽은 뺀
 test('딸린 칸: 들여쓰고 부모가 꺼지면 흐리다', () => {
   assert.deepEqual(rowState('usageProbeMin', { usageProbe: true }), { child: true, dim: false });
   assert.deepEqual(rowState('usageProbeMin', { usageProbe: false }), { child: true, dim: true });
-  assert.deepEqual(rowState('usageHermes', { usageProbe: false }), { child: true, dim: true });
   assert.deepEqual(rowState('tray', { tray: false }), { child: false, dim: false });
   assert.equal(parentOn('updateCheck', { updateCheck: false }), false);
   assert.equal(parentOn('bot-merge', { mergerMode: 'off' }), false);

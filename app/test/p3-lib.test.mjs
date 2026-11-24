@@ -1,7 +1,7 @@
 // P3 창 쪽 순수 규칙: OS 알림(A1), 다시 들어가기 브리핑(E2), 복귀 요약(A3)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { notifyKey, nodeVisible, shouldNotify, awayLongEnough, NOTIFY_MIN_VISIBLE_PX } from '../src/renderer/lib/attention.js';
+import { notifyKey, nodeVisible, shouldNotify, NOTIFY_MIN_VISIBLE_PX } from '../src/renderer/lib/attention.js';
 import { deliveryText } from '../src/renderer/lib/labels.js';
 import { setLanguage } from '../src/renderer/lib/i18n.js';
 
@@ -30,13 +30,6 @@ test('A1: 창에 초점이 있고 노드가 보이면 띄우지 않는다. 멀�
   const halfOut = rect(1300, 100, 720, 460); // 300px만 보임(42%)
   assert.equal(shouldNotify({ focused: true, nodeRect: halfOut, canvasRect: canvas }).notify, true);
   assert.equal(shouldNotify({ focused: true, nodeRect: null, canvasRect: canvas }).notify, true);
-});
-
-test('A3: 오래 비웠으면 복귀 요약(E2 브리핑은 P45에서 뺐다)', () => {
-  const now = 10_000_000;
-  assert.equal(awayLongEnough(now - 6 * 60000, now), true);
-  assert.equal(awayLongEnough(now - 60000, now), false);
-  assert.equal(awayLongEnough(null, now), false);
 });
 
 test('E5 2.5 방어: 얼굴 경계에 이력을 두어 배율이 조금 흔들려도 모든 터미널이 한꺼번에 놓이지 않는다', async () => {

@@ -230,10 +230,13 @@ function ConnPill() {
   const canOpen = conn === 'open';
   const title = [t('top.connBackend', { state: connWord(conn) }), t('top.connTerminal', { session: term.session || '?', version: term.hcVersion || term.version ? ` (${term.hcVersion || term.version})` : '', state: connWord(term.connected ? 'open' : 'closed') }), t('top.connSessions', { n: count }), t('top.connLinks', { n: links }), canOpen ? t(mission ? 'mmap.pillClose' : 'mmap.pillOpen') : null].filter(Boolean).join('\n');
   const toggle = () => { if (canOpen || mission) setMissionOpen(!mission); };
+  const badText = conn !== 'open' ? t('top.backendState', { state: connWord(conn) }) : termBlocked ? t(term.level === 'incompatible' ? 'top.terminalIncompatible' : 'terminalMove.top.hcMissing') : term.connected === false ? t('top.terminalDown') : null;
   return <>
-    <span className={`mt-cp conn${ok ? ' dot-only' : ' bad'}${canOpen ? ' click' : ''}${mission ? ' on' : ''}`} data-role="conn" data-action="conn-mission" title={title} role={canOpen ? 'button' : undefined} tabIndex={canOpen ? 0 : undefined} aria-pressed={canOpen ? mission : undefined} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
+    <span className={`mt-cp conn${ok ? '' : ' bad'}${canOpen ? ' click' : ''}${mission ? ' on' : ''}`} data-role="conn" data-action="conn-mission" title={title} role={canOpen ? 'button' : undefined} tabIndex={canOpen ? 0 : undefined} aria-pressed={canOpen ? mission : undefined} onClick={toggle} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}>
       <span className={`mt-dot ${ok ? 'ok' : 'bad'}`} />
-      {conn !== 'open' ? t('top.backendState', { state: connWord(conn) }) : termBlocked ? t(term.level === 'incompatible' ? 'top.terminalIncompatible' : 'terminalMove.top.hcMissing') : term.connected === false ? t('top.terminalDown') : null}
+      {/* P347: 점(연결 상태 색) 옆에 늘 "세션 맵" 글. 연결이 나쁘면 그 까닭 글이 뒤에 붙는다 */}
+      <span className="mt-conn-label" data-role="conn-label">{t('mapPill.label')}</span>
+      {badText ? <span className="mt-conn-state" data-role="conn-state">{badText}</span> : null}
       <span hidden data-role="links">{links}</span>
     </span>
     {conn === 'open' && term.connected === false && !termBlocked && <button className="mt-cp accent" disabled={starting} onClick={startTerminal} data-action="terminal-start">{t('top.terminalStart')}</button>}
@@ -308,7 +311,6 @@ export function TopRight({ maxControllers }) {
       <DevicesPill />
       <ResourcePill maxControllers={maxControllers} />
       <UsagePill />
-      <button className="mt-cp round" title={t('top.changes')} onClick={() => getState().showChanges && getState().showChanges(60)} data-action="changes"><Icon name="history" /></button>
       <button className="mt-cp round" onClick={() => openDialog({ kind: 'settings' })} data-action="settings-open" title={t('top.settings')}><Icon name="gear" /></button>
     </div>
   );
@@ -414,7 +416,6 @@ export function ChipRow() {
     [t('chips.arrange'), 'chip-arrange', t('arrangeAll.title'), () => arrangeBoard()],
     ...(boardArranged ? [[t('arrangeAll.undo'), 'chip-arrange-undo', t('arrangeAll.undoTitle'), () => arrangeBoard(true)]] : []),
     [t('chips.mission'), 'chip-mission', t('chips.missionTitle'), () => setMissionOpen(true)],
-    [t('chips.changes'), 'chip-changes', t('chips.changesTitle'), () => getState().showChanges && getState().showChanges(60)],
     [t('chips.fit'), 'chip-fit', t('spaceFit.chip'), () => getState().fitAll && getState().fitAll(250)],
   ];
   return (

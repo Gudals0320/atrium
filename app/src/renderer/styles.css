@@ -542,19 +542,6 @@ img.mt-kind-icon { object-fit: contain; }
 .mt-warnbar-actions a.mt-btn { text-decoration: none; }
 
 /* 복귀 요약 */
-.mt-return { position: absolute; top: 60px; right: 74px; width: min(620px, 50vw); max-height: 60vh; overflow: auto; z-index: 37; background: var(--panel); border: 1px solid var(--panel-line); border-radius: var(--panel-radius); padding: 10px 12px; box-shadow: var(--panel-shadow); }
-.mt-return .mt-card-title { color: var(--text); }
-.mt-return-line { display: flex; gap: 8px; align-items: baseline; padding: 5px 6px; border-radius: 7px; font-size: 12.5px; }
-.mt-return-line.link { cursor: pointer; }
-.mt-return-line.link:hover { background: var(--panel-2); }
-.mt-return-kind { font-size: 12px; min-width: 52px; color: var(--dim); }
-.mt-return-kind.rk-needs_you { color: var(--accent-2); }
-.mt-return-kind.rk-error, .mt-return-kind.rk-interrupted { color: var(--bad); }
-.mt-return-kind.rk-turn_done { color: var(--ok); }
-.mt-return-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-return-count, .mt-return-ago { color: var(--dim); font-size: 12px; }
-.mt-return-tag { font-size: 12px; border: 1px solid var(--panel-line-2); border-radius: 8px; padding: 0 6px; color: var(--dim); }
-.mt-return-tag.hot { border-color: var(--accent-line); color: var(--accent-2); }
 
 /* 연결 기록 */
 .mt-linkpanel { position: fixed; right: 74px; top: 60px; bottom: 100px; width: 520px; z-index: 55; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: var(--panel-radius); box-shadow: var(--panel-shadow); }
@@ -1435,8 +1422,6 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-chip-time { color: var(--attn-text); }
 .mt-region.hot .mt-region-box { border-color: color-mix(in srgb, var(--attn) 45%, var(--region-line)); }
 .mt-region.hot .mt-region-dot { background: var(--attn); box-shadow: 0 0 .5em var(--attn); }
-.mt-return-kind.rk-needs_you { color: var(--attn); }
-.mt-return-tag.hot { border-color: var(--attn-line); color: var(--attn-text); }
 .mt-kcard-sess.hot, .mt-kcard-ask { color: var(--attn); }
 
 /* ---------- P91: 묶음(가상 그룹) 테두리와 상대 경로 이름표 ---------- */
@@ -1563,11 +1548,6 @@ html.mt-lite .mt-node-run, html.mt-lite .mt-splash-lit { display: none !importan
 .mt-mm-si.t-turn .b { color: var(--attn-text); }
 .mt-mm-si.t-alert .b { color: var(--st-error); }
 .mt-mm-none { font-size: 12px; color: var(--dim-2); }
-.mt-mm-rest { font-size: 12px; line-height: 1.8; color: var(--dim); }
-.mt-mm-rn { padding: 0; border: 0; background: none; color: var(--dim); font: inherit; cursor: pointer; }
-.mt-mm-rn:hover { color: var(--text); }
-.mt-mm-rn.t-done { text-decoration: line-through; text-decoration-color: var(--dim-2); }
-.mt-mm-sep { color: var(--dim-2); }
 .mt-mm-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--panel-line); font-size: 12px; color: var(--text-2); }
 .mt-mm-hint { margin-top: 6px; font-size: 11px; line-height: 1.5; color: var(--dim-2); }
 @media (max-width: 980px) { .mt-mm-sum { display: none; } }
@@ -2452,8 +2432,6 @@ html[data-work-light="off"] .mt-sm .blink, html[data-work-light="off"] .mt-sm .b
 /* P179: 세션 맵 오른쪽 요약 열 = 옛 열 지도의 요약 열(SummaryColumn.jsx, .mt-mm-sum 모양 그대로). 위 줄 아래부터 창 바닥까지 오른쪽 끝에 붙고,
    떠 있는 상자·제목 없이 왼쪽 세로 줄 하나로 지도와 나뉜다. 접기는 열 왼쪽 가장자리의 작은 단추(접히면 창 오른쪽 끝) */
 .mt-sm .mt-sm-sum { display: flex; right: 0; top: 112px; bottom: 0; z-index: 6; padding: 18px 20px 14px; border-left-width: 1px; border-color: var(--panel-line); background: var(--canvas); color: var(--text); font-family: var(--font-ui); }
-.mt-mm-split { margin-left: 4px; font-size: 11.5px; font-weight: 500; color: var(--dim-2); }
-.mt-mm-rn.hot { color: var(--text); }
 .mt-sm .mt-sm-sum-edge { top: 124px; right: 0; z-index: 7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 18px; min-height: 40px; padding: 4px 0; box-sizing: border-box; border-width: 1px 0 1px 1px; border-color: var(--panel-line); border-radius: 8px 0 0 8px; background: var(--canvas); color: var(--dim); cursor: pointer; }
 .mt-sm .mt-sm-sum-edge:hover, .mt-sm .mt-sm-sum-edge:focus-visible { color: var(--text); background: var(--panel-2); outline: none; }
 .mt-sm-sum-edge svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -2720,7 +2698,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-cluster.tl.stack { top: calc(17px + var(--chrome-h) + 8px); }
 .mt-cp.sessions { cursor: pointer; gap: 5px; font: inherit; color: var(--chrome-text); }
 .mt-cp.sessions:focus-visible { outline: 1px solid var(--accent-line); outline-offset: 1px; }
-.mt-cp.conn.dot-only { width: var(--chrome-h); padding: 0; justify-content: center; }
 
 /* P294: 휴대폰 내 몫 시트를 작게(한 화면에 카드 서너 장). 누를 것은 36px 높이를 지키고, 미루기·무시는 작은 글 단추 */
 .mt-dc-panel { max-height: 86vh; }
@@ -2914,7 +2891,6 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 /* P314: 사용량 펼침의 묻는 중 표시, 같은 계정으로 합친 줄, 아래쪽(알약 밖) 줄 */
 .mt-usage-probing { font-size: 11.5px; margin-left: auto; }
 .mt-usage-ago + .mt-usage-probing { margin-left: 6px; }
-.mt-usage-merged { font-size: 12px; }
 .mt-usage-extras { display: grid; gap: 6px; margin-top: 2px; padding-top: 6px; border-top: 1px solid var(--line, rgba(255, 252, 240, 0.08)); }
 .mt-usage-extras-head { font-size: 11.5px; padding: 0 2px; }
 
@@ -3192,3 +3168,17 @@ body:has(.mt-sm-sum) .mt-bottom[data-mission="1"] { left: calc((100% - 288px) / 
 .mt-set-grid > .mt-guard-foldrow { grid-column: 1 / -1; padding: 6px 0 2px; }
 .mt-guard-line { margin-top: 2px; }
 .mt-guard-line .mt-guard-badge.list { margin-left: 0; }
+
+/* P347: 위 오른쪽 세션 맵 단추는 점(연결 상태 색) 옆에 늘 "세션 맵" 글. 연결이 나쁘면 까닭 글이 뒤에 붙는다 */
+.mt-cp.conn { gap: 7px; }
+.mt-conn-state { font-weight: 500; }
+/* P347: 세션 맵 오른쪽 아래 선 범례(수 줄·긴 문단 대신). 견본은 맵 선과 같은 색·모양(.mt-ta-edge.k-*), 짧게 줄인 무늬 */
+.mt-mm-legend { padding-top: 10px; }
+.mt-mm-legend-list { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--text-2); }
+.mt-mm-li { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.mt-mm-sw { flex: none; overflow: visible; }
+.mt-mm-sw .mt-ta-edge { stroke-width: 2; opacity: 1; }
+.mt-mm-sw .mt-ta-edge.k-role { stroke-dasharray: 5 3; }
+.mt-mm-sw .mt-ta-edge.k-cross { stroke-width: 2.6; stroke-dasharray: 0.1 5; stroke-linecap: round; }
+.mt-mm-sw .mt-ta-edge.k-lineage { stroke-width: 1.6; stroke-dasharray: 2 4; stroke-linecap: round; }
+.mt-mm-sw-dot { fill: #b4b0a5; }

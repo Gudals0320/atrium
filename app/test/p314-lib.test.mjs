@@ -1,10 +1,11 @@
 // P314 단위 시험: 사용량 펼침 아래쪽 줄의 표시 규칙. 알약은 Claude·Codex·AGY만(그 밖은 펼침 아래쪽), Claude 모델별 주간은 펼침에만,
-// Hermes는 같은 계정으로 확인될 때만 Codex 칸에 합침, 잔액 글, 출처 열쇠, 묻는 중, 두 사전의 새 열쇠
+// 잔액 글, 출처 열쇠, 묻는 중, 두 사전의 새 열쇠. P347: Hermes 사용량(합침·따로 줄)은 걷었다(옛 값이 와도 보이지 않는다)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pillLine, pillOf, remainingOf, shownWindows, windowLabel, extraRows, mergedInto, balanceOf, sourceKey, probingOf, PROVIDERS, EXTRAS } from '../src/renderer/lib/usage.js';
+import { pillLine, pillOf, remainingOf, shownWindows, windowLabel, extraRows, balanceOf, sourceKey, probingOf, PROVIDERS, EXTRAS } from '../src/renderer/lib/usage.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
+import * as usageLib from '../src/renderer/lib/usage.js';
 
 const NOW = Date.parse('2026-11-22T03:00:00Z');
 const H = 3600000;
@@ -31,18 +32,16 @@ test('P314 펼침은 모델별 주간도 보인다(주간 (Fable))', () => {
   assert.equal(windowLabel('week:Fable', t), '주간 (Fable)');
 });
 
-test('P314 아래쪽 줄: 같은 계정 Hermes는 Codex 칸에 합치고 따로 줄이 없다, 다르면 따로, 잔액 줄', () => {
+test('P347 아래쪽 줄: 옛 백엔드가 hermes 값을 보내도(같은 계정·다른 계정) 줄이 없다, 잔액 줄만', () => {
   assert.deepEqual(extraRows(view).map((r) => [r.provider, r.type]), [['deepseek', 'balance']]);
-  assert.deepEqual(mergedInto(view, 'codex'), ['Hermes']);
-  assert.deepEqual(mergedInto(view, 'claude'), []);
   const apart = { providers: { ...view.providers, hermes: { ...hermes, sameAs: null } } };
-  assert.deepEqual(extraRows(apart).map((r) => [r.provider, r.type]), [['hermes', 'windows'], ['deepseek', 'balance']]);
-  assert.deepEqual(mergedInto(apart, 'codex'), []);
-  // Codex 값이 없으면 합칠 칸이 없으니 Hermes를 따로
+  assert.deepEqual(extraRows(apart).map((r) => [r.provider, r.type]), [['deepseek', 'balance']]);
   const noCodex = { providers: { ...view.providers, codex: null } };
-  assert.deepEqual(extraRows(noCodex).map((r) => r.provider), ['hermes', 'deepseek']);
+  assert.deepEqual(extraRows(noCodex).map((r) => r.provider), ['deepseek']);
   assert.deepEqual(extraRows({ providers: { claude, codex, agy: null } }), []);
-  assert.deepEqual(EXTRAS, ['hermes', 'deepseek', 'openrouter']);
+  assert.deepEqual(EXTRAS, ['deepseek', 'openrouter']);
+  assert.equal('mergedInto' in usageLib, false, 'Codex 칸에 합치는 길이 없다');
+  assert.equal(sourceKey('probe:hermes'), null);
 });
 
 test('P314 잔액 글, 출처 열쇠, 묻는 중', () => {
@@ -59,9 +58,12 @@ test('P314 잔액 글, 출처 열쇠, 묻는 중', () => {
 });
 
 test('P314 두 사전에 새 열쇠가 모두 있다', () => {
-  const keys = ['probing', 'mergedWith', 'extrasHead', 'balanceName', 'balance', 'name', 'hint', 'setOn', 'setOff', 'minName', 'minHint', 'minSet', 'hermesName', 'hermesHint', 'hermesSetOn', 'hermesSetOff'];
+  const keys = ['probing', 'extrasHead', 'balanceName', 'balance', 'name', 'hint', 'setOn', 'setOff', 'minName', 'minHint', 'minSet'];
   for (const d of [ko, en]) {
     for (const k of keys) assert.equal(typeof d.usageProbe[k], 'string', k);
-    for (const s of ['probe:codex', 'probe:claude', 'probe:hermes', 'probe:balance']) assert.equal(typeof d.usageProbe.source[s], 'string', s);
+    for (const s of ['probe:codex', 'probe:claude', 'probe:balance']) assert.equal(typeof d.usageProbe.source[s], 'string', s);
+    for (const k of ['mergedWith', 'hermesName', 'hermesHint', 'hermesSetOn', 'hermesSetOff']) assert.equal(k in d.usageProbe, false, `P347: ${k} 없음`);
+    assert.equal('probe:hermes' in d.usageProbe.source, false);
+    assert.doesNotMatch(d.usageProbe.hint, /Hermes/);
   }
 });

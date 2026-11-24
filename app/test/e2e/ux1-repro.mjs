@@ -113,7 +113,6 @@ const cases = {
     await tryEsc('newSession(rail Shift+click)', async () => { const b = (await page.$$('[data-role="rail-favorites"] [data-action="launch"]'))[0]; await page.keyboard.down('Shift'); await b.click(); await page.keyboard.up('Shift'); }, '.mt-modal');
     await shot('esc-1-new-session-after-esc');
     await tryEsc('openProject', () => page.click('[data-action="ws-open"]'), '.mt-modal');
-    await tryEsc('changes', () => page.click('[data-action="changes"]'), '[data-role="return-summary"]');
     await tryEsc('settings', () => page.click('[data-action="settings-open"]'), '[data-role="settings"]');
     await tryEsc('loops', () => page.click('[data-action="loops-open"]'), '[data-role="loop-list"]');
     await tryEsc('desktopImport', async () => { await page.click('[data-action="ws-open"]'); await sleep(400); await page.click('[data-action="desktop-import-open"]'); }, '[data-role="desktop-import"]');
@@ -224,11 +223,9 @@ const cases = {
   },
   // S3: 처음 켠 판의 변경 내역이 백엔드 시작을 "다시 시작"으로 센다
   async firstStartAsRestart() {
-    await page.click('[data-action="changes"]'); await sleep(900);
-    const t = await page.evaluate(() => { const e = document.querySelector('[data-role="return-summary"]'); return e ? e.innerText : ''; });
+    // P347: 변경 내역 창을 걷어 판 API(changes.since)로 본다
+    const t = (await page.evaluate(() => window.__mt.api.call('changes.since', { since: Date.now() - 3600000 }))).lines.filter((l) => l.kind === 'backend').map((l) => l.text).join('\n');
     const line = t.split('\n').filter((l) => /다시 시작|restart/i.test(l));
-    await shot('restart-1-changes');
-    await page.click('[data-action="return-close"]').catch(() => {});
     const ev = L.atrium('events', '--limit', '500').split('\n').filter((l) => /backend_started/.test(l));
     step('firstStartAsRestart: 변경 내역의 다시 시작 횟수가 실제 재시작 횟수와 맞다', ev.length <= 1 ? line.length === 0 : true, { changesLine: line, backendStartedEvents: ev.length });
   },

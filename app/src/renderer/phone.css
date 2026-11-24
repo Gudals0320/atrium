@@ -147,7 +147,7 @@ html.mt-touch-board input, html.mt-touch-board textarea { -webkit-user-select: t
 .mt-app.phone-board .mt-rail.right, .mt-app.phone-board [data-role=selection], .mt-app.phone-board [data-role=zoom], .mt-app.phone-board .mt-rtt { display: none !important; }
 .mt-app.phone-board .mt-rail.left { left: calc(env(safe-area-inset-left) + 6px); transform: translateY(-50%) scale(.72); transform-origin: left center; }
 /* 위 왼쪽(사이드바, 프로젝트 탭, 검색)은 숨기고, 위 오른쪽 알약(내 차례, 검토, 문제, 연결, 설정)을 왼쪽부터 한 줄로 */
-.mt-app.phone-board .mt-cluster.tl, .mt-app.phone-board .mt-cluster.tr [data-role=resources], .mt-app.phone-board .mt-cluster.tr [data-action=changes] { display: none !important; }
+.mt-app.phone-board .mt-cluster.tl, .mt-app.phone-board .mt-cluster.tr [data-role=resources] { display: none !important; }
 .mt-app.phone-board .mt-cluster.tr { left: calc(env(safe-area-inset-left) + 8px); right: auto; top: calc(env(safe-area-inset-top) + 8px); max-width: calc((100vw - 72px) / .82); transform: scale(.82); transform-origin: left top; }
 .mt-app.phone-board .mt-chips { transform: scale(.85); transform-origin: center bottom; }
 /* 세션 목록 단추: 오른쪽 위, 늘 보인다 */
@@ -790,3 +790,5 @@ button.mt-pm-chip:disabled { opacity: .5; }
 .mt-app.phone .mt-record { left: 0; right: 0; top: env(safe-area-inset-top, 0px); bottom: 0; width: auto; border-radius: 0; }
 .mt-app.phone .mt-record-head .mt-x { min-width: 40px; min-height: 40px; font-size: 22px; }
 .mt-app.phone .mt-rec-chip.map { height: 20px; padding: 0 7px; font-size: 11.5px; }
+/* P347: 휴대폰 판 화면의 위 오른쪽은 좁아 세션 맵 단추를 점만 둔다(데스크톱 창은 점 + "세션 맵" 글) */
+.mt-app.phone-board .mt-cp.conn .mt-conn-label { display: none; }

@@ -2,8 +2,8 @@
 // 단위 시험 app/test/p211-lib.test.mjs
 export const PROVIDERS = ['claude', 'codex', 'agy'];
 export const PROVIDER_NAME = { claude: 'Claude', codex: 'Codex', agy: 'AGY', hermes: 'Hermes', deepseek: 'DeepSeek', openrouter: 'OpenRouter' };
-// P314: 알약에 나오지 않고 펼침 아래쪽에만 나오는 것(Hermes 계정 한도, 키로 읽는 잔액). 백엔드 usage.mjs EXTRAS와 같다
-export const EXTRAS = ['hermes', 'deepseek', 'openrouter'];
+// P314: 알약에 나오지 않고 펼침 아래쪽에만 나오는 것(키로 읽는 잔액). 백엔드 usage.mjs EXTRAS와 같다. P347: Hermes 계정 한도는 걷었다(옛 백엔드가 보내도 보이지 않는다)
+export const EXTRAS = ['deepseek', 'openrouter'];
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // 색 기준(사용자 상태 줄과 같다): 60% 미만 초록(ok), 60~84 노랑(warn), 85 이상 빨강(high). 모르면 none
@@ -135,8 +135,7 @@ export function repPart(view, rep = REP_DEFAULT, now = Date.now()) {
 }
 
 // ---------- P314: 펼침 아래쪽 줄(알약 밖) ----------
-// 표시 규칙: 위 알약에는 Claude·Codex·AGY만(PROVIDERS). 그 밖(Hermes, 키로 읽는 잔액)은 펼침 아래쪽.
-// Hermes가 Codex와 같은 ChatGPT 계정으로 확인되면(백엔드 sameAs: 'codex') 따로 줄을 두지 않고 Codex 칸에 한 줄 덧붙인다
+// 표시 규칙: 위 알약에는 Claude·Codex·AGY만(PROVIDERS). 그 밖(키로 읽는 잔액)은 펼침 아래쪽.
 // → [{ provider, name, type: 'windows'|'balance', entry }]
 export function extraRows(view) {
   const p = (view && view.providers) || {};
@@ -144,16 +143,10 @@ export function extraRows(view) {
   for (const k of EXTRAS) {
     const e = p[k];
     if (!e) continue;
-    if (k === 'hermes' && e.sameAs === 'codex' && p.codex) continue;
     if (e.balance && Number.isFinite(Number(e.balance.total))) { out.push({ provider: k, name: PROVIDER_NAME[k], type: 'balance', entry: e }); continue; }
     if (shownWindows(k, e).length) out.push({ provider: k, name: PROVIDER_NAME[k], type: 'windows', entry: e });
   }
   return out;
-}
-// 이 구독 칸에 합쳐진 다른 하네스 이름들(예 codex → ['Hermes'])
-export function mergedInto(view, provider) {
-  const p = (view && view.providers) || {};
-  return EXTRAS.filter((k) => p[k] && p[k].sameAs === provider && p[provider]).map((k) => PROVIDER_NAME[k]);
 }
 // 잔액 글 → { key, vars }(사전 usageProbe.balance)
 export function balanceOf(b) {
@@ -162,7 +155,7 @@ export function balanceOf(b) {
   return { key: 'usageProbe.balance', vars: { n: n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), cur: b.currency || '' } };
 }
 // 출처 열쇠(사전 usage.source.*). 모르는 출처는 null
-const SOURCES = ['statusline', 'rollout', 'probe:codex', 'probe:claude', 'probe:hermes', 'probe:balance'];
+const SOURCES = ['statusline', 'rollout', 'probe:codex', 'probe:claude', 'probe:balance'];
 export const sourceKey = (s) => (!SOURCES.includes(s) ? null : s.startsWith('probe:') ? `usageProbe.source.${s}` : `usage.source.${s}`);
 // 묻는 중인가(백엔드 usage.get probing). 잔액 탐침(balance)은 DeepSeek·OpenRouter 칸에 보인다
 export function probingOf(view, provider) {

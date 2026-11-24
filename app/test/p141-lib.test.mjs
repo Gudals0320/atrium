@@ -49,15 +49,11 @@ test('#17 응답 필요의 영어 이름은 하나(Needs you), "Your turn"이 �
   assert.equal(translate('en', 'sb2.st_need'), 'Needs you');
 });
 
-test('#17 미션 맵 바닥 줄은 수마다 복수형', () => {
-  assert.equal(translate('en', 'mmFoot.teams', { n: 1 }), '1 team');
-  assert.equal(translate('en', 'mmFoot.teams', { n: 3 }), '3 teams');
-  assert.equal(translate('en', 'mmFoot.sessions', { n: 1 }), '1 session');
-  assert.equal(translate('ko', 'mmFoot.teams', { n: 1 }), '팀 1');
-  assert.match(read('SummaryColumn.jsx'), /mmFoot\.teams/);
+test('#17 미션 맵 바닥 줄의 수(mmFoot)는 P347에서 걷었다(위 알약에 있다). roles는 두 사전에 같은 키', () => {
+  assert.doesNotMatch(read('SummaryColumn.jsx'), /mmFoot\./);
+  assert.ok(!('mmFoot' in en) && !('mmFoot' in ko));
   assert.ok(!('sumFoot' in en.mmMap) && !('sumFoot' in ko.mmMap));
-  // 두 사전에 같은 키
-  for (const k of ['roles', 'mmFoot']) assert.deepEqual(Object.keys(en[k]).sort(), Object.keys(ko[k]).sort());
+  assert.deepEqual(Object.keys(en.roles).sort(), Object.keys(ko.roles).sort());
 });
 
 test('#14 응답 필요 순서와 시각은 waitingSince(다시 켜도 이어지는 때)를 먼저 본다', () => {
@@ -96,6 +92,6 @@ test('#15 먼 얼굴: 상태 알약이 검토 대기면 칩을 또 두지 않고
 });
 
 test('i18n 키가 빠지지 않았다', () => {
-  for (const l of ['en', 'ko']) for (const k of ['roles.worker', 'roles.head', 'mmFoot.work', 'mmFoot.sessions', 'mmFoot.teams']) assert.notEqual(translate(l, k, { n: 2 }), k);
+  for (const l of ['en', 'ko']) for (const k of ['roles.worker', 'roles.head']) assert.notEqual(translate(l, k, { n: 2 }), k);
   assert.equal(typeof t, 'function');
 });

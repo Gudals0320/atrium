@@ -144,7 +144,7 @@ function UsageAlertSetting({ settings }) {
   return <SetRow id="usageAlerts" name={t('usage.alertsName')} hint={t('usage.alertsHint')} role="usage-alert-setting"><Toggle checked={settings.usageAlerts !== false} onChange={set} field="setting-usageAlerts" /></SetRow>;
 }
 
-// P314: 사용량 직접 묻기(판 설정 usageProbe·usageProbeMin·usageHermes). 값이 낡으면 하네스의 사용량 명령으로 묻는다(백엔드 usage-probe.mjs)
+// P314: 사용량 직접 묻기(판 설정 usageProbe·usageProbeMin. P347: Hermes 사용량은 걷었다). 값이 낡으면 하네스의 사용량 명령으로 묻는다(백엔드 usage-probe.mjs)
 function UsageProbeSetting({ settings }) {
   const t = useT();
   const [min, setMin] = useState(null);
@@ -158,7 +158,6 @@ function UsageProbeSetting({ settings }) {
     {'usageProbeMin' in settings && <SetRow id="usageProbeMin" {...rowState('usageProbeMin', settings)} name={t('usageProbe.minName')} hint={t('usageProbe.minHint')} role="usage-probe-min-setting">
       <input type="number" className="mt-set-num" min={2} max={240} data-field="setting-usageProbeMin" value={min ?? settings.usageProbeMin} onChange={(e) => setMin(e.target.value)} onBlur={saveMin} onKeyDown={(e) => { if (e.key === 'Enter') saveMin(); }} />
     </SetRow>}
-    {'usageHermes' in settings && <SetRow id="usageHermes" {...rowState('usageHermes', settings)} name={t('usageProbe.hermesName')} hint={t('usageProbe.hermesHint')} role="usage-hermes-setting"><Toggle checked={!!settings.usageHermes} onChange={(v) => save('usageHermes', v, v ? t('usageProbe.hermesSetOn') : t('usageProbe.hermesSetOff'))} field="setting-usageHermes" /></SetRow>}
   </>;
 }
 

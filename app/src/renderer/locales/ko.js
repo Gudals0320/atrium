@@ -339,7 +339,6 @@ export default {
     reviewEmpty: '완료된 작업이 없습니다.',
     issues: '문제',
     issuesEmpty: '문제 없음',
-    changes: '지난 1시간의 변경 내역',
     settings: '설정',
   },
   rail: {
@@ -369,8 +368,6 @@ export default {
     groupMade: '@{name} 그룹을 만들었습니다.',
     mission: '세션 맵',
     missionTitle: '세션 맵 (Tab): 세션 사이의 작업 지시 관계를 한눈에 확인합니다.',
-    changes: '변경 내역',
-    changesTitle: '지난 1시간의 변경 내역',
     fit: '전체 보기',
     fitTitle: '전체 보드가 한 화면에 들어오도록 배율을 조절합니다.',
   },
@@ -725,16 +722,7 @@ export default {
     redraw: '다시 표시',
     appError: '보드를 표시하는 중 오류가 발생했습니다:',
     appRedraw: '보드 다시 표시',
-  },
-  change: {
-    needs_you: '응답 필요',
-    error: '오류',
-    interrupted: '중단된 작업',
-    exited: '세션 종료',
-    turn_done: '응답 완료',
-    terminal: '터미널',
-  },
-  memo: {
+  },  memo: {
     confirmDelete: '삭제',
     saveFail: '메모를 저장하지 못했습니다: {error}',
     deleteFail: '메모를 삭제하지 못했습니다: {error}',
@@ -1011,15 +999,7 @@ export default {
     claudeAdopted: 'claude (기존 세션 연결)',
     shellLast: '마지막 명령: {cmd}',
     shellPrompt: '명령 입력 대기',
-  },
-  returnSummary: {
-    manual: '최근 {n}분간 변경 사항',
-    away: '자리를 비운 동안의 변경 사항 ({away})',
-    stillOpen: '응답 필요',
-    resolved: '해결됨',
-    removed: '보드에서 제거됨',
-  },
-  search: {
+  },  search: {
     fail: '검색하지 못했습니다: {error}',
     placeholder: '이름, 프로젝트, 질문, 요청, 응답, 출력, 메모, 칸반 검색 (↑↓ 선택 · Enter 이동 · Esc 닫기)',
     empty: '검색 결과가 없습니다. 보드에 저장된 기록만 검색하며 대화 기록 파일 전체는 검색하지 않습니다.',
@@ -1691,10 +1671,6 @@ export default {
   pwa: {
     install: '앱 설치',
   },
-  // P53(#10): 변경 내역의 백엔드 재시작 줄 이름표(터미널 줄과 나눔)
-  changeSys: {
-    backend: '앱 연결 서비스',
-  },
   emptyBoard: {
     title: '보드가 비어 있습니다',
     body: '왼쪽 위의 + 버튼으로 프로젝트 폴더를 열고, 왼쪽 도구 모음의 실행 버튼으로 세션을 시작하세요.',
@@ -2127,12 +2103,10 @@ export default {
     sumTurn: '응답 필요',
     sumWork: '작업 중',
     sumReview: '작업 완료',
-    sumRest: '쉼 · 끝남',
     sumNow: '지금: {text}',
     sumNone: '없음',
     hint: '가는 실선은 하위 세션이나 역할, 점선은 요청이나 다른 프로젝트입니다. 세션을 가리키면 그 세션의 연결만 보입니다.',
     edgeTip: '@{from} → @{to}',
-    restHidden: '외 {n}개',
     noModel: '셸',
   },
   // P98: 위 바의 묶음 칩(폴더로 자동 묶은 그룹이나 직접 만든 그룹)
@@ -2354,12 +2328,6 @@ export default {
     worker: '워커',
     head: '헤드',
   },
-  // P141(#17): 미션 맵 바닥 줄(수마다 따로)
-  mmFoot: {
-    work: '작업 중 {n}',
-    sessions: '세션 {n}',
-    teams: '팀 {n}',
-  },
   // P142: 명령 바의 받는 세션 칩
   cmdTo: {
     label: '받는 세션',
@@ -2575,9 +2543,7 @@ export default {
     hide: '상태 열 숨기기',
     show: '상태 열 보기',
     itemTip: '클릭하면 이 카드로 이동합니다.',
-    // P179: 쉼 · 끝남 머리 옆의 작은 구분, 세션 맵 선 읽는 법(열 바닥)
-    splitSleep: '절전 {n}',
-    splitDone: '종료 {n}',
+    // P179: 세션 맵 선 읽는 법(P347: 범례의 풀이 title)
     hint: '초록 선은 하위 세션, 파란 파선은 역할, 주황 선은 요청, 보라 점선은 다른 워크스페이스로 가는 선입니다. 양 끝에 점이 있으면 동료, 흐린 점선은 독립한 세션이 나온 곳입니다.',
   },
   // P175: 세션을 이을 때·선 기록에서 고르는 관계(하위 / 동료)
@@ -3008,30 +2974,24 @@ export default {
     perHourSet: '할 일 정리: 시간당 {n}번까지',
     bad: { mode: '켬, 끔 가운데 고르세요', effort: '목록에서 노력을 고르세요', kind: '목록에서 하네스를 고르세요', model: '모델 이름은 글자, 숫자, . _ : / [ ] -만 씁니다', key: '모르는 설정입니다', perHour: '0~600 사이의 정수를 넣으세요' },
   },
-  // P314: 사용량 직접 묻기(값이 낡으면 하네스의 사용량 명령으로 묻는다), 펼침 아래쪽 줄(Hermes, 키로 읽는 잔액)
+  // P314: 사용량 직접 묻기(값이 낡으면 하네스의 사용량 명령으로 묻는다), 펼침 아래쪽 줄(키로 읽는 잔액). P347: Hermes 사용량은 걷었다
   usageProbe: {
     probing: '묻는 중…',
-    mergedWith: '{names}도 같은 ChatGPT 계정을 씁니다(같은 값).',
     extrasHead: '그 밖',
     balanceName: '{name} 잔액',
     balance: '{n} {cur}',
     source: {
       'probe:codex': '출처: codex app-server에 직접 물음',
       'probe:claude': '출처: claude /usage에 직접 물음',
-      'probe:hermes': '출처: hermes usage에 직접 물음',
       'probe:balance': '출처: 잔액 API(secret-run)',
     },
     name: '사용량 직접 묻기',
-    hint: '값이 낡으면 Codex·Hermes는 주기적으로, Claude와 키로 읽는 잔액은 사용량 알약을 펼칠 때 각 도구의 사용량 명령으로 묻습니다. 그 종류의 세션이 일하는 중이면 묻지 않습니다.',
+    hint: '값이 낡으면 Codex는 주기적으로, Claude와 키로 읽는 잔액은 사용량 알약을 펼칠 때 각 도구의 사용량 명령으로 묻습니다. 그 종류의 세션이 일하는 중이면 묻지 않습니다.',
     setOn: '사용량 직접 묻기를 켰습니다.',
     setOff: '사용량 직접 묻기를 껐습니다.',
     minName: '묻는 간격(분)',
     minHint: '마지막 값이 이보다 오래되면 다시 묻습니다.',
     minSet: '사용량 묻는 간격: {n}분',
-    hermesName: 'Hermes 사용량',
-    hermesHint: '보드에 Hermes 세션이 없어도 hermes usage로 Hermes 계정 한도를 묻습니다. Codex와 같은 계정으로 확인되면 Codex 칸에 합쳐 보입니다.',
-    hermesSetOn: 'Hermes 사용량을 켰습니다.',
-    hermesSetOff: 'Hermes 사용량을 껐습니다.',
   },
   // P310: 사람이 정한 크기(자동 정렬이 지킨다)
   handSize: {
@@ -3298,5 +3258,17 @@ export default {
       guardLowerPriorityOn: '보드의 세션을 보통 이하 우선순위로 실행합니다.', guardLowerPriorityOff: '보드의 세션을 보통 우선순위로 되돌렸습니다.',
       guardDetectOn: '폭주 감지를 켰습니다.', guardDetectOff: '폭주 감지를 껐습니다.',
     },
+  },
+  // P347: 위 오른쪽 세션 맵 단추(점 옆 글), 세션 맵 오른쪽 아래 선 범례
+  mapPill: {
+    label: '세션 맵',
+  },
+  mmLegend: {
+    spawn: '하위',
+    role: '역할',
+    prompt: '요청',
+    cross: '다른 워크스페이스',
+    peer: '동료',
+    lineage: '독립',
   },
 };

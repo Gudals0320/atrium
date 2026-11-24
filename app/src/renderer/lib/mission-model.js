@@ -230,18 +230,12 @@ export function missionSummary(ids, tierOfId) {
 
 // P179: 요약 열(옛 열 지도 P95와 세션 맵 Lineage가 같이 쓴다, SummaryColumn.jsx). missionSummary 위에
 // - 응답 필요 안은 응답 필요가 오류보다 먼저(그 밖은 맵 차례)
-// - 쉼 · 끝남 묶음은 이름을 이은 짧은 글: 쉼 → 절전 중 → 종료 차례(같은 등급 안은 맵 차례), 앞의 restMax개만 보이고 나머지는 "+n개 더"
-// → missionSummary 결과 + { restShown, restHidden, restSplit: { rest, sleep, done } }
-export const REST_MAX = 24;
+// - 쉼 · 끝남(rest)은 쉼 → 절전 중 → 종료 차례(같은 등급 안은 맵 차례). P347: 요약 열에 그 묶음은 보이지 않는다(수 counts만 쓴다)
+// → missionSummary 결과
 const REST_RANK = { rest: 0, sleep: 1, done: 2 };
-export function summaryColumn(ids, tierOfId, { restMax = REST_MAX } = {}) {
+export function summaryColumn(ids, tierOfId) {
   const s = missionSummary(ids || [], tierOfId);
   s.turn = [...s.turn].sort((a, b) => (tierOfId(a) === 'turn' ? 0 : 1) - (tierOfId(b) === 'turn' ? 0 : 1));
   s.rest = [...s.rest].sort((a, b) => (REST_RANK[tierOfId(a)] ?? 0) - (REST_RANK[tierOfId(b)] ?? 0));
-  s.restShown = s.rest.slice(0, restMax);
-  s.restHidden = Math.max(0, s.rest.length - restMax);
-  const split = { rest: 0, sleep: 0, done: 0 };
-  for (const id of s.rest) { const t = tierOfId(id); split[t === 'sleep' || t === 'done' ? t : 'rest']++; }
-  s.restSplit = split;
   return s;
 }
