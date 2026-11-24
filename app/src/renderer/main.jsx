@@ -279,7 +279,7 @@ function boot() {
   if (isWeb && phoneScreen()) {
     const ph = () => document.querySelector('[data-role=phone]');
     startPhoneTelemetry({ api, boot: bootState(), steps: crumbSteps,
-      context: () => { const el = ph(); const id = history.state && history.state.mtPhone; const s = id ? getState().sessions.get(id) : null; return { view: el ? el.dataset.view : 'other', session: s ? s.name : null }; },
+      context: () => { const el = ph(); const id = history.state && history.state.mtPhone; const s = id ? getState().sessions.get(id) : null; return { view: el ? el.dataset.view : 'loading', session: s ? s.name : null }; },
       versions: () => ({ app: api.info && api.info.appVersion, board: getState().compat && getState().compat.version }) });
   }
   api.connect();

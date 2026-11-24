@@ -11,7 +11,8 @@ export const ERROR_KINDS = ['err', 'rej', 'api', 'send', 'ws'];
 export const TELE_LINE_MAX = 2048;
 export const TELE_BATCH_MAX = 50; // 한 번에 받는 줄
 export const TELE_BOOT_MAX = 200; // 부팅마다 받는 줄
-export const SNAP_NEAR_MS = 3 * 60_000; // 오류 묶음에 붙일 상황 기록을 찾는 범위
+export const SNAP_NEAR_MS = 3 * 60_000;
+const STEPS_SHOWN = 4; // CLI 표에 보이는 마지막 단계 수(--json은 다) // 오류 묶음에 붙일 상황 기록을 찾는 범위
 const CODE = /^[A-Za-z0-9_.:$-]{1,48}$/;
 const code = (v) => (v == null || v === '' ? null : CODE.test(String(v)) ? String(v) : 'other');
 const clip = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -71,7 +72,7 @@ export function errorSummary(entries, { since = 0, limit = 20 } = {}) {
     if (!ERROR_KINDS.includes(t.k)) continue;
     const key = teleKey(t);
     let g = groups.get(key);
-    if (!g) { g = { k: t.k, m: t.m || null, code: t.code || null, msg: t.msg || null, src: t.src || null, count: 0, devices: new Set(), first: e.at, last: e.at, lastDevice: null }; groups.set(key, g); }
+    if (!g) { g = { k: t.k, m: t.m || null, code: t.code || null, msg: t.msg || null, src: t.src || null, count: 0, devices: new Set(), first: e.at, last: e.at, lastDevice: e.deviceId || null }; groups.set(key, g); }
     g.count += t.n || 1;
     g.devices.add(e.deviceName || e.deviceId || '?');
     g.first = Math.min(g.first, t.at || e.at);
@@ -111,7 +112,7 @@ export function ctxLabel(c) {
   if (c.why) p.push(snapText(c.why));
   if (c.view) p.push(`화면 ${c.view}`);
   if (c.sess) p.push(`세션 ${c.sess}`);
-  if (c.conn) p.push(`연결 ${c.conn.ph}${c.conn.rtt ? ` ${c.conn.rtt}` : ''}${c.conn.cl ? ` 끊김 ${c.conn.cl}번` : ''}${c.conn.lc ? ` 마지막 ${c.conn.lc}` : ''}`);
+  if (c.conn) p.push(`연결 ${c.conn.ph}${c.conn.rtt ? ` ${/^\d+$/.test(c.conn.rtt) ? `${c.conn.rtt}ms` : c.conn.rtt}` : ''}${c.conn.cl ? ` 끊김 ${c.conn.cl}번` : ''}${c.conn.lc ? ` 마지막 ${c.conn.lc}` : ''}`);
   if (c.dn != null) p.push(`끊겨 있던 ${Math.round(c.dn / 1000)}s`);
   if (c.boot && c.boot.why) p.push(`부팅 ${c.boot.why}${c.boot.lite ? ' 가볍게' : ''}`);
   if (c.app || c.board) p.push(`버전 ${c.app || '?'}/${c.board || '?'}`);
@@ -125,12 +126,15 @@ export function formatErrors(s, { sinceText = '' } = {}) {
   const why = Object.entries(s.boots.why).map(([k, v]) => `${k} ${v}`).join(', ');
   if (why) L.push(`  다시 열림 까닭: ${why}`);
   if (!s.groups.length) L.push('  오류·실패 없음');
+  const shown = new Set(); // 이미 자세히 보인 상황 기록(같은 것은 한 줄로)
   for (const g of s.groups) {
     const head = [kindText(g.k), g.m, g.code, g.msg ? `"${g.msg}"` : null, g.src].filter(Boolean).join(' ');
     L.push(`- ${head}  ×${g.count}  ${when(g.first)}~${when(g.last)}  ${g.devices.join(', ')}`);
+    if (g.ctx && shown.has(g.ctx.at)) { L.push(`    상황: 위와 같음(${when(g.ctx.at)} ${snapText(g.ctx.why)})`); continue; }
     if (g.ctx) {
+      shown.add(g.ctx.at);
       L.push(`    상황: ${ctxLabel(g.ctx)}`);
-      if (g.ctx.steps) L.push(`    단계: ${stepsLabel(g.ctx.steps)}`);
+      if (g.ctx.steps) L.push(`    단계: ${stepsLabel(g.ctx.steps.slice(-STEPS_SHOWN))}`);
       if (g.ctx.bytes) L.push(`    받은 크기: ${bytesLabel(g.ctx.bytes)}`);
       if (g.ctx.prev) L.push(`    닫히기 전: ${crashLabel(g.ctx.prev)}`);
     }
