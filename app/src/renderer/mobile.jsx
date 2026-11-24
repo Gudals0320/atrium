@@ -1,5 +1,5 @@
 // P353: 휴대폰 전용 간소 페이지의 시작점(boot.js가 휴대폰이면 이것을, 아니면 판 화면 main.jsx를 읽는다).
-// 판 화면의 무거운 모듈(캔버스, xterm, 세션 맵)은 이 묶음에 없다. "전체 맵"을 열 때만 fullmap.js를 읽는다
+// 판 화면의 무거운 모듈(캔버스, xterm, 판 store)은 이 묶음에 없다. P356: 맵 탭은 열 때만 MobileMap.jsx 조각과 mobilemap.css를 읽는다
 import './fonts.css';
 import './tokens.css';
 import { createRoot } from 'react-dom/client';

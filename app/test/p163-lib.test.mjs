@@ -113,7 +113,7 @@ test('휴대폰: 같은 판정(얇은 줄 표시, 깨어 있는 카드 아래로
 });
 
 test('창 연결: PC 카드가 얇은 줄을 그리고 휴대폰은 같은 카드(Card)를 쓴다, CSS가 있다', () => {
-  const pc = read('MissionLineage.jsx'), ph = read('PhoneMap.jsx');
+  const pc = (read('MissionLineage.jsx') + read('MapCard.jsx')), ph = read('PhoneMap.jsx');
   assert.match(pc, /b\.thin \? <span className="mt-sm-thin" data-role="ta-thin">/);
   assert.match(pc, /onDoubleClick=\{\(\) => onOpen\(id, true\)\}/, '얇은 줄도 같은 카드 판(누르기·더블클릭·미리보기)');
   assert.match(ph, /import \{ Card, Peek, cardFacts \} from '\.\/MissionLineage\.jsx'/);

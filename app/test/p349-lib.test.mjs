@@ -56,7 +56,7 @@ test('가만히일 때만 빛 층을 따로 합성 층으로: 움직이는 동�
 });
 
 test('세션 맵(PC)은 움직이는 동안 data-moving을 달고 160ms 뒤 뗀다(빛은 CSS가, holdLights 없음). 휴대폰은 그대로', () => {
-  const s = fs.readFileSync(path.join(SRC, 'MissionLineage.jsx'), 'utf8');
+  const s = fs.readFileSync(path.join(SRC, 'MissionLineage.jsx'), 'utf8') + fs.readFileSync(path.join(SRC, 'MapCard.jsx'), 'utf8'); /* P356: 카드는 MapCard.jsx로 옮겼다 */
   assert.match(s, /root\.dataset\.moving = '1'/);
   assert.match(s, /delete root\.dataset\.moving;[^}]*\}, 160\)/);
   assert.doesNotMatch(s, /holdLights\(|import \{ holdLights/);
@@ -66,6 +66,6 @@ test('세션 맵(PC)은 움직이는 동안 data-moving을 달고 160ms 뒤 뗀�
 });
 
 test('빛 고리가 다시 보이면 박자를 맞추는 고리(onLightStart)는 빛 층에 그대로 있다', () => {
-  const m = fs.readFileSync(path.join(SRC, 'Mission.jsx'), 'utf8');
+  const m = fs.readFileSync(path.join(SRC, 'Mission.jsx'), 'utf8') + fs.readFileSync(path.join(SRC, 'MapCard.jsx'), 'utf8'); /* P356: 카드는 MapCard.jsx로 옮겼다 */
   assert.match(m, /className="mt-mm-light"[^>]*onAnimationStart=\{onLightStart\}/);
 });

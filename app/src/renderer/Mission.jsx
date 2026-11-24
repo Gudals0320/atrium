@@ -26,7 +26,7 @@ import { roleModel, focusOf, teamText, roleText, nodeTier, filterMatch, FILTERS,
 import { STATE_LABEL, shellProgram, shellStateText } from './lib/labels.js'; // P309: 셸에서 실행 중인 프로그램
 import { useT, errText, fmtTime } from './lib/i18n.js';
 import { KindIcon } from './SessionNode.jsx';
-import { onLightStart } from './lib/work-light.js';
+import { MissionLight, DoneMark } from './MapCard.jsx'; // P356
 import { missionStyleOf } from './lib/mission-terr.js';
 import { LineageMap } from './MissionLineage.jsx';
 import { SummaryColumn } from './SummaryColumn.jsx';
@@ -90,16 +90,8 @@ function Avatar({ kind, tier, shell, small }) {
 
 // P107: 테두리를 따라 도는 빛 층(휴대폰 PhoneMission.jsx도 쓴다). 가리개 하나(.mt-mm-lring: 2px 고리와 그 둘레 옅은 빛 무리)가 가로로 늘린 감싸개(.mt-mm-lspin) 안의
 // 원뿔을 돌린다(가리개를 둘로 나누면 카드마다 렌더 패스가 둘이라 GPU 값이 두 배였다, 작업 기록). 설정이 끔이거나 가벼운 판이면 CSS가 숨기고 층이 멈춘 굵은 테두리가 된다
-export function MissionLight({ role }) {
-  return (
-    <span className="mt-mm-light" data-role={role} aria-hidden="true" onAnimationStart={onLightStart}>
-      <i className="mt-mm-lring"><i className="mt-mm-lspin" /></i>
-    </span>
-  );
-}
-
-// P119: 작업 완료 카드의 끝 표식(위 가장자리 꼬리표 안의 체크). 색만으로 가르지 않게 모양과 글을 함께 둔다(휴대폰 PhoneMission.jsx도 같은 모양)
-export const DoneMark = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3 5 8.7 9.6 3.6" /></svg>;
+// P356: MissionLight·DoneMark는 MapCard.jsx로 옮겼다(휴대폰 페이지 맵 탭도 쓴다)
+export { MissionLight, DoneMark };
 
 function Node({ b, live, m, tier, t, now, no, human, hot, recede, dim, onGo, onHot }) {
   const n = b.node;

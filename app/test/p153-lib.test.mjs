@@ -176,7 +176,7 @@ test('P153: 카드 누르기 = 명령줄 태그 넣기·빼기(여럿), 앞머�
 });
 
 test('P153: 세션 맵은 살펴보기 띠·단계·미니맵·범례가 없고, 누르기 = 태그, 더블클릭·Enter = 판으로, 섬 머리 끌기 = group.move', () => {
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   for (const gone of ['ta-inspect', 'ta-minimap', 'ta-legend', 'ta-level-', 'ta-open', 'ta-message']) assert.ok(!src.includes(gone), `${gone}가 남았다`);
   assert.match(src, /onClick=\{\(e\) => onTag\(id, e\)\}/);
   assert.match(src, /onDoubleClick=\{\(\) => onOpen\(id, true\)\}/);
@@ -226,7 +226,7 @@ test('P153 r2: 휴대폰 지도는 폭(maxW) 안에 들고 타일에 이름이 �
   for (let i = 0; i < pt.tiles.length; i++) for (let j = i + 1; j < pt.tiles.length; j++) assert.ok(!overlap(box(pt.tiles[i]), box(pt.tiles[j])));
 });
 test('P153 r2: 카드 맨 아래 줄은 다른 워크스페이스에서 온 것만, 작업 완료는 한 번, 위 줄 도움말은 명령줄 안내로', () => {
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(src, /const more = \[cross && parentWs \? relText : null, \.\.\.extra\]/);
   assert.match(src, /done \? \(f\.age \?/, '보통 단계 상태 칸은 작업 완료면 시간만');
   assert.ok(!src.includes("t('mmTerr.hint')"), '위 줄 도움말 없음');
@@ -339,7 +339,7 @@ test('P153 r6·r7: 판 ↔ 세션 맵 전환 때 명령줄 — 태그만이면 �
   // 더블클릭: 첫 클릭이 태그를 넣으면(toggleTag) 더블클릭이 같은 이름으로 한 번 더 바꿔 되돌린다(MissionLineage.jsx go)
   assert.equal(toggleTag(toggleTag('hello', 'x'), 'x'), 'hello');
   assert.equal(toggleTag(toggleTag('@x hi', 'x'), 'x'), '@x hi');
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(src, /if \(e && e\.detail > 1\) return;/, '둘째 클릭은 태그를 바꾸지 않는다');
   assert.match(src, /if \(dbl && b && lt && lt\.id === id && Date\.now\(\) - lt\.at < 800\) commandDraft\.dispatchEvent\(new CustomEvent\('tag'/, '더블클릭은 첫 클릭 태그를 되돌린다');
   assert.match(read('CommandBar.jsx'), /setText\(\(cur\) => switchText\(cur\)\)/, '열고 닫을 때 switchText');
@@ -355,7 +355,7 @@ test('P153 r8: 폴더 띠 사이는 띄우고, 선 이름표는 없고, 선 끝�
   assert.ok(working.length > 0);
 });
 test('P153 r8: 미리 보기·작업 완료·배경 점(소스)', () => {
-  const src = read('MissionLineage.jsx'), css = read('styles.css');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx')), css = read('styles.css');
   assert.match(src, /const HOVER_MS = 500/);
   assert.match(src, /awake \? api\.call\('terminal\.snapshot', \{ session: sid, format: 'text' \}\)/, '터미널은 깨어 있을 때만, 지금 화면만(terminal.snapshot = visible)');
   assert.match(src, /if \(pvRef\.current\) \{ pvRef\.current = null; setPv\(null\); \}/, '끌거나 확대하면 비킨다');
@@ -369,7 +369,7 @@ test('P153 r8: 미리 보기·작업 완료·배경 점(소스)', () => {
 
 // ---- 라운드 9: 앱 사이드바를 같이 쓴다 ----
 test('P153 r9: 세션 맵 목차 레일 없음, 사이드바 줄 누르기는 세션 맵(열렸을 때) 또는 판으로, 접기는 화살표로만, 반짝임은 판 설정을 따른다', () => {
-  const sb = read('Sidebar.jsx'), mm = read('MissionLineage.jsx'), css = read('styles.css');
+  const sb = read('Sidebar.jsx'), mm = (read('MissionLineage.jsx') + read('MapCard.jsx')), css = read('styles.css');
   assert.ok(!/ln-rail|mt-sm-rail/.test(mm) && !/mt-sm-rail/.test(css), '목차 레일 없음');
   assert.match(mm, /const RAIL = 0;/);
   assert.match(mm, /st\.mapFocus = \{\s*\n\s*session: /, '세션 맵이 사이드바 길을 연다');
@@ -410,7 +410,7 @@ test('P153 r11: 칸은 시작 · 1단계 · …(P260: 칸 머리 띠·솔로 칸
   assert.equal(open.cards.get('s:d4').fold, 0);
   assert.equal(open.cards.get('s:d6').x, lvX(open, 6), '편 가지는 끝(6단계)까지');
   for (const k of ['colLead', 'colWorkers', 'colNext', 'colWs', 'colRoot', 'colLevel', 'colSolo']) assert.ok(!(k in ko.mmLine) && !(k in en.mmLine), `${k}는 없앴다`);
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(src, /data-action="ln-fold"/); assert.match(src, /localStorage\.setItem\(EXP_KEY/, '편 가지는 기억한다');
 });
 
@@ -428,7 +428,7 @@ test('P153 r11: 동료는 같은 칸에 붙어 쌓이고 양끝 점 선(화살�
   assert.equal(ind.cards.get('s:d4').x, lvX(ind, 1), '하위는 함께 따라간다');
   const le = ind.edges.find((e) => e.lineage);
   assert.ok(le && le.from === 's:d2' && le.to === 's:d3' && le.rel === 'lineage' && !le.cross, '계보는 옅은 선으로만');
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(src, /mt-sm-end-peer/); assert.match(src, /markerStart=\{e\.peer \? tip/); assert.match(src, /e\.lineage \? undefined/);
 });
 
@@ -470,7 +470,7 @@ test('P153 r11: Alt+카드 끌기 — 오른쪽 = 하위로, 위아래 = 동료�
   for (let y = row.y + 10; y < row.y + row.h && !none; y += 10) { const d = relationDrop(lay, 's:d3', col0 + 30, y); if (d && d.kind === 'none') none = d; }
   assert.ok(none, '빈 시작 칸이 있다');
   assert.deepEqual(relationCall(lay, 's:d3', none), { a: 'x-d2', b: 'x-d3', relation: 'none' });
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(src, /api\.call\('relation\.set', call\)/); assert.match(src, /e.code === 'cycle'/); assert.doesNotMatch(src, /unknown_method|relStub/, 'r12: 흉내 길은 없앴다'); assert.match(src, /mode: 'card'/);
   assert.match(src, /e\.altKey && e\.pointerType === 'mouse'/, 'Alt 없이 끌면 시점 이동');
   assert.match(src, /mt-sm-grab/, '줄을 잡는 자리는 워크스페이스 칸 빈 곳까지');
@@ -490,7 +490,7 @@ test('P153 r12: 하위가 있는 리드와 그 동료(하위 없음)도 바로 �
   const d1 = lay.cards.get('s:d1');
   const below = relationDrop(lay, 's:d3', d1.x + 30, d1.y + d1.h + 20);
   assert.equal(below.kind, 'peer'); assert.equal(below.target, 's:d1');
-  const src = read('MissionLineage.jsx');
+  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
   assert.match(src, /api\.on\('relation\.updated'/, '다른 곳에서 바뀐 관계도 다시 읽는다');
   assert.doesNotMatch(src, /api\.call\('session\.detach'/, '계보는 사실: 떼지 않는다');
 });

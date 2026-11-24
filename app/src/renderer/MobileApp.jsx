@@ -1,16 +1,16 @@
 // P353: 휴대폰 전용 간소 페이지. 옛 휴대폰 화면(Phone.jsx: 세션 맵 캔버스, xterm 터미널)을 바꾼다. 무거운 모듈(캔버스, xterm, 세션 맵)은 들이지 않는다.
-// - 아래 탭: 홈(수, 응답 필요 카드와 번호 단추, 할 일 카드, 작업 완료), 세션(찾기, 고정, 워크스페이스 묶음, 잠든 세션 접기), 맵(관계 나무, "전체 맵"은 옛 휴대폰 맵을 늦게 읽는다)
+// - 아래 탭: 홈(수, 응답 필요 카드와 번호 단추, 할 일 카드, 작업 완료), 세션(찾기, 고정, 워크스페이스 묶음, 잠든 세션 접기), 맵(P356: 판 세션 맵과 같은 모양, MobileMap.jsx를 늦게 읽는다)
 // - 세션 화면: 기다리는 요청, 마지막 답(마크다운), 지시, 터미널 끝 줄(글), 기록 더 보기, 빠른 키(Esc Enter ↑ ↓ 1 2 3 y n), 입력(대기열·스티어링·음성), 대기 글
 // - 자료는 mobile-store.js(phone.subscribe의 작은 줄과 이벤트). 세션 화면은 phone.session을 열 때와 그 줄이 바뀔 때 다시 받는다
 // - 글자 크기는 옛 휴대폰 화면의 값(mt.phoneTermScale)을 페이지 전체에 쓴다. 키보드가 열리면 보이는 높이(visualViewport)에 맞춘다
 // - 알림을 누르면 그 세션 화면을 바로 연다(push.js setOpenHandler, ?open=)
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast } from './store.js';
 import { useMobile, getMobile, call, putDeliveries, setCardsLocal, noteFail } from './mobile-store.js';
 import { useT, errText } from './lib/i18n.js';
 import { STATE_LABEL, deliveryText, shellStateText } from './lib/labels.js';
-import { homeOf, listOf, treeOf, toneOf, needsYou, isDone, QUICK_KEYS, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, TREE_LIMIT, togglePin, readList, detailStale, mergeHistory, choiceButtons, shortChoice, uiFactor } from './lib/mobile.js';
+import { homeOf, listOf, toneOf, needsYou, isDone, QUICK_KEYS, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, togglePin, readList, detailStale, mergeHistory, choiceButtons, shortChoice, uiFactor } from './lib/mobile.js';
 import { keyQueue, sendPlan, nextNeed, screenBox, kbOpenOf } from './lib/phone.js';
 import { steerBlock } from './lib/steer.js';
 import { activeCards, snoozeTimes } from './lib/decisions.js';
@@ -23,6 +23,9 @@ import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js';
 import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx';
 import { markInteracted, enterSession } from './touch.js';
 import { setDraftSource, takeSavedDraft } from './shell-update.js';
+import { cardFacts, DoneMark, ST } from './MapCard.jsx'; // P356: 줄·카드 얼굴은 판 세션 맵 카드와 같은 함수
+import { nodeTier } from './lib/mission-model.js';
+import { liveFromRow, todoCounts } from './lib/mobile-map.js';
 import './phone.css';
 import './mobile.css';
 
@@ -57,6 +60,31 @@ function lineText(t, s) {
   return l.text || '';
 }
 
+// P356: 세션 얼굴(홈·세션 목록의 줄과 카드). 판 세션 맵 카드와 같은 등급(nodeTier)·사실(cardFacts)·상태 색(st-*)·하네스 표시를 쓴다
+const IDLE_TIERS = new Set(['rest', 'sleep', 'done']);
+function faceOf(t, s, now) {
+  const live = liveFromRow(s);
+  const n = { name: s.name, agentKind: s.kind, state: s.state };
+  const tier = nodeTier(n, live);
+  return { tier, st: ST[tier] || 'ready', f: cardFacts(n, live, null, tier, t, now), idle: IDLE_TIERS.has(tier) };
+}
+const TodoIcon = () => <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 3h.6M4.4 3H10M2 6h.6M4.4 6H10M2 9h.6M4.4 9H10" /></svg>;
+// 첫 줄: 이름 · 상태(점과 글, 상태 색) · 지난 시간(판 세션 맵 카드 c1과 같다)
+function FaceTop({ s, face, extra = null }) {
+  const { f, tier } = face;
+  const done = tier === 'review';
+  return <span className="c1"><span className="cname" data-role="mp-name">{s.name}</span>{extra}<span className="cst" data-role="mp-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span></span>;
+}
+// 둘째 줄: 하네스 표 · 하네스 · 모델(판 세션 맵 카드 c2와 같다)
+const FaceMeta = ({ face, children = null }) => <span className="c2" data-role="mp-meta"><span className="hb">{face.f.k.mark}</span><span>{face.f.harness}</span>{face.f.model ? <><span className="dotsep">/</span><span>{face.f.model}</span></> : null}{children}</span>;
+// 오른쪽 위 꼬리표 무리: 할 일 배지 위, 작업 완료 꼬리표(판 세션 맵 카드와 같은 차례·색)
+function FaceTags({ t, face, todo = 0 }) {
+  const done = face.tier === 'review';
+  if (!todo && !done) return null;
+  return <span className="mt-mp-tags" data-role="mp-tags">{todo ? <span className="mt-mp-todotag" data-role="mp-todo-badge" data-count={todo}><TodoIcon />{t('mapTodo.badge')}{todo > 1 ? <b>{todo}</b> : null}</span> : null}{done ? <span className="mt-mp-donetag" data-role="mp-done"><DoneMark />{t('doneMark.tag')}</span> : null}</span>;
+}
+const faceCls = (face) => ` st-${face.st}${face.f.shell ? ' shell' : ''}${face.idle ? ' idle' : ''}`;
+
 // 연결 알약(짧은 끊김에는 바꾸지 않는다)
 function Conn() {
   const t = useT();
@@ -81,7 +109,6 @@ export function MobileApp() {
   const [open, setOpen] = useState(() => (history.state && history.state.mtMobile) || null);
   const [spawn, setSpawn] = useState(false);
   const [push, setPush] = useState(false);
-  const [full, setFull] = useState(false);
   const [scale, setScale] = useState(readScaleNow);
   const fs = uiFactor(scale);
 
@@ -141,7 +168,7 @@ export function MobileApp() {
               {!loaded ? <div className="mt-mp-empty">{t('app.connecting')}</div>
                 : tab === 'home' ? <Home home={home} onOpen={go} onTab={(k, f) => { setFilter(f || null); setTab(k); }} />
                 : tab === 'sessions' ? <Sessions filter={filter} setFilter={setFilter} onOpen={go} />
-                : <MapTab onOpen={go} onFull={() => setFull(true)} />}
+                : <MapTab onOpen={go} />}
               {loaded && <span data-role="mp-ready" hidden />}
             </div>
             <nav className="mt-mp-tabs" role="tablist">
@@ -155,7 +182,6 @@ export function MobileApp() {
         )}
       {spawn && <SpawnSheet onClose={() => setSpawn(false)} onStarted={(id) => { setSpawn(false); go(id); }} />}
       {push && <PushSheet onClose={() => setPush(false)} />}
-      {full && <FullMap onClose={() => setFull(false)} onOpen={(id) => { setFull(false); go(id); }} />}
       {api.conn && api.conn.phase === 'blocked' && <div className="mt-mp-cover-all" data-role="mp-blocked"><p>{t('phone.connBlocked')}</p></div>}
       {toastsView}
     </div>
@@ -171,6 +197,7 @@ function Home({ home, onOpen, onTab }) {
   const active = activeCards(cards);
   const later = cards.length - active.length;
   const [allRead, setAllRead] = useState(false);
+  const todo = useMemo(() => todoCounts(cards), [cards]);
   return (
     <div data-role="mp-home">
       <div className="mt-mp-tiles">
@@ -179,14 +206,14 @@ function Home({ home, onOpen, onTab }) {
         ))}
       </div>
       {home.needs.length > 0 && <div className="mt-mp-sec need"><h2>{t('mobile.count_need')}</h2><b>{home.needs.length}</b></div>}
-      {home.needs.map((s) => <NeedCard key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} />)}
+      {home.needs.map((s) => <NeedCard key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} todo={todo.get(s.sessionId) || 0} />)}
       <div className="mt-mp-sec"><h2>{t('mobile.todo')}</h2><b>{active.length}</b>{later > 0 && <><span className="mt-mp-sp" /><span className="mt-mp-dimnote">{t('mobile.later', { n: later })}</span></>}</div>
       {!active.length && <div className="mt-mp-empty small">{t('mobile.noTodo')}</div>}
       {active.map((d) => <TodoCard key={d.id} d={d} now={now} cards={cards} />)}
       {home.done.length > 0 && (
         <>
           <div className="mt-mp-sec"><h2>{t('mobile.done')}</h2><b>{home.done.length}</b><span className="mt-mp-sp" /><button type="button" data-action="mp-read-all" disabled={allRead} onClick={() => { setAllRead(true); Promise.all(home.done.map((s) => call('session.markSeen', { session: s.sessionId }).catch(() => 0))).finally(() => setAllRead(false)); }}>{t('mobile.readAll')}</button></div>
-          {home.done.slice(0, 8).map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} showWs />)}
+          {home.done.slice(0, 8).map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} showWs todo={todo.get(s.sessionId) || 0} />)}
         </>
       )}
     </div>
@@ -194,8 +221,9 @@ function Home({ home, onOpen, onTab }) {
 }
 
 // 응답 필요 카드: 요청 보기의 번호 단추, Esc, 열기. 누른 키는 session.keys로 그 패널에(어느 하네스든 같다)
-function NeedCard({ s, ws, now, onOpen }) {
+function NeedCard({ s, ws, now, onOpen, todo = 0 }) {
   const t = useT();
+  const face = faceOf(t, s, now);
   const [busy, setBusy] = useState(false);
   const press = (k) => { if (busy) return; setBusy(true); markInteracted(s.sessionId); call('session.keys', { session: s.sessionId, keys: [k] }, { kind: 'keys' }).catch((e) => { if (e.code !== 'disconnected') toast(t('phoneKeys.failed', { error: errText(e) }), 'error'); }).finally(() => setTimeout(() => setBusy(false), 400)); };
   const a = s.ask;
@@ -203,8 +231,9 @@ function NeedCard({ s, ws, now, onOpen }) {
   const title = s.state === 'trust_wait' ? t('phone.ask_trust') : a && a.kind === 'permission' ? t('phone.ask_permission', { tool: a.tool || '' }) : a && a.question ? a.question : t(`phone.ask_${(s.line && s.line.key) || 'screen'}`);
   const sub = s.line && s.line.text;
   return (
-    <div className="mt-mp-card need" data-role="mp-need" data-name={s.name}>
-      <div className="mt-mp-card-top"><span className="mt-mp-dot" data-tone={toneOf(s)} /><span className="who">{s.name}</span><span>· {wsNameOf(ws, s.workspaceKey)}</span><span className="when">{ago(t, s.waitingSince || (a && a.since), now)}</span></div>
+    <div className={'mt-mp-card need mt-mp-face' + faceCls(face)} data-role="mp-need" data-name={s.name} data-tier={face.tier}>
+      <FaceTags t={t} face={face} todo={todo} />
+      <div className="mt-mp-face-in"><FaceTop s={s} face={face} /><FaceMeta face={face}><span className="dotsep">/</span><span>{wsNameOf(ws, s.workspaceKey)}</span></FaceMeta></div>
       <div className="mt-mp-q">{title}</div>
       {sub && <div className="mt-mp-sub">{sub}</div>}
       <div className="mt-mp-acts">
@@ -228,8 +257,8 @@ function TodoCard({ d, now, cards }) {
   const st = snoozeTimes(now);
   const kindKey = d.kind === 'decide' ? 'decide' : d.kind === 'check' ? 'check' : 'do';
   return (
-    <div className="mt-mp-card" data-role="mp-todo" data-id={d.id} data-kind={d.kind}>
-      <div className="mt-mp-card-top"><span className="kind" data-k={kindKey}>{t(`mobile.kind_${kindKey}`)}</span><span className="who">{d.name}</span><span className="when">{ago(t, d.createdAt, now)}</span></div>
+    <div className={`mt-mp-card mt-mp-todo k-${kindKey}`} data-role="mp-todo" data-id={d.id} data-kind={d.kind}>
+      <div className="mt-mp-todo-line"><span className="nm">@{d.name}</span><span className={`kind k-${kindKey}`} data-k={kindKey}>{t(`userTasks.kind.${kindKey}`)}</span><span className="when">{ago(t, d.createdAt, now)}</span></div>
       <div className="mt-mp-q">{d.question}</div>
       {d.why && <div className="mt-mp-why">{d.why}</div>}
       <div className="mt-mp-acts">
@@ -251,19 +280,21 @@ function TodoCard({ d, now, cards }) {
   );
 }
 
-// 세션 줄 하나
-function Row({ s, ws, now, onOpen, showWs = false, pinned = false, onPin = null }) {
+// 세션 줄 하나. P356: 판 세션 맵 카드와 같은 얼굴(이름·상태 색·지난 시간 / 하네스·모델 / 지금 일·마지막 한 줄, 작업 완료·할 일 꼬리표)
+function Row({ s, ws, now, onOpen, showWs = false, pinned = false, onPin = null, todo = 0 }) {
   const t = useT();
   const need = needsYou(s);
-  const rest = s.state === 'sleeping' || s.state === 'exited';
+  const face = faceOf(t, s, now);
   const l = s.line || {};
+  const line = lineText(t, s);
   return (
-    <div className={'mt-mp-row' + (need ? ' need' : '') + (rest ? ' rest' : '')} data-role="mp-row" data-name={s.name} data-state={s.state}>
+    <div className={'mt-mp-row mt-mp-face' + (need ? ' need' : '') + faceCls(face)} data-role="mp-row" data-name={s.name} data-state={s.state} data-tier={face.tier}>
+      <FaceTags t={t} face={face} todo={todo} />
       <button type="button" className="mt-mp-row-hit" onClick={() => onOpen(s.sessionId)}>
-        <span className="mt-mp-dot" data-tone={toneOf(s)} />
-        <span className="mt-mp-row-main">
-          <span className="mt-mp-row-top"><span className="mt-mp-name">{s.name}</span>{showWs && <span className="mt-mp-tag">{wsNameOf(ws, s.workspaceKey)}</span>}<span className="mt-mp-when">{need ? stateText(t, s) : ago(t, s.lastActivityAt, now)}</span></span>
-          <span className="mt-mp-line" data-kind={l.kind}>{lineText(t, s) || stateText(t, s)}</span>
+        <span className="mt-mp-row-main mt-mp-face-in">
+          <FaceTop s={s} face={face} />
+          <FaceMeta face={face}>{showWs ? <><span className="dotsep">/</span><span>{wsNameOf(ws, s.workspaceKey)}</span></> : null}</FaceMeta>
+          {line ? <span className="c3" data-role="mp-line" data-kind={l.kind}><b>{t(`mmTerr.kind.${face.f.taskKind}`)}</b>{line}</span> : null}
         </span>
       </button>
       {onPin && <button type="button" className={'mt-mp-pin' + (pinned ? ' on' : '')} data-action="mp-pin" aria-pressed={pinned} aria-label={t(pinned ? 'mobile.unpin' : 'mobile.pin')} onClick={() => onPin(s.sessionId)}><Ic d={I.star} /></button>}
@@ -282,6 +313,8 @@ function Sessions({ filter, setFilter, onOpen }) {
   const [shut, setShut] = useState(() => new Set(readList(store(), OPEN_GROUPS_KEY)));
   const [sleepOpen, setSleepOpen] = useState(() => new Set());
   const v = useMemo(() => listOf(rows, ws, { query: q, pins, filter }), [rows, ws, q, pins, filter]);
+  const cards = useMobile((m) => m.cards);
+  const todo = useMemo(() => todoCounts(cards), [cards]);
   const pin = (id) => { const n = togglePin(pins, id); setPins(n); try { store().setItem(PINS_KEY, JSON.stringify(n)); } catch {} };
   const flip = (k) => { const n = new Set(shut); const key = String(k); if (n.has(key)) n.delete(key); else n.add(key); setShut(n); try { store().setItem(OPEN_GROUPS_KEY, JSON.stringify([...n])); } catch {} };
   const searching = !!q.trim() || !!filter;
@@ -289,7 +322,7 @@ function Sessions({ filter, setFilter, onOpen }) {
     <div data-role="mp-list">
       <div className="mt-mp-search"><input type="search" data-field="mp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('mobile.search')} autoCapitalize="off" autoCorrect="off" spellCheck={false} enterKeyHint="search" /></div>
       {filter && <div className="mt-mp-filter"><button type="button" className="mt-mp-chip" data-action="mp-filter-clear" onClick={() => setFilter(null)}>{t(`mobile.count_${filter}`)}<Ic d={I.x} s={14} /></button></div>}
-      {v.pinned.length > 0 && <><div className="mt-mp-sec"><h2>{t('mobile.pinned')}</h2><b>{v.pinned.length}</b></div>{v.pinned.map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} showWs pinned onPin={pin} />)}</>}
+      {v.pinned.length > 0 && <><div className="mt-mp-sec"><h2>{t('mobile.pinned')}</h2><b>{v.pinned.length}</b></div>{v.pinned.map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} showWs pinned onPin={pin} todo={todo.get(s.sessionId) || 0} />)}</>}
       {v.groups.map((g) => {
         const key = String(g.key);
         const closed = !searching && shut.has(key);
@@ -297,8 +330,8 @@ function Sessions({ filter, setFilter, onOpen }) {
         return (
           <section key={key} data-role="mp-group" data-ws={g.name || ''}>
             <button type="button" className="mt-mp-group" aria-expanded={!closed} onClick={() => flip(key)}><Ic d={I.chev} /><span>{g.name || t('phone.noRepo')}</span>{g.need > 0 && <span className="mt-mp-dot" data-tone="waiting" />}<span className="n">{g.total}</span></button>
-            {!closed && g.live.map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} pinned={v.pinSet.has(s.sessionId)} onPin={pin} />)}
-            {!closed && g.sleeping.length > 0 && (showSleep ? g.sleeping.map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} pinned={v.pinSet.has(s.sessionId)} onPin={pin} />)
+            {!closed && g.live.map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} pinned={v.pinSet.has(s.sessionId)} onPin={pin} todo={todo.get(s.sessionId) || 0} />)}
+            {!closed && g.sleeping.length > 0 && (showSleep ? g.sleeping.map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} pinned={v.pinSet.has(s.sessionId)} onPin={pin} todo={todo.get(s.sessionId) || 0} />)
               : <button type="button" className="mt-mp-more" data-action="mp-show-sleeping" onClick={() => setSleepOpen((x) => new Set([...x, key]))}>{t('mobile.showSleeping', { n: g.sleeping.length })}</button>)}
           </section>
         );
@@ -308,61 +341,19 @@ function Sessions({ filter, setFilter, onOpen }) {
   );
 }
 
-// ---------- 맵(나무 목록) ----------
-function MapTab({ onOpen, onFull }) {
-  const t = useT();
-  const rows = useMobile((m) => m.rows);
-  const ws = useMobile((m) => m.workspaces);
-  const tree = useMemo(() => treeOf(rows, ws), [rows, ws]);
-  const [more, setMore] = useState(() => new Set());
-  return (
-    <div data-role="mp-tree">
-      <div className="mt-mp-sec"><h2>{t('mobile.relations')}</h2><span className="mt-mp-sp" /><button type="button" className="mt-mp-full" data-action="mp-fullmap" onClick={onFull}><Ic d={I.map} s={16} />{t('mobile.fullMap')}</button></div>
-      {tree.map((g) => {
-        const key = String(g.key);
-        const cut = !more.has(key) && g.items.length > TREE_LIMIT + 2;
-        const items = cut ? g.items.slice(0, TREE_LIMIT) : g.items;
-        return (
-          <div key={key} className="mt-mp-tree" data-role="mp-tree-ws">
-            <div className="mt-mp-tree-ws">{g.name || t('phone.noRepo')}</div>
-            {items.map(({ s, guides }) => (
-              <button key={s.sessionId} type="button" className={'mt-mp-node' + (needsYou(s) ? ' need' : '') + (s.state === 'sleeping' || s.state === 'exited' ? ' rest' : '')} data-role="mp-node" data-name={s.name} data-depth={guides.length} onClick={() => onOpen(s.sessionId)}>
-                {guides.length > 0 && <span className="guide">{guides.map((c, i) => <i key={i} className={c} />)}</span>}
-                <span className="mt-mp-dot" data-tone={toneOf(s)} /><span className="nm">{s.name}</span><span className="st">{stateText(t, s)}</span>
-              </button>
-            ))}
-            {cut && <button type="button" className="mt-mp-more inset" onClick={() => setMore((x) => new Set([...x, key]))}>{t('mobile.moreRows', { n: g.items.length - items.length })}</button>}
-          </div>
-        );
-      })}
-    </div>
-  );
+// ---------- 맵(P356: 판 세션 맵과 같은 모양) ----------
+// 맵 코드(MobileMap.jsx 조각)와 그 CSS(dist/mobilemap.css, 판 화면 CSS에서 고른 세션 맵 규칙)는 맵 탭을 처음 열 때 함께 읽는다
+let mapCss = null;
+function loadMapCss() {
+  if (mapCss) return mapCss;
+  mapCss = new Promise((res) => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'mobilemap.css'; l.onload = () => res(); l.onerror = () => { mapCss = null; l.remove(); res(); }; document.head.appendChild(l); });
+  return mapCss;
 }
-
-// "전체 맵": 옛 휴대폰 세션 맵을 늦게 읽는다(fullmap.js·fullmap.css). 연 동안은 판 이벤트 전부를 받고, 닫으면 휴대폰 구독으로 돌아간다
-let fullMod = null;
-function loadFull() {
-  if (fullMod) return fullMod;
-  const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'fullmap.css'; document.head.appendChild(css);
-  const url = new URL('fullmap.js', import.meta.url).href; // 글로 만든 주소: esbuild가 이 묶음에 넣지 않는다
-  fullMod = import(url).catch((e) => { fullMod = null; noteFail('load', 'fullmap', e); throw e; });
-  return fullMod;
-}
-function FullMap({ onClose, onOpen }) {
+// 구조 답(phone.map)도 조각을 읽는 동안 함께 묻는다(첫 카드까지 한 번 덜 기다린다)
+const MobileMap = lazy(() => { const first = call('phone.map', {}).catch(() => null); return Promise.all([import('./MobileMap.jsx'), loadMapCss(), first]).then(([m, , r]) => { if (r && !r.same) m.primeMap(r); return m; }).catch((e) => { noteFail('load', 'mobilemap', e); throw e; }); });
+function MapTab({ onOpen }) {
   const t = useT();
-  const host = useRef(null);
-  const [err, setErr] = useState(null);
-  useEffect(() => {
-    let off = null, alive = true;
-    loadFull().then((m) => { if (alive && host.current) off = m.mountFullMap(host.current, { onOpen, onClose }); }).catch((e) => { if (alive) setErr(errText(e)); });
-    return () => { alive = false; if (off) off(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return (
-    <div className="mt-mp-fullmap" data-role="mp-fullmap-host">
-      <div ref={host} className="mt-mp-fullmap-in" />
-      {err && <div className="mt-mp-empty">{t('mobile.fullMapFailed', { error: err })}<br /><button type="button" className="mt-mp-btn" onClick={onClose}>{t('common.close')}</button></div>}
-    </div>
-  );
+  return <Suspense fallback={<div className="mt-mp-empty">{t('common.loading')}</div>}><MobileMap onOpen={onOpen} /></Suspense>;
 }
 
 // ---------- 세션 화면 ----------

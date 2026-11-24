@@ -97,22 +97,6 @@ html.mt-mp-on body { position: fixed; inset: 0; overflow: hidden; }
 .mt-mp-dot[data-tone=sleeping] { background: transparent; border: 2px solid var(--st-sleeping); width: 7px; height: 7px; }
 .mt-mp-dot[data-tone=shell_running] { background: var(--st-shell_running); }
 
-/* 맵(나무 목록) */
-.mt-mp-tree { margin: 4px 0 10px; padding: 4px 0; border-radius: 14px; border: 1px solid var(--panel-line); background: var(--panel); }
-.mt-mp-tree-ws { display: flex; align-items: center; gap: 8px; padding: 8px 12px 4px; font-size: 0.8125rem; font-weight: 750; color: var(--dim); }
-.mt-mp-node { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border: 0; background: none; color: var(--text); text-align: left; font-size: 0.9063rem; position: relative; box-sizing: border-box; }
-.mt-mp-node:active { background: var(--panel-2); }
-.mt-mp-node .guide { flex: none; display: inline-flex; }
-.mt-mp-node .guide i { width: 16px; height: 42px; display: inline-block; position: relative; }
-.mt-mp-node .guide i::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; border-left: 1px solid var(--panel-line-2); }
-.mt-mp-node .guide i.end::before { bottom: 50%; }
-.mt-mp-node .guide i.elbow::after { content: ''; position: absolute; left: 7px; right: 0; top: 50%; border-top: 1px solid var(--panel-line-2); }
-.mt-mp-node .guide i.blank::before { display: none; }
-.mt-mp-node .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.mt-mp-node .st { margin-left: auto; flex: none; font-size: 0.75rem; color: var(--dim); }
-.mt-mp-node.rest .nm { color: var(--con-idle-text); font-weight: 500; }
-.mt-mp-node.need .st { color: var(--attn); font-weight: 700; }
-.mt-mp-full { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--panel-line-2); background: var(--panel-2); color: var(--text-2); font-size: 0.8438rem; font-weight: 650; }
 
 /* 아래 탭 */
 .mt-mp-tabs { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); padding: 4px calc(env(safe-area-inset-right) + 6px) calc(env(safe-area-inset-bottom) + 4px) calc(env(safe-area-inset-left) + 6px); background: var(--chrome-bg); border-top: 1px solid var(--chrome-line); }
@@ -207,8 +191,6 @@ html.mt-kb-open .mt-mp-input { padding-bottom: 8px; }
 .mt-mp-cover-all { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: var(--canvas); color: var(--text); text-align: center; }
 .mt-mp-toasts { position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 76px); z-index: 40; display: grid; gap: 6px; pointer-events: none; }
 .mt-mp-toasts .mt-mp-toast { position: static; }
-.mt-mp-fullmap { position: fixed; inset: 0; z-index: 25; background: var(--canvas); }
-.mt-mp-fullmap-in { position: absolute; inset: 0; }
 .mt-mp-sheet-h { display: flex; align-items: center; justify-content: space-between; }
 .mt-mp-sheet-h h3 { margin: 0; }
 .mt-mp-session { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -216,3 +198,62 @@ html.mt-kb-open .mt-mp-input { padding-bottom: 8px; }
 .mt-mp-round.mt-ph-voice { width: 42px; height: 42px; }
 .mt-mp-round svg { width: 20px; height: 20px; }
 .mt-mp-sec button:disabled { opacity: .5; }
+
+/* P356: 맵 탭(MobileMap.jsx) = 판 세션 맵과 같은 모양. 카드·띠·선의 생김새는 판 화면 CSS에서 고른 mobilemap.css가, 여기는 탭 안 자리만 */
+.mt-mp-body[data-role=mp-map] { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.mt-mp-map { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; background: var(--canvas); }
+.mt-mp-map .mt-pmap-stage { flex: 1; min-height: 0; }
+.mt-mp-map .mt-ta-vp { top: 0; }
+
+/* P356: 홈·세션 목록의 줄과 카드 = 판 세션 맵 카드와 같은 말씨(styles.css .mt-sm .mt-ta-card의 값). 상태 색(--sc)·점·하네스 표시·이름 글꼴·꼬리표가 같다 */
+.mt-mp { --todo-sky: #7cc8f4; --todo-ink: #0a2131; --ln-line: rgba(255, 252, 240, 0.09); --ln-line-2: rgba(255, 252, 240, 0.14); --ln-dim: #a3a097; --ln-text: #e6e3da; --ln-strong: #f3f0e8; }
+.mt-mp .st-needs { --sc: var(--st-waiting); } .mt-mp .st-error { --sc: #ef8099; } .mt-mp .st-working { --sc: var(--st-working); } .mt-mp .st-working.shell { --sc: #3fd18a; }
+.mt-mp .st-done { --sc: var(--st-review); } .mt-mp .st-ready { --sc: #a9a69b; } .mt-mp .st-sleeping { --sc: var(--st-sleeping); } .mt-mp .st-exited { --sc: #8d8a80; }
+.mt-mp-face { position: relative; border-radius: 10px; background: rgba(255, 252, 240, 0.04); border: 1px solid var(--ln-line-2); color: var(--ln-text); }
+.mt-mp-face.idle { background: rgba(255, 252, 240, 0.022); border-color: rgba(255, 252, 240, 0.07); }
+.mt-mp-face.st-needs { border-color: color-mix(in srgb, var(--st-waiting) 80%, transparent); background: color-mix(in srgb, var(--st-waiting) 7%, #121210); }
+.mt-mp-face.st-error { border-color: color-mix(in srgb, var(--st-error) 80%, transparent); background: color-mix(in srgb, var(--st-error) 7%, #121210); }
+.mt-mp-face.st-done { border-color: color-mix(in srgb, var(--st-review) 65%, transparent); }
+.mt-mp-face.st-working { border-color: color-mix(in srgb, var(--sc) 60%, transparent); }
+.mt-mp-face-in { display: grid; gap: 4px; min-width: 0; }
+.mt-mp-face .c1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mt-mp-face .cname { min-width: 0; font-size: 0.9688rem; font-weight: 550; color: var(--ln-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-mp-face.st-exited .cname { text-decoration: line-through; text-decoration-color: rgba(200, 200, 190, 0.5); color: #c9cdc9; }
+.mt-mp-face .cst { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; font-size: 0.7813rem; font-weight: 500; color: var(--sc); white-space: nowrap; }
+.mt-mp-face .cst i { width: 7px; height: 7px; border-radius: 50%; background: var(--sc); display: block; }
+.mt-mp-face.st-sleeping .cst i { background: transparent; border: 2px solid var(--sc); box-sizing: border-box; width: 8px; height: 8px; }
+.mt-mp-face .cago { color: var(--ln-dim); font-weight: 400; }
+.mt-mp-face .c2 { display: flex; align-items: center; gap: 0 6px; min-width: 0; font-size: 0.75rem; color: var(--ln-dim); white-space: nowrap; overflow: hidden; }
+.mt-mp-face .c2 > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.mt-mp-face .hb { flex: none; font-size: 0.625rem; font-weight: 600; background: rgba(255, 252, 240, 0.08); color: var(--ln-text); border-radius: 4px; padding: 0 5px; line-height: 16px; letter-spacing: 0.04em; }
+.mt-mp-face .dotsep { color: #6f7b77; }
+.mt-mp-face .c3 { min-width: 0; font-size: 0.8438rem; color: var(--ln-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-mp-face .c3 b { font-weight: 550; color: var(--sc); margin-right: 5px; }
+.mt-mp-face.idle .c3 { color: #bcb8ae; }
+.mt-mp-face.idle .c3 b { color: var(--ln-dim); }
+.mt-mp-face.st-needs .c3 { color: var(--attn-text); }
+.mt-mp-row.mt-mp-face { min-height: 0; margin: 0 0 7px; padding: 10px 6px 10px 14px; }
+.mt-mp-row.mt-mp-face.need { border-color: color-mix(in srgb, var(--st-waiting) 80%, transparent); background: color-mix(in srgb, var(--st-waiting) 7%, #121210); }
+.mt-mp-row.mt-mp-face .mt-mp-row-hit { padding: 0; }
+.mt-mp-card.mt-mp-face { padding: 12px 14px 10px; }
+.mt-mp-card.mt-mp-face .mt-mp-face-in { margin-bottom: 8px; }
+/* 오른쪽 위 꼬리표 무리(판 세션 맵 .mt-sm-tags: 할 일 하늘색 위, 작업 완료 보라가 위 테두리 자리) */
+.mt-mp-tags { position: absolute; right: 14px; bottom: calc(100% - 8px); z-index: 1; display: flex; flex-direction: row; align-items: flex-end; gap: 4px; pointer-events: none; } /* 목록은 좁은 세로 틈이라 가로로 놓는다(PC 맵 카드는 세로로 쌓음) */
+.mt-mp-todotag, .mt-mp-donetag { display: inline-flex; align-items: center; gap: 3px; height: 16px; padding: 0 7px 0 5px; border-radius: 8px; font: 700 0.6563rem/16px var(--font-ui); letter-spacing: .01em; white-space: nowrap; box-shadow: 0 0 0 2px var(--canvas); }
+.mt-mp-donetag { background: var(--st-review); color: #1a1430; }
+.mt-mp-todotag { background: var(--todo-sky); color: var(--todo-ink); }
+.mt-mp-todotag b { margin-left: 1px; font-weight: 800; }
+.mt-mp-todotag svg, .mt-mp-donetag svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mt-mp-row:has(.mt-mp-tags), .mt-mp-card:has(.mt-mp-tags) { margin-top: 14px; }
+/* 할 일 카드 = 판 할 일 목록 카드(Decisions.jsx DecisionRow, .mt-dc-row)와 같은 말씨: 왼쪽 색 띠(결정 청록·실행 초록·확인 노랑), @이름, 종류 칩, 기다린 시간 */
+.mt-mp-card.mt-mp-todo { border-radius: 10px; border: 1px solid var(--panel-line); border-left: 3px solid var(--teal); background: var(--panel-2); }
+.mt-mp-card.mt-mp-todo.k-do { border-left-color: var(--accent-2); }
+.mt-mp-card.mt-mp-todo.k-check { border-left-color: var(--warn); }
+.mt-mp-todo-line { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 0.7813rem; color: var(--dim); }
+.mt-mp-todo-line .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--white); font-weight: 700; font-size: 0.875rem; }
+.mt-mp-todo-line .kind { flex: none; padding: 0 6px; border-radius: 5px; font-size: 0.6875rem; font-weight: 700; line-height: 17px; background: var(--teal-bg); color: var(--teal); }
+.mt-mp-todo-line .kind.k-do { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-2); }
+.mt-mp-todo-line .kind.k-check { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.mt-mp-todo-line .when { margin-left: auto; flex: none; }
+.mt-mp-todo .mt-mp-q { color: var(--white); }
+.mt-mp-todo.k-decide .mt-mp-acts .mt-mp-btn[data-action=mp-todo-answer] { background: none; border-color: var(--teal); color: var(--text); }
