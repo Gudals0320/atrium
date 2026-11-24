@@ -12,7 +12,7 @@ import { toast } from './store.js';
 import { useMobile, call, putDeliveries, noteFail } from './mobile-store.js';
 import { useT, errText } from './lib/i18n.js';
 import { STATE_LABEL, deliveryText, shellStateText } from './lib/labels.js';
-import { toneOf, needsYou, isDone, PINS_KEY, togglePin, readList, detailStale, mergeHistory, KEY_MAIN, KEY_MORE, KEY_GLYPH, KEY_WIDE, keyId, isNumKey, KEYS_OPEN_KEY, VIEW_KEY, viewOf, readView, readFlag, isLive } from './lib/mobile.js';
+import { toneOf, needsYou, isDone, choiceButtons, PINS_KEY, togglePin, readList, detailStale, mergeHistory, KEY_MAIN, KEY_MORE, KEY_GLYPH, KEY_WIDE, keyId, isNumKey, KEYS_OPEN_KEY, VIEW_KEY, viewOf, readView, readFlag, isLive } from './lib/mobile.js';
 import { keyQueue, sendPlan, nextNeed } from './lib/phone.js';
 import { steerBlock } from './lib/steer.js';
 import { Markdown } from './Markdown.jsx';
@@ -73,6 +73,24 @@ function AskBody({ s, a, press }) {
       {a && a.choices && a.choices.length > 0 && <div className="mt-mp-choices col">{a.choices.map((c) => <button key={c.n} type="button" className="mt-mp-choice" data-mp-choice={c.n} onPointerDown={noFocus} onClick={() => press(String(c.n))}><b>{c.n}</b> {c.label}</button>)}</div>}
       {a && a.question && !(a.choices && a.choices.length) && <div className="mt-mp-sub pad">{a.question}</div>}
     </>
+  );
+}
+
+// 터미널 보기의 겹친 질문 카드(작게): 묻는 것 한 줄, 짧은 보기 단추(홈 응답 필요 카드와 같은 모양), Esc, 접기. 전체 카드는 답 보기에
+function AskCompact({ s, a, t, press, onHide }) {
+  const btns = s.state === 'trust_wait' ? [] : choiceButtons(a);
+  const line = (a && (a.question || a.summary)) || (s.line && s.line.text) || '';
+  return (
+    <div className="mt-mp-card need mt-ms-ask" data-role="mp-term-ask">
+      <div className="mt-mp-q">{askTitle(t, s, a)}</div>
+      {line && <div className="mt-mp-sub mt-ms-askline">{String(line).split('\n')[0]}</div>}
+      <div className="mt-mp-acts">
+        {btns.map((b, i) => <button key={b.key} type="button" className={'mt-mp-btn' + (i === 0 ? ' attn' : '')} data-mp-choice={b.key} title={b.label} onPointerDown={noFocus} onClick={() => press(b.key)}>{b.key}{b.short ? ' ' + b.short : ''}</button>)}
+        {s.state !== 'trust_wait' && <button type="button" className="mt-mp-btn ghost" data-mp-choice="esc" onPointerDown={noFocus} onClick={() => press('esc')}>Esc</button>}
+        <span className="mt-mp-sp" />
+        <button type="button" className="mt-mp-btn ghost" data-action="mp-ask-hide" onClick={onHide}>{t('mobile.askHide')}</button>
+      </div>
+    </div>
   );
 }
 
@@ -182,10 +200,7 @@ export function SessionScreen({ s, onBack, onGo, needIds, bump, scale }) {
           {need && (askHidden
             ? <button type="button" className="mt-ms-askpill" data-action="mp-ask-show" onClick={() => setAskHidden(false)}><span className="mt-mp-dot" data-tone="waiting" />{askTitle(t, s, a)}<Ic d={I.chev} s={14} /></button>
             : (
-              <div className="mt-mp-block need mt-ms-ask" data-role="mp-term-ask">
-                <div className="mt-mp-block-h">{askTitle(t, s, a)}<span className="mt-mp-sp" /><button type="button" data-action="mp-ask-hide" onClick={() => setAskHidden(true)}>{t('mobile.askHide')}</button></div>
-                <AskBody s={s} a={a} press={press} />
-              </div>
+              <AskCompact s={s} a={a} t={t} press={press} onHide={() => setAskHidden(true)} />
             ))}
         </div>
       ) : (

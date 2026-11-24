@@ -285,7 +285,8 @@ async function shots() {
         await sleep(1200);
         await shot('4-term-need');
         const ask = await box('[data-role=mp-term-ask] [data-mp-choice]');
-        check('[' + tag + '] 터미널 보기: 살아 있는 터미널(xterm) + 응답 필요 카드가 위에 겹치고 번호 단추', xt && ask.length >= 2, { xt, ask: ask.length });
+        const ov = (await box('[data-role=mp-term-ask]'))[0]; const tbx = (await box('[data-role=mp-termbox]'))[0];
+        check('[' + tag + '] 터미널 보기: 살아 있는 터미널(xterm) + 작은 질문 카드(보기 모두 + Esc가 카드 안, 터미널의 절반 아래)', xt && ask.length >= 5 && ask.every((x) => x.bottom <= ov.bottom + 0.5) && ov.h <= tbx.h * 0.5, { xt, ask: ask.map((x) => x.key + ':' + x.bottom), ov, term: tbx && tbx.h });
         await pg.click('[data-action=mp-ask-hide]'); await sleep(300); await shot('5-term-need-hidden');
         check('[' + tag + '] 질문 카드를 접으면 알약이 남는다', !!(await pg.$('[data-action=mp-ask-show]')));
         await pg.click('[data-action=mp-keys-more]'); // 접기(이 기기에 기억)

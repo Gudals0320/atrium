@@ -226,8 +226,10 @@ html.mt-kb-open .mt-mp-input { padding-bottom: 8px; }
 .mt-ms-kb.on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-text); }
 .mt-ms-termarea { flex: 1; min-height: 80px; position: relative; overflow: hidden; background: var(--term-bg); }
 .mt-ms-termarea > .mt-mp-empty { position: absolute; inset: 0; display: grid; place-content: center; }
-.mt-ms-ask { position: absolute; z-index: 5; top: 8px; left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 8px); margin: 0; max-height: 55%; overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--panel-shadow); }
-.mt-ms-ask .mt-mp-block-h button { color: var(--dim); }
+.mt-ms-ask { position: absolute; z-index: 5; top: 8px; left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 8px); margin: 0; padding: 10px 10px 10px 12px; max-height: 60%; overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--panel-shadow); }
+.mt-ms-ask .mt-mp-q { margin: 0 0 4px; font-size: 0.9375rem; }
+.mt-ms-askline { margin: 0 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mt-ms-ask .mt-mp-acts { gap: 6px; }
 .mt-ms-askpill { position: absolute; z-index: 5; top: 8px; right: calc(env(safe-area-inset-right) + 8px); height: 36px; max-width: 80%; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border-radius: 18px; border: 1px solid var(--attn-line); background: var(--attn-bg); color: var(--attn); font-size: 0.8125rem; font-weight: 700; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; box-shadow: var(--panel-shadow); }
 .mt-mp-key.small { font-size: 0.75rem; letter-spacing: -.01em; }
 .mt-mp-key.more { color: var(--chrome-text-2); display: grid; place-items: center; }
