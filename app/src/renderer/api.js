@@ -127,7 +127,8 @@ export class Api {
       this.pingSentAt = null; clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), PING_EVERY_MS);
       setTimeout(() => this.ping(), 1000);
       this.setStatus('open');
-      try { const r = await this.call('events.subscribe'); this.emit('$open', r); } catch (e) { console.error(e); }
+      // P353: 휴대폰 전용 페이지는 subscribe를 바꿔 끼운다(phone.subscribe: 작은 줄과 차이만). 없으면 판 이벤트 전부
+      try { const r = await (this.subscribe ? this.subscribe() : this.call('events.subscribe')); this.emit('$open', r); } catch (e) { console.error(e); }
     };
     ws.onmessage = (ev) => {
       if (!live()) return;
@@ -172,6 +173,13 @@ export class Api {
     this.retryTimer = setTimeout(() => this.connect(), d == null ? 0 : d);
   }
 
+  // P353: 열린 연결에서 구독을 바꾼다(휴대폰 페이지 ↔ 전체 맵). 새 답으로 $open을 다시 알린다
+  async resubscribe() {
+    if (!this.ws || this.ws.readyState !== 1) return null;
+    const r = await (this.subscribe ? this.subscribe() : this.call('events.subscribe'));
+    this.emit('$open', r);
+    return r;
+  }
   // P165: 음성 입력의 소리(바이너리 프레임). 열려 있을 때만 보내고 보냈는지 돌려준다
   sendBinary(data) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;

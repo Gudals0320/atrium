@@ -7,7 +7,8 @@
 
 export const CACHE_PREFIX = 'atrium-shell-';
 const NEVER = [/^\/api(\/|$)/, /^\/web\//, /^\/hooks\//, /^\/branch\//, /^\/health$/, /^\/sw\.js$/];
-const SHELL = new Set(['/', '/index.html', '/renderer.js', '/renderer.css']);
+const SHELL = new Set(['/', '/index.html', '/renderer.js', '/renderer.css', '/boot.js', '/mobile.js', '/mobile.css', '/fullmap.js', '/fullmap.css']); // P353: 묶음 넷
+const CHUNK = /^\/chunk-[A-Za-z0-9]+\.(js|css)$/; // P353: 함께 쓰는 묶음 조각(이름에 해시)
 const ASSET = [/^\/fonts\/[A-Za-z0-9._-]+$/, /^\/assets\/[A-Za-z0-9._\-/]+\.(svg|png|webmanifest|ico|webp|jpg)$/];
 
 // 'pass' = 손대지 않음, 'shell' = 네트워크 먼저(안 되면 캐시), 'asset' = 네트워크 먼저(안 되면 캐시). 글꼴은 이름에 해시가 있어 캐시 먼저
@@ -19,7 +20,7 @@ export function swRoute({ url, method = 'GET', origin, mode = '' }) {
   const p = u.pathname;
   if (NEVER.some((re) => re.test(p))) return 'pass';
   if (mode === 'navigate') return p === '/' || p === '/index.html' ? 'shell' : 'pass';
-  if (SHELL.has(p)) return 'shell';
+  if (SHELL.has(p) || CHUNK.test(p)) return 'shell';
   if (/^\/fonts\//.test(p) && ASSET[0].test(p)) return 'font';
   if (ASSET[1].test(p)) return 'asset';
   return 'pass';

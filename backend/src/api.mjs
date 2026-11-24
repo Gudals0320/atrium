@@ -80,6 +80,16 @@ export class ApiServer {
     ws.on('close', (code, why) => { client.wsClose = { code, reason: why ? String(why) : '' }; this.clients.delete(client); this.onClose(client); }); // P82: 받은 닫힘 코드와 까닭 글
     ws.on('error', () => {});
   }
-  broadcast(event, data) { for (const c of this.clients) if (c.subscribed) c.sendEvent(event, data); }
+  // P353: 휴대폰 연결(c.phone)은 판 이벤트 대신 phoneRoute가 고른 작은 이벤트만 받는다. 판 이벤트도 받는 연결(c.phoneRows: 휴대폰 페이지가 전체 맵을 연 뒤)은 phone.* 이벤트를 더 받는다.
+  //   phoneRoute(event, data)는 이벤트마다 한 번만 부른다(연결마다 고르는 함수를 돌려준다)
+  broadcast(event, data) {
+    let route;
+    const routeOf = () => (route === undefined ? (route = this.phoneRoute ? this.phoneRoute(event, data) : null) : route);
+    for (const c of this.clients) {
+      if (!c.subscribed) continue;
+      if (!c.phone) c.sendEvent(event, data);
+      if (c.phone || c.phoneRows) { const r = routeOf(); const x = r && r(c); if (x && (c.phone || x[0].startsWith('phone.'))) c.sendEvent(x[0], x[1]); }
+    }
+  }
   close() { for (const c of this.clients) c.ws.close(); this.wss.close(); this.wssRemote.close(); this.wssRemotePlain.close(); }
 }

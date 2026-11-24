@@ -307,6 +307,7 @@ export async function loadLoops() { const ls = await api.call('loop.list'); stat
 
 api.on('$status', ({ status, detail }) => { state.conn = status; state.connDetail = detail || null; changed(); });
 api.on('$open', async (r) => {
+  if (r && r.phone) return; // P353: 휴대폰 전용 페이지의 구독(phone.subscribe)은 판을 받지 않는다(mobile-store.js가 받는다)
   state.sessions = new Map(r.sessions.map((s) => [s.sessionId, s]));
   if (r.clients) state.peers = { ...r.clients, me: r.clients.me || api.clientId }; // P47
   changed();

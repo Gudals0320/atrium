@@ -14,7 +14,7 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p104-'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test('허용 목록: 방향키, enter, esc, tab, space, 숫자만 받는다', () => {
-  assert.deepEqual([...KEY_NAMES], ['up', 'down', 'left', 'right', 'enter', 'esc', 'tab', 'space', 'backspace', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+  assert.deepEqual([...KEY_NAMES], ['up', 'down', 'left', 'right', 'enter', 'esc', 'tab', 'space', 'backspace', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'y', 'n']);
   assert.deepEqual(checkKeys(['down', 'down', 'enter']), ['down', 'down', 'enter']);
   assert.deepEqual(checkKeys(['left', 'right', 'up', 'esc', 'tab', 'space']), ['left', 'right', 'up', 'esc', 'tab', 'space']);
   assert.deepEqual(checkKeys([1, '2', 9]), ['1', '2', '9'], '숫자는 수로 와도 받는다');
@@ -23,7 +23,7 @@ test('허용 목록: 방향키, enter, esc, tab, space, 숫자만 받는다', ()
 
 test('허용 목록: 그 밖의 키, 글, ctrl·shift 조합, 빈 목록, 너무 많은 키는 거부한다', () => {
   const rejects = (keys, key) => assert.throws(() => checkKeys(keys), (e) => e.code === 'bad_request' && e.key === key, JSON.stringify(keys));
-  for (const k of ['ctrl+c', 'ctrl+g', 'shift+tab', 'alt+x', 'f5', 'home', 'pageup', 'a', 'y', '/', 'hello', '10', '-1', 'Enter', ' enter', '\r', '\x1b[A', '']) rejects([k], 'keysBad');
+  for (const k of ['ctrl+c', 'ctrl+g', 'shift+tab', 'alt+x', 'f5', 'home', 'pageup', 'a', 'z', '/', 'hello', '10', '-1', 'Enter', ' enter', '\r', '\x1b[A', '']) rejects([k], 'keysBad');
   rejects(['down', 'ctrl+c'], 'keysBad'); // 하나라도 틀리면 하나도 보내지 않는다
   for (const k of [null, undefined, {}, [], 1.5, true]) rejects([k], 'keysBad');
   rejects([], 'keysEmpty');

@@ -93,7 +93,8 @@ import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel, r
 import { codexHomeOf } from './codex-models.mjs';
 import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
 import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
-import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs'; // P66: 판의 이름(표시 이름)과 에이전트 주소
+import { shownName, findSession, takenNames, nameOwner, renameSession } from './session-label.mjs';
+import { PhoneFeed, phoneHandlers, phoneRoute } from './phone.mjs'; // P353: 휴대폰 전용 간소 페이지(요약 줄, 차이 받기, 휴대폰 이벤트) // P66: 판의 이름(표시 이름)과 에이전트 주소
 import { preToolUseDecision } from './atrium-allow.mjs'; // P308: 따옴표 꼴 atrium 명령 허용
 import { TodoTidy } from './todo-tidy.mjs'; // P316: 할 일 정리
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
@@ -175,8 +176,10 @@ export class Backend {
     // P49(R3): Tailscale 상태 읽기(바꾸지 않는다). 이름을 Host 허용 목록에 넣고 로그인 사용자를 제한한다
     this.tailscale = new TailscaleWatch({ port: cfg.port, log: (m) => this.log(m), onChange: (ts, info) => this.log(`tailscale: ${ts.status && ts.status.running ? 'running' : 'not running'}, hosts ${info ? info.hosts.length : tailscaleHosts(ts).length}${info && info.added.length ? ` +[${info.added.join(', ')}]` : ''}${info && info.removed.length ? ` -[${info.removed.join(', ')}]` : ''}${info ? `; ${info.why}` : ''}`) }); // P291: 바뀐 이름과 까닭
     this.web = new WebServer({ cfg, store: this.store, api: null, log: (m) => this.log(m), recentDirs: () => this.recentDirs(), tailscale: this.tailscale, settings: () => (this.features ? this.features.settings.get() : {}), wsName: (k) => workspaceNames(this.store.workspaces()).get(k) || null }); // P88: wsName = 푸시 알림의 프로젝트 이름
+    this.phoneFeed = new PhoneFeed(); // P353
     this.api = new ApiServer({ token: this.apiToken, ready: this.ready, handlers: { ...this.handlers(), ...this.web.handlers() }, authorize: (req) => this.web.authorize(req, this.apiToken), onOpen: (c) => { this.web.clientOpened(c); if (this.peers) this.peers.opened(); }, onClose: (c) => { this.web.clientClosed(c); if (this.relay) this.relay.detachClient(c); if (this.sleeper) this.sleeper.dropClient(c); if (this.voice) this.voice.dropClient(c); if (this.peers) this.peers.closed(); }, onBinary: (c, d) => this.voice.onBinary(c, d), log: (m) => this.log(m) });
     this.web.api = this.api;
+    this.api.phoneRoute = (e, d) => phoneRoute(this.phoneFeed, this, e, d); // P353: 휴대폰 연결이 받을 이벤트
     // P165: 음성 입력 중계(Soniox). 키는 SONIOX_API_KEY에서 백엔드만 읽는다. ATRIUM_SONIOX_URL은 개발용 판의 가짜 서버 시험용
     // P176: ATRIUM_VOICE_IDLE_MS(개발용 판만)는 말 없음 자동 멈춤 시간을 줄이는 시험용
     const voiceIdle = cfg.profile === 'dev' ? Number(process.env.ATRIUM_VOICE_IDLE_MS) : NaN;
@@ -2347,6 +2350,7 @@ export class Backend {
       'session.list': () => [...this.sessions.values()].map((s) => this.summary(s)),
       'session.get': (p) => this.get(p),
       'session.send': (p) => this.send(p),
+      ...phoneHandlers(this), // P353: phone.subscribe·phone.session·phone.history·phone.close·phone.spawnInfo
       ...docHandlers(this), // P257: docs.status·docs.enable·docs.disable
       ...botsHandlers(this), // P338: 설정 › 봇 탭(읽기 전용 요약, 저장소별 merge.json)
       ...mergerHandlers(this), // P267: 합치기 merger(창 쪽 계약: merger.status, merger.asks, merger.answer)
@@ -2377,7 +2381,7 @@ export class Backend {
       'terminal.resize': (p, c) => { this.relay.resize(this.resolve(p.session).sessionId, p.cols, p.rows, c); return { ok: true }; },
       'terminal.detach': (p, c) => { this.relay.detach(this.resolve(p.session).sessionId, c); return { ok: true }; },
       'terminal.focus': (p, c) => { this.relay.focus(this.resolve(p.session).sessionId, c); this.peers.touch(c); return { ok: true }; }, // P47: 초점을 준 클라이언트가 패널 크기를 정한다
-      'events.subscribe': (p, c) => { c.subscribed = true; return { subscribed: true, sessions: [...this.sessions.values()].map((s) => this.summary(s)), clients: { ...this.peers.view(), me: c.clientId || null } }; }, // P47: 붙은 클라이언트
+      'events.subscribe': (p, c) => { c.subscribed = true; c.phone = false; return { subscribed: true, sessions: [...this.sessions.values()].map((s) => this.summary(s)), clients: { ...this.peers.view(), me: c.clientId || null } }; }, // P47: 붙은 클라이언트
       // P5: workspace를 주면 그 판의 노드와 그룹만(연결은 한쪽이라도 그 판에 있는 것). 창은 다른 워크스페이스로 가는 연결과 칩 때문에 모두 받는다
       // P6a: 캔버스 하나. viewport는 캔버스 하나의 것(meta). workspace를 주면 그 워크스페이스의 노드·덩어리만(연결은 한쪽이라도 그 안에 있는 것)
       // P47: viewport는 클라이언트마다(meta viewport:<client>). 처음 붙는 클라이언트와 익명 연결은 보드 값(meta viewport, 옛 판 값)
