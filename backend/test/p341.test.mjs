@@ -17,9 +17,9 @@ const MIN = 60_000;
 const hist = (n, f, now = 10_000_000, step = 30_000) => Array.from({ length: n }, (_, i) => ({ at: now - (n - 1 - i) * step, spanMs: step, ...f(i) }));
 
 test('기본 기준: CPU 90% 3분, 메모리 3GB, 증가 10분, 둘 다 켬', () => {
-  assert.deepEqual(cfg, { detect: true, lower: true, cpuPct: 90, cpuMs: 3 * MIN, memMB: 3072, growMs: 10 * MIN, bgCpuMs: 15 * MIN });
+  assert.deepEqual(cfg, { detect: true, lower: true, cpuPct: 90, cpuMs: 3 * MIN, memMB: 3072, growMs: 10 * MIN, bgCpuMs: 15 * MIN, instantX: 2 }); // P348: instantX
   const c = guardConfig({ guardDetect: false, guardLowerPriority: false, guardCpuPct: 50, guardCpuMin: 1, guardMemGB: 2, guardGrowMin: 0 });
-  assert.deepEqual(c, { detect: false, lower: false, cpuPct: 50, cpuMs: MIN, memMB: 2048, growMs: 0, bgCpuMs: 15 * MIN });
+  assert.deepEqual(c, { detect: false, lower: false, cpuPct: 50, cpuMs: MIN, memMB: 2048, growMs: 0, bgCpuMs: 15 * MIN, instantX: 2 });
   assert.equal(DEFAULTS.guardLowerPriority, true);
   assert.throws(() => normalizePatch({ guardCpuPct: 5 }));
   assert.equal(normalizePatch({ guardMemGB: '4' }).guardMemGB, 4);
@@ -45,7 +45,9 @@ test('CPU: 기준 이상이 3분 이어져야(측정 구간의 앞끝부터 센�
 });
 
 test('메모리: 3GB 이상이면 곧바로, 10분 내내 늘면(200MB 이상)', () => {
-  assert.deepEqual(judge(hist(1, () => ({ core: 1, memMB: 3100 })), cfg).map((r) => r.type), ['mem']);
+  // P348: 두 번 이어져야(5초 표본의 순간 값으로 카드를 내지 않는다)
+  assert.deepEqual(judge(hist(2, () => ({ core: 1, memMB: 3100 })), cfg).map((r) => r.type), ['mem']);
+  assert.deepEqual(judge(hist(1, () => ({ core: 1, memMB: 3100 })), cfg), []);
   // 10분 = 30초 × 20 구간 → 표본 21개, 줄지 않고 400MB 늘었다
   const grow = judge(hist(21, (i) => ({ core: 1, memMB: 500 + i * 20 })), cfg);
   assert.deepEqual(grow.map((r) => r.type), ['grow']);

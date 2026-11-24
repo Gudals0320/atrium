@@ -18,6 +18,12 @@
 //   도우미는 핸들을 쥔 채 생성 시각을 한 번 더 맞춘다. 패널 뿌리·에이전트 본체는 끄지 않는다(재우기). 판이 띄운 세션 나무 밖은 넘기지 않는다.
 // 기록: 이벤트 resource_alert { kind, type, cpuPct, memMB, growMB, top, state }(폭주가 시작되거나 무거움 → 의심이 될 때), resource_alert_end { kind, ms, by },
 //   resource_action { action, pid, name, ok, why }. report()가 며칠치를 모은다(판 API guard.report, bin/atrium-resource-report.mjs).
+// P348(사용자 2026-11-24 "절전 모드에서 전환할 때 튀는 것을 순간 과부하로 잡는다", "빠릿빠릿하게, 문제 세션은 바로"):
+//   - 전환 구분: 세션이 뜨는 중·깨우는 중·잠드는 중·압축 중(측정 줄의 transit, backend.mjs가 판의 상태·runtime에서 채운다)이거나 전환이 끝난 뒤
+//     TRANSIT_GRACE_MS 안(transitAt, 또는 판이 마지막으로 전환을 본 때)이면 표본을 쌓지도 판정하지도 않고 그 세션의 기록을 비운다(끝난 뒤부터 다시 센다).
+//     PC가 잠들었다 깨어난 것(측정 사이가 SYSTEM_GAP_MS 넘게 벌어짐)도 판 전체의 전환으로 본다. 경보가 이미 있으면 그대로 둔다(새로 만들지 않을 뿐).
+//   - 바로 잡기: 지속 기준은 그대로 두고, 뚜렷하면(코어 하나 대비 CPU ≥ 기준 × guardInstantX, 메모리 ≥ 기준 × guardInstantX) 다음 측정에서 곧바로 배지(reason.instant).
+//     카드는 지금 규칙(지속 기준이 걸려야)이다. 표본이 5초 간격이 되어 메모리 기준은 두 번 이어져야(MEM_CONFIRM) 걸리고, CPU는 DIP_MS 이하의 짧은 내려감은 끊지 않는다.
 // B. 우선순위: 설정 guardLowerPriority(기본 켬)면 측정마다 세션 나무에서 우선순위가 보통(8)인 프로세스를 보통 이하로 낮춘다(이상한 나무는 건드리지 않는다).
 //   hc는 에이전트를 셸 없이 터미널의 첫 프로세스로 띄워(terminal.run argv) "명령을 치기 전에 셸을 낮추는" 자리가 없다. 대신 패널이 생기거나 바뀌면(pane_created·pane_moved)
 //   곧바로 그 뿌리 프로세스를 낮춘다(onPane): 그 뒤에 뜨는 자식은 Windows가 보통 이하 등급을 물려준다. 그 전에 뜬 자식은 다음 측정이 낮춘다.
@@ -25,12 +31,16 @@
 import { descendants, suspectTree } from './resources.mjs';
 import { PRIO, setPrio, getPrio } from './proc-control.mjs';
 
-export const GUARD_DEFAULTS = { cpuPct: 90, cpuMin: 3, memGB: 3, growMin: 10, bgCpuMin: 15 }; // P341(검토 뒤): bgCpuMin = 뒤 일만 도는 세션이 의심이 되는 CPU 시간
+export const GUARD_DEFAULTS = { cpuPct: 90, cpuMin: 3, memGB: 3, growMin: 10, bgCpuMin: 15, instantX: 2 }; // P341(검토 뒤): bgCpuMin = 뒤 일만 도는 세션이 의심이 되는 CPU 시간. P348: instantX = 곧바로 배지를 다는 배수(0이면 끔)
 export const GROW_MIN_MB = 200; // grow: 그 시간 동안 적어도 이만큼은 늘어야
 export const FAST_MS = 10_000; // 후보가 있을 때 측정 간격
 export const NEAR = 0.8; // 후보: 기준의 이만큼
 export const MUTE_MS = 30 * 60_000; // 30분 묻지 않기
-export const HIST_MAX = 400; // 세션마다 남기는 표본 수(10초 간격이면 1시간 남짓)
+export const HIST_MAX = 5000; // 세션마다 남기는 표본 수의 상한(P348: 기준 시간만큼만 남긴다, trimHist)
+export const TRANSIT_GRACE_MS = 45_000; // P348: 전환(뜨기·깨우기·잠들기·압축)이 끝난 뒤 판정하지 않는 시간(실시험으로 정함, 기록)
+export const SYSTEM_GAP_MS = 120_000; // P348: 측정 사이가 이보다 길면 PC가 잠들었다 깨어난 것으로 본다
+export const DIP_MS = 15_000; // P348: CPU 연속을 끊지 않는 짧은 내려감(5초 표본의 흔들림)
+export const MEM_CONFIRM = 2; // P348: 메모리 기준은 이만큼 이어진 표본에서(뚜렷하면 한 번에)
 export const ACTIONS = ['kill', 'pause', 'resume', 'sleep', 'mute'];
 const BUSY = new Set(['working', 'starting']);
 const SHELL = 'shell';
@@ -46,6 +56,7 @@ export function guardConfig(st = {}) {
     memMB: n(st.guardMemGB, GUARD_DEFAULTS.memGB) * 1024,
     growMs: n(st.guardGrowMin, GUARD_DEFAULTS.growMin) * 60_000,
     bgCpuMs: n(st.guardBgCpuMin, GUARD_DEFAULTS.bgCpuMin) * 60_000,
+    instantX: n(st.guardInstantX, GUARD_DEFAULTS.instantX),
   };
 }
 
@@ -60,15 +71,22 @@ export function judge(hist, cfg, now = hist.length ? hist[hist.length - 1].at : 
   const out = [];
   if (!hist || !hist.length) return out;
   const last = hist[hist.length - 1];
-  // cpu: 끝에서부터 이어진 높은 측정. 시작은 그 첫 측정이 잰 구간의 앞끝
-  let start = null;
+  // cpu: 끝에서부터 이어진 높은 측정. 시작은 그 첫 측정이 잰 구간의 앞끝. P348: DIP_MS 이하로 이어진 낮은 측정은 건너뛴다(모르는 값은 끊는다)
+  let start = null, dip = 0, peak = null;
   for (let i = hist.length - 1; i >= 0; i--) {
     const h = hist[i];
-    if (h.core == null || h.core < cfg.cpuPct) break;
-    start = h.at - (h.spanMs || 0);
+    if (h.core == null) break;
+    if (h.core < cfg.cpuPct) { dip += h.spanMs || 0; if (dip > DIP_MS) break; continue; }
+    dip = 0; start = h.at - (h.spanMs || 0); if (peak == null) peak = h.core;
   }
-  if (start != null && now - start >= cfg.cpuMs) out.push({ type: 'cpu', pct: Math.round(last.core), ms: now - start, since: start });
-  if (last.memMB != null && last.memMB >= cfg.memMB) out.push({ type: 'mem', memMB: last.memMB });
+  const x = cfg.instantX > 0 ? cfg.instantX : null; // P348: 뚜렷함 배수
+  if (start != null && now - start >= cfg.cpuMs) out.push({ type: 'cpu', pct: Math.round(peak), ms: now - start, since: start });
+  else if (x && last.core != null && last.core >= cfg.cpuPct * x) out.push({ type: 'cpu', pct: Math.round(last.core), ms: last.spanMs || 0, since: last.at - (last.spanMs || 0), instant: true });
+  if (last.memMB != null && last.memMB >= cfg.memMB) {
+    const tail = hist.slice(-MEM_CONFIRM);
+    if (tail.length >= MEM_CONFIRM && tail.every((h) => h.memMB != null && h.memMB >= cfg.memMB)) out.push({ type: 'mem', memMB: last.memMB });
+    else if (x && last.memMB >= cfg.memMB * x) out.push({ type: 'mem', memMB: last.memMB, instant: true });
+  }
   if (cfg.growMs > 0 && last.memMB != null) {
     // 기준 시간 앞의 마지막 표본(밑)부터 끝까지 줄지 않고 늘었나
     let base = -1;
@@ -81,6 +99,30 @@ export function judge(hist, cfg, now = hist.length ? hist[hist.length - 1].at : 
     }
   }
   return out;
+}
+// P348: 측정 줄(transit, transitAt)과 판이 마지막으로 전환을 본 때(seenAt) → 판정을 쉴까 { what, until } | null. 순수 함수
+export function transitHold(row, now, seenAt = null, grace = TRANSIT_GRACE_MS) {
+  if (row && row.transit) return { what: row.transit, until: null };
+  const ends = [row && row.transitAt, seenAt].filter((v) => Number.isFinite(v) && v <= now);
+  const end = ends.length ? Math.max(...ends) : null;
+  return end != null && now - end < grace ? { what: 'after', until: end + grace } : null;
+}
+// P348: 판의 세션 → 전환 { transit: starting | moving | waking | sleeping | compacting | null, transitAt: 마지막 전환 경계(ms) | null }.
+//   d: deriveState(rt) 결과, s: 판의 세션(waking, wokeAt, rt). 순수 함수
+export function transitOf(d, s) {
+  const rt = (s && s.rt) || {};
+  const transit = s && s.waking ? 'waking' : rt.sleep && rt.sleep.going ? 'sleeping' : d && d.state === 'starting' ? (d.moving ? 'moving' : 'starting') : d && d.estimate === 'compacting' ? 'compacting' : null;
+  const at = Math.max((s && s.wokeAt) || 0, (rt.compact && rt.compact.endedAt) || 0, rt.launchedAt || 0, (rt.sleep && !rt.sleep.going && rt.sleep.at) || 0);
+  return { transit, transitAt: at > 0 ? at : null };
+}
+// P348: 기준 시간(가장 긴 것)과 여유만큼만 남긴다. 순수 함수(제자리에서 자른다)
+export function trimHist(h, cfg, now) {
+  const keep = Math.max(cfg.cpuMs || 0, cfg.growMs || 0, cfg.bgCpuMs || 0) + 2 * 60_000;
+  let cut = 0;
+  while (cut < h.length && h[cut].at < now - keep) cut++;
+  if (h.length - cut > HIST_MAX) cut = h.length - HIST_MAX;
+  if (cut > 0) h.splice(0, cut);
+  return h;
 }
 // 후보인가(다음 측정을 당길까): 지금 기준의 NEAR를 넘었나. 순수 함수
 export function nearAlert(hist, cfg) {
@@ -112,7 +154,8 @@ export function topOf(row, reasons) {
 }
 // 같은 폭주 동안 카드를 다시 만들지 않는다: 만들 수 있나. 순수 함수
 export function mayCard(alert, { detect = true, mutedUntil = 0, now = Date.now(), open = false } = {}) {
-  return !!alert && detect && alert.kind === 'suspect' && !alert.carded && !open && !(mutedUntil > now);
+  const instantOnly = !!(alert && alert.reasons && alert.reasons.length && alert.reasons.every((r) => r.instant)); // P348: 곧바로 단 배지만으로는 카드를 내지 않는다
+  return !!alert && detect && alert.kind === 'suspect' && !instantOnly && !alert.carded && !open && !(mutedUntil > now);
 }
 // 동작 전 확인: tree(지금 읽은 세션 나무)에 pid가 있고 생성 시각이 맞으면 그 프로세스, 아니면 까닭. 순수 함수
 export function verifyTarget(tree, pid, created = null) {
@@ -174,6 +217,10 @@ export class ResourceGuard {
     this.paused = new Map(); // 세션 → { at, procs: [{ pid, created, name }] } (판 기록 meta guardPaused에도)
     this.resumedAt = new Map(); // 세션 → 다시 돌린 때(그 전에 시작한 측정 구간은 버린다)
     this.lowered = 0; // 이번 실행에서 낮춘 수
+    this.transitSeen = new Map(); // P348: 세션 → 전환을 마지막으로 본 때
+    this.lastStepAt = null; // P348: 앞 측정 때(사이가 길면 PC가 잠들었다 깨어남)
+    this.systemHoldUntil = 0; // P348: 이때까지 판 전체 판정을 쉰다
+    this.held = 0; // P348: 전환이라 판정을 쉰 줄 수(이번 실행)
     try { const p = b.store.getMeta('guardPaused') || {}; for (const [sid, v] of Object.entries(p)) if (v && Array.isArray(v.procs)) this.paused.set(sid, v); } catch {}
     this.lowerWas = (() => { try { return !!b.store.getMeta('guardLowered'); } catch { return false; } })(); // 앞 실행이 낮춰 둔 채인가(끔이면 되돌린다)
   }
@@ -195,6 +242,9 @@ export class ResourceGuard {
     const cfg = this.cfg();
     const now = snap.at || this.now();
     const live = new Set();
+    // P348: PC가 잠들었다 깨어났다(측정 사이가 길다) → 판 전체를 잠깐 판정하지 않는다
+    if (this.lastStepAt != null && now - this.lastStepAt > SYSTEM_GAP_MS) { this.systemHoldUntil = now + TRANSIT_GRACE_MS; try { this.b.log(`resources: ${Math.round((now - this.lastStepAt) / 1000)}s since the last sample (PC sleep?), not judging for ${TRANSIT_GRACE_MS / 1000}s`); } catch {} }
+    this.lastStepAt = now;
     for (const row of snap.sessions || []) {
       const sid = row.sessionId; live.add(sid);
       const s = this.b.sessions.get(sid);
@@ -206,7 +256,11 @@ export class ResourceGuard {
       const back = this.resumedAt.get(sid);
       if (back && now - ((snap.cpu && snap.cpu.spanMs) || 0) < back) { const a = this.alerts.get(sid); if (a) row.guard = this.view(a); continue; }
       if (back) this.resumedAt.delete(sid);
-      h.push(sampleOf(row, snap)); if (h.length > HIST_MAX) h.splice(0, h.length - HIST_MAX);
+      // P348: 전환 중·뒤에는 표본을 쌓지 않고 기록을 비운다(끝난 뒤부터 센다). 이미 있던 경보는 그대로 보인다
+      if (row.transit) this.transitSeen.set(sid, now);
+      const hold = now < this.systemHoldUntil ? { what: 'system', until: this.systemHoldUntil } : transitHold(row, now, this.transitSeen.get(sid));
+      if (hold) { h.length = 0; this.held++; row.hold = hold; const a = this.alerts.get(sid); if (a) row.guard = this.view(a); continue; }
+      h.push(sampleOf(row, snap)); trimHist(h, cfg, now);
       if (!cfg.detect || row.suspect) { this.endAlert(sid, row.suspect ? 'suspect_tree' : 'off'); continue; }
       const reasons = judge(h, cfg, now);
       if (!reasons.length) { this.endAlert(sid, 'resolved'); continue; }
@@ -216,14 +270,16 @@ export class ResourceGuard {
       const was = a ? a.kind : null;
       if (!a) { a = { since: now, carded: false, cardId: null }; this.alerts.set(sid, a); }
       Object.assign(a, { kind, reasons, top: topOf(row, reasons), state: row.state, bgOnly: !!row.bgOnly, memMB: row.memMB, cpuPct: row.cpuPct });
-      if (fresh || (was === 'heavy' && kind === 'suspect')) this.logAlert(sid, a, row);
+      const instantOnly = reasons.every((r) => r.instant);
+      if (fresh || (was === 'heavy' && kind === 'suspect') || (a.instantOnly && !instantOnly)) this.logAlert(sid, a, row); // P348: 곧바로 단 배지가 지속 기준이 되면 한 번 더
+      a.instantOnly = instantOnly;
       // 카드: 의심이면 한 장(같은 폭주 동안 한 번). 그 뒤 잠깐 일하는 중(무거움)이 되어도 폭주가 이어지는 동안은 닫지 않는다(풀리면 endAlert가 닫는다)
       const open = this.openCard(sid);
       if (open && !a.cardId) a.cardId = open.id; // 판이 다시 떴을 때 열린 카드를 이어 받는다
       if (kind === 'suspect' && mayCard(a, { detect: cfg.detect, mutedUntil: this.mute.get(sid) || 0, now, open: !!open })) this.makeCard(s, a);
       row.guard = this.view(a);
     }
-    for (const sid of [...this.hist.keys()]) if (!live.has(sid)) { this.hist.delete(sid); this.endAlert(sid, 'gone'); }
+    for (const sid of [...this.hist.keys()]) if (!live.has(sid)) { this.hist.delete(sid); this.transitSeen.delete(sid); this.endAlert(sid, 'gone'); }
     for (const sid of [...this.paused.keys()]) if (!this.b.sessions.has(sid)) { this.paused.delete(sid); this.savePaused(); }
     this.closeOrphans();
     this.sweepPriority(cfg, mon && mon.trees ? mon.trees : new Map(), snap);
@@ -231,7 +287,7 @@ export class ResourceGuard {
   view(a) { return { kind: a.kind, reasons: a.reasons, since: a.since, top: a.top, ...(a.bgOnly ? { bgOnly: true } : {}), ...(a.cardId ? { card: a.cardId } : {}) }; }
   logAlert(sid, a, row) {
     const g = (t) => a.reasons.find((r) => r.type === t);
-    const data = { kind: a.kind, type: a.reasons[0].type, types: a.reasons.map((r) => r.type), cpuPct: g('cpu') ? g('cpu').pct : null, memMB: row.memMB ?? null, growMB: g('grow') ? Math.round(g('grow').toMB - g('grow').fromMB) : null, top: a.top ? { name: a.top.name, pid: a.top.pid, cpuPct: a.top.cpuPct, memMB: a.top.memMB, agent: a.top.agent } : null, state: row.state, ...(row.bgOnly ? { bgOnly: true } : {}) };
+    const data = { kind: a.kind, ...(a.reasons.every((r) => r.instant) ? { instant: true } : {}), type: a.reasons[0].type, types: a.reasons.map((r) => r.type), cpuPct: g('cpu') ? g('cpu').pct : null, memMB: row.memMB ?? null, growMB: g('grow') ? Math.round(g('grow').toMB - g('grow').fromMB) : null, top: a.top ? { name: a.top.name, pid: a.top.pid, cpuPct: a.top.cpuPct, memMB: a.top.memMB, agent: a.top.agent } : null, state: row.state, ...(row.bgOnly ? { bgOnly: true } : {}) };
     this.b.store.addEvent(sid, 'resource_alert', data);
     this.b.log(`resource alert ${row.name} ${a.kind} ${data.types.join('+')} cpu=${data.cpuPct ?? '-'}% mem=${data.memMB ?? '-'}MB top=${a.top ? `${a.top.name}(${a.top.pid})` : '-'} state=${row.state}`);
   }

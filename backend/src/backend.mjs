@@ -34,8 +34,8 @@ import { writeSessionSettings, fillSessionHooks, buildStartArgs, buildResumeArgv
 import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyExitText, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting, screenPermissionAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
-import { ResourceMonitor, childProcesses } from './resources.mjs';
-import { ResourceGuard } from './resource-guard.mjs'; // P341: 폭주 감시·우선순위 낮추기
+import { ResourceMonitor, childProcesses, tableReader } from './resources.mjs';
+import { ResourceGuard, transitOf } from './resource-guard.mjs'; // P341: 폭주 감시·우선순위 낮추기
 import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { probeCodex, probeClaude, probeHermes, probeBalance, sameAccount, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
@@ -417,17 +417,19 @@ export class Backend {
     // P171: 읽기 선 정리(한 번)와 일시 선 쓸기
     this.tempLinks = new TempLinks(this);
     try { this.tempLinks.start(); } catch (e) { this.log('temp links start error', e.stack); }
-    // D1: 자원 감시
+    // D1: 자원 감시. P348: 표는 도우미 snapshot으로 먼저 읽는다(tableReader)
+    this.proc = new ProcControl({ dir: path.join(cfg.dataDir, 'bin'), log: (m) => this.log(m) }); // P341: 일시정지·끄기 도우미
     this.resources = new ResourceMonitor({
       intervalMs: cfg.resourcesIntervalMs,
-      sessions: () => [...this.sessions.values()].map((s) => ({ sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.term.present, state: deriveState(s.rt).state, kind: s.kind || null, bgOnly: (() => { try { return !!this.deliveryView(s.sessionId).bgOnly; } catch { return false; } })() })), // P341: kind(셸 패널은 무거움으로만), bgOnly(턴은 끝났고 뒤 일만 돈다 = 쉬는 세션으로 본다)
+      fastIntervalMs: cfg.resourcesFastMs, // P348
+      readTable: tableReader(this.proc, undefined, (m) => this.log(m)),
+      sessions: () => [...this.sessions.values()].map((s) => { const d = deriveState(s.rt); return { sessionId: s.sessionId, name: s.name, paneId: s.paneId, present: s.rt.term.present, state: d.state, ...transitOf(d, s), kind: s.kind || null, bgOnly: (() => { try { return !!this.deliveryView(s.sessionId).bgOnly; } catch { return false; } })() }; }), // P348: transit·transitAt(전환 중·뒤 판정 쉼). P341: kind(셸 패널은 무거움으로만), bgOnly(턴은 끝났고 뒤 일만 돈다 = 쉬는 세션으로 본다)
       processInfo: (paneId) => this.adapter.processInfo(paneId),
       controllers: () => this.relay.stats(),
       serverPid: () => this.adapter.serverPid(),
       log: (m) => this.log(m), // P168: 버린 이상한 값
     });
     // P341: 폭주 감시와 우선순위 낮추기. 측정이 끝날 때마다(창에 보내기 전) 줄에 guard를 싣고 카드·우선순위를 다룬다
-    this.proc = new ProcControl({ dir: path.join(cfg.dataDir, 'bin'), log: (m) => this.log(m) });
     this.guard = new ResourceGuard(this, { monitor: this.resources, proc: this.proc, settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}) });
     this.resources.nextDelay = () => this.guard.nextDelay();
     this.resources.after.push(async (snap, mon) => { await this.guard.step(snap, mon); snap.guard = this.guard.status(); });

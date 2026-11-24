@@ -116,7 +116,8 @@ export function loadConfig({ argv = process.argv.slice(2), env = process.env } =
     killWaitMs: 10000,
     answerStepMs: 250, // 답하기에서 키 묶음 사이(tab → 글 → enter)에 화면이 바뀔 시간
     // P3
-    resourcesIntervalMs: Number(E('RESOURCES_MS') || 30000), // D1: 약 30초마다
+    resourcesIntervalMs: Number(E('RESOURCES_MS') || 30000), // D1: 약 30초마다(PowerShell로 잴 때)
+    resourcesFastMs: Number(E('RESOURCES_FAST_MS') || 5000), // P348: 판의 도우미로 잴 때
     sleepTickMs: Number(E('SLEEP_TICK_MS') || 30000), // P21(D4): 저절로 잠재울 세션을 보는 간격(시험은 짧게)
     sleepBgPrecheck: !(profile === 'dev' && E('SLEEP_BG_PRECHECK') === 'off'), // P105 판 시험만(개발용 판): 뒤 일 미리 보기를 끄고 /exit 확인 창 처리를 시험한다
     wsGoneGraceMs: profile === 'dev' && E('WS_GONE_GRACE_MS') ? Number(E('WS_GONE_GRACE_MS')) : undefined, // P120 판 시험만(개발용 판): 폴더가 없어진 빈 영역을 치우기 전 유예(기본 60초)

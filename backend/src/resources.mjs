@@ -3,6 +3,7 @@
 // - 제어기: 화면 중계가 띄운 제어기 프로세스의 메모리(hc는 프로세스 없이 파이프라 0)
 // - 터미널 서버와 백엔드 자신의 메모리, 동시 실행 수(working·waiting)
 // 프로세스 표는 PowerShell의 Win32_Process 한 번으로 읽는다(읽기만 한다). 프로세스를 끄지 않는다.
+// P348: 판의 도우미(atrium-proc.exe snapshot, NtQuerySystemInformation 한 번)가 있으면 그것으로 읽고 5초마다 잰다(tableReader). 없거나 실패하면 PowerShell로 30초마다.
 // P255: CPU 사용률. 같은 표에서 프로세스마다 CPU 시간(KernelModeTime + UserModeTime, 100ns)을 읽고, 앞 측정과의 차이를 지난 시간과 코어 수로 나눈다
 //   (세션마다, 판이 띄운 세션 모두). PC 전체는 os.cpus()의 두 측정 차이. 첫 측정은 앞 값이 없어 모른다(null). 측정 주기는 메모리와 같다
 // P341: 표에 우선순위(Win32_Process Priority, 기본 우선순위: 보통 8, 보통 이하 6, 낮음 4, 보통 이상 10, 높음 13)도 읽는다(resource-guard.mjs 낮추기).
@@ -186,10 +187,27 @@ export function systemCpuPct(a, b) {
 }
 export const mb = (bytes) => Math.round((bytes / 1048576) * 10) / 10;
 
+// P348: 프로세스 표 읽기. 판의 도우미(atrium-proc snapshot, 커널 한 번)가 있으면 그것, 없거나 실패하면 PowerShell CIM(readProcessTable).
+//   → () => Promise<{ procs, at, via: 'native' | 'cim' } | null>
+export function tableReader(proc, fallback = readProcessTable, log = null) {
+  let warned = false;
+  return async () => {
+    if (proc && proc.available && proc.available()) {
+      const t = await proc.snapshot().catch(() => null);
+      if (t) return t;
+      if (!warned && log) { warned = true; try { log('resources: helper snapshot failed, using PowerShell'); } catch {} }
+    }
+    const t = await fallback();
+    return t ? { ...t, via: t.via || 'cim' } : t;
+  };
+}
+
 export class ResourceMonitor {
   // sample()이 부를 함수들을 받는다. 시험에서 바꿔 넣는다.
-  constructor({ sessions, processInfo, controllers, serverPid = () => null, readTable = readProcessTable, intervalMs = 30000, log = null, cpus = () => os.cpus(), nextDelay = null }) {
-    Object.assign(this, { sessions, processInfo, controllers, serverPid, readTable, intervalMs, cpus, nextDelay });
+  // P348: fastIntervalMs = 도우미로 잴 때의 간격(빠르고 가벼워 짧게). PowerShell로 잴 때는 intervalMs
+  constructor({ sessions, processInfo, controllers, serverPid = () => null, readTable = readProcessTable, intervalMs = 30000, fastIntervalMs = 5000, log = null, cpus = () => os.cpus(), nextDelay = null }) {
+    Object.assign(this, { sessions, processInfo, controllers, serverPid, readTable, intervalMs, fastIntervalMs, cpus, nextDelay });
+    this.via = null; // P348: 마지막 표를 읽은 길(native | cim)
     this.trees = new Map(); // P341: 세션 → 마지막 측정의 나무(셸 아래 모든 프로세스, 이상한 나무는 빠짐). 창에 보내지 않는다
     this.after = []; // P341: 측정마다 부를 함수(snap, monitor)
     this.prevCpu = null; // P255: { times(cpuTimes), at, cpus } 앞 측정
@@ -202,13 +220,16 @@ export class ResourceMonitor {
     const loop = (ms) => { this.timer = setTimeout(() => this.sample().catch(() => {}).finally(() => { if (!this.stopped) loop(this.delay()); }), ms); };
     loop(3000); // 첫 측정도 stop()에서 취소한다(이슈 #1-10)
   }
-  delay() { let d = null; try { d = this.nextDelay ? this.nextDelay() : null; } catch {} return Number.isFinite(d) && d > 0 ? Math.min(d, this.intervalMs) : this.intervalMs; }
+  base() { return this.via === 'native' && this.fastIntervalMs > 0 ? Math.min(this.fastIntervalMs, this.intervalMs) : this.intervalMs; } // P348
+  delay() { const base = this.base(); let d = null; try { d = this.nextDelay ? this.nextDelay() : null; } catch {} return Number.isFinite(d) && d > 0 ? Math.min(d, base) : base; }
   stop() { this.stopped = true; clearTimeout(this.timer); }
 
   async sample() {
     const t0 = Date.now();
     const table = await this.readTable();
     if (!table) return this.last;
+    const readMs = Date.now() - t0; // P348: 표 읽기 시간
+    this.via = table.via || 'cim';
     const list = this.sessions();
     const tAt = Number.isFinite(table.at) ? table.at : Date.now();
     let cpusNow = null; try { cpusNow = this.cpus(); } catch {}
@@ -241,6 +262,7 @@ export class ResourceMonitor {
         memMB: tree ? mb(tree.reduce((a, p) => a + p.ws, 0)) : null, claudeMB: claudeTree ? mb(claudeTree.reduce((a, p) => a + p.ws, 0)) : null, procs: tree ? tree.length : 0,
         cpuPct: cpuPct(ticks, dt, cores),
         kind: s.kind || null, // P341: 셸 패널(shell)인가
+        ...(s.transit ? { transit: s.transit } : {}), ...(Number.isFinite(s.transitAt) ? { transitAt: s.transitAt } : {}), // P348: 전환 중·마지막 전환 경계(폭주 판정을 쉰다)
         ...(s.bgOnly ? { bgOnly: true } : {}), // P341: 턴은 끝났고 뒤 일만 돈다(P240)
         ...(tree && tree.length ? treeTops(tree, prev && prev.times, prev && prev.at, dt, cores) : { topCpu: null, topMem: null }), // P341
         ...(bad ? { suspect: bad } : {}),
@@ -250,7 +272,7 @@ export class ResourceMonitor {
     const ctlMB = mb(ctl.reduce((a, c) => a + ((table.procs.get(c.controllerPid) || {}).ws || 0), 0));
     const hp = this.serverPid();
     const snap = {
-      at: Date.now(), ms: Date.now() - t0,
+      at: Date.now(), ms: Date.now() - t0, readMs, via: this.via, intervalMs: this.base(), // P348: 표 읽기 시간·길·간격
       sessions: rows,
       sessionCount: list.length,
       sessionsMB: mb(rows.reduce((a, r) => a + (r.memMB || 0) * 1048576, 0)),

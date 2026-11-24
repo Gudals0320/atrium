@@ -54,6 +54,7 @@ export const ITEMS = [
   { id: 'guardMemGB', page: 'resources', name: 'guard.set.memGB', hint: 'guard.set.memGBHint', parent: 'guardDetect' },
   { id: 'guardGrowMin', page: 'resources', name: 'guard.set.growMin', hint: 'guard.set.growMinHint', parent: 'guardDetect' },
   { id: 'guardBgCpuMin', page: 'resources', name: 'guard.set.bgCpuMin', hint: 'guard.set.bgCpuMinHint', parent: 'guardDetect' },
+  { id: 'guardInstantX', page: 'resources', name: 'p348.instantX', hint: 'p348.instantXHint', parent: 'guardDetect' }, // P348
   { id: 'archiveDays', page: 'recall', name: 'settings.archiveDays', hint: 'settings.archiveDaysHint', note: 'settings.archiveDaysNote' },
   { id: 'autoOpenRepos', page: 'recall', name: 'settings.autoOpenName', hint: 'settings.autoOpen', note: 'settings.autoOpenNote' },
   { id: 'usageAlerts', page: 'alerts', name: 'usage.alertsName', hint: 'usage.alertsHint' },

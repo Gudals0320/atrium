@@ -90,7 +90,7 @@ function GuardNum({ k, settings, schema, label, hint, child = true, dim = false 
   const save = async (value) => { try { await api.call('settings.set', { key: k, value }); setV(null); toast(t('guard.set.saved')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); } };
   return (
     <SetRow id={k} name={t(label)} hint={t(hint, { n: sc.default ?? '' })} child={child} dim={dim}>
-      <input type="number" className="mt-set-num" min={sc.min} max={sc.max} data-field={`setting-${k}`} value={v ?? settings[k] ?? sc.default ?? ''} onChange={(e) => setV(e.target.value)}
+      <input type="number" className="mt-set-num" min={sc.min} max={sc.max} step={k === 'guardInstantX' ? 0.5 : undefined} data-field={`setting-${k}`} value={v ?? settings[k] ?? sc.default ?? ''} onChange={(e) => setV(e.target.value)}
         onBlur={() => v != null && v !== '' && save(Number(v))} onKeyDown={(e) => { if (e.key === 'Enter' && v != null && v !== '') save(Number(v)); }} />
     </SetRow>
   );
@@ -112,6 +112,7 @@ export function ResourcesTab({ settings, schema }) {
         <GuardNum k="guardCpuMin" settings={settings} schema={schema} label="guard.set.cpuMin" hint="guard.set.cpuMinHint" dim={off} />
         <GuardNum k="guardMemGB" settings={settings} schema={schema} label="guard.set.memGB" hint="guard.set.memGBHint" dim={off} />
         <GuardNum k="guardGrowMin" settings={settings} schema={schema} label="guard.set.growMin" hint="guard.set.growMinHint" dim={off} />
+        {settings.guardInstantX != null && <GuardNum k="guardInstantX" settings={settings} schema={schema} label="p348.instantX" hint="p348.instantXHint" dim={off} />}
         {settings.guardBgCpuMin != null && <GuardNum k="guardBgCpuMin" settings={settings} schema={schema} label="guard.set.bgCpuMin" hint="guard.set.bgCpuMinHint" dim={off} />}
       </>}
     </div>
