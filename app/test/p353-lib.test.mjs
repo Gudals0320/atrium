@@ -108,7 +108,7 @@ test('글자 크기: 옛 휴대폰 값(기본 0.8)을 페이지 배율로, 0.75~
 });
 
 test('묶음 나누기: 서비스 워커가 새 묶음과 조각을 껍데기로 본다, 첫 스크립트는 boot.js', () => {
-  for (const p of ['/boot.js', '/mobile.js', '/mobile.css', '/fullmap.js', '/fullmap.css', '/chunk-AB12CD34.js', '/renderer.js']) assert.equal(swRoute({ url: 'http://x' + p, origin: 'http://x' }), 'shell', p);
+  for (const p of ['/boot.js', '/mobile.js', '/mobile.css', '/mobilemap.css', '/chunk-AB12CD34.js', '/renderer.js']) assert.equal(swRoute({ url: 'http://x' + p, origin: 'http://x' }), 'shell', p);
   assert.equal(swRoute({ url: 'http://x/chunk-../x.js', origin: 'http://x' }), 'pass');
   assert.ok(shellList(['boot.js', 'mobile.js', 'chunk-XY.js', 'chunk-XY.js.map']).includes('./chunk-XY.js'));
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');

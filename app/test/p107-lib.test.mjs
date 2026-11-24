@@ -147,10 +147,10 @@ test('CSS 휴대폰: 같은 층, 카드 폭에 맞춘 원뿔 크기, steps로 �
 });
 
 test('그리기: 일하는 카드에만 빛 층(PC 카드, 휴대폰 카드), 가리개 하나, 시작하면 박자를 맞춘다', () => {
-  const pc = read('Mission.jsx'), ph = read('PhoneMission.jsx');
+  const pc = (read('Mission.jsx') + read('MapCard.jsx')), ph = read('PhoneMission.jsx');
   assert.match(pc, /\{tier === 'work' && <MissionLight role="mm-light" \/>\}/);
   assert.match(ph, /\{r\.tier === 'work' && <MissionLight role="pm-light" \/>\}/);
-  const comp = pc.slice(pc.indexOf('export function MissionLight'), pc.indexOf('function Node('));
+  const mc = read('MapCard.jsx'); const comp = mc.slice(mc.indexOf('export function MissionLight'), mc.indexOf('export const DoneMark')); // P356: 빛 층은 MapCard.jsx로 옮겼다
   assert.match(comp, /<span className="mt-mm-light" data-role=\{role\} aria-hidden="true" onAnimationStart=\{onLightStart\}>/);
   assert.match(comp, /<i className="mt-mm-lring"><i className="mt-mm-lspin" \/><\/i>/);
   const pcRows = pc.slice(pc.indexOf("if (b.kind === 'dot')"), pc.indexOf('<div className={`mt-mm-card'));

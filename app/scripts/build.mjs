@@ -1,6 +1,6 @@
 // 창 화면(renderer)을 묶는다: src/renderer → dist/renderer.js, dist/renderer.css, dist/index.html, dist/fonts/(P11 글꼴)
 // P353: 묶음이 넷이다. boot.js(첫 스크립트, 휴대폰이면 mobile을 아니면 renderer를 읽는다), renderer(판 화면 main.jsx), mobile(휴대폰 전용 페이지),
-//   fullmap(휴대폰 페이지의 "전체 맵", 누를 때만). 함께 쓰는 모듈은 dist/chunk-<해시>.js로 나눈다(splitting). CSS는 묶음마다 하나
+//   (P356: fullmap 묶음은 뺐다. 휴대폰 맵 탭은 mobile 묶음이 늦게 읽는 조각 MobileMap.jsx와 고른 CSS dist/mobilemap.css). 함께 쓰는 모듈은 dist/chunk-<해시>.js로 나눈다(splitting). CSS는 묶음마다 하나
 //   P355: mterm(휴대폰 페이지 세션 화면의 터미널 보기, xterm·TerminalView. "터미널"을 고를 때만)
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
@@ -16,7 +16,7 @@ fs.mkdirSync(out, { recursive: true });
 for (const f of fs.readdirSync(out)) if (/^chunk-[A-Za-z0-9]+\.(js|css)(\.map)?$/.test(f)) fs.rmSync(path.join(out, f));
 
 await esbuild.build({
-  entryPoints: { boot: path.join(ROOT, 'src', 'renderer', 'boot.js'), renderer: path.join(ROOT, 'src', 'renderer', 'main.jsx'), mobile: path.join(ROOT, 'src', 'renderer', 'mobile.jsx'), fullmap: path.join(ROOT, 'src', 'renderer', 'fullmap.jsx'), mterm: path.join(ROOT, 'src', 'renderer', 'mterm.jsx') },
+  entryPoints: { boot: path.join(ROOT, 'src', 'renderer', 'boot.js'), renderer: path.join(ROOT, 'src', 'renderer', 'main.jsx'), mobile: path.join(ROOT, 'src', 'renderer', 'mobile.jsx'), mterm: path.join(ROOT, 'src', 'renderer', 'mterm.jsx') }, // P356: fullmap(옛 전체 맵) 묶음은 뺐다(맵 탭이 판 세션 맵과 같은 모양)
   outdir: out,
   bundle: true,
   splitting: true, // P353
@@ -33,6 +33,12 @@ await esbuild.build({
   logLevel: 'warning',
 });
 fs.copyFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), path.join(out, 'index.html'));
+// P356: 휴대폰 페이지 맵 탭의 CSS = 판 화면 CSS에서 세션 맵 카드·띠·선 규칙만(scripts/css-pick.mjs). 맵 탭을 열 때 읽는다
+{
+  const { pickCss, MAP_KEEP } = await import(pathToFileURL(path.join(ROOT, 'scripts', 'css-pick.mjs')).href);
+  const src = ['styles.css', 'phone.css'].map((f) => fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8')).join('\n');
+  fs.writeFileSync(path.join(out, 'mobilemap.css'), pickCss(src, MAP_KEEP));
+}
 // 종류 로고 같은 그림은 그대로 옮긴다(lib/kinds.js가 dist/index.html 기준 assets/… 주소로 가리킨다)
 fs.rmSync(path.join(out, 'assets'), { recursive: true, force: true }); // 지운 그림(예: 옛 Claude 봇)이 dist에 남지 않게
 fs.cpSync(path.join(ROOT, 'src', 'renderer', 'assets'), path.join(out, 'assets'), { recursive: true });

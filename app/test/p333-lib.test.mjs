@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const read = (p) => fs.readFileSync(new URL(p, import.meta.url), 'utf8');
-const jsx = read('../src/renderer/MissionLineage.jsx');
+const jsx = (read('../src/renderer/MissionLineage.jsx') + read('../src/renderer/MapCard.jsx'));
 const css = read('../src/renderer/styles.css');
 
 test('PC 세션 맵 카드: [할 일][작업 완료] 차례로 한 무리, 휴대폰 맵(todo 없음)은 작업 완료 꼬리표 그대로', () => {
