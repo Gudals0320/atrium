@@ -3276,4 +3276,13 @@ export default {
     rowCpuTitle: 'CPU relative to one core (100% = one full core). The "CPU: sessions · whole PC" line below is relative to the whole PC.',
     everyTitle: 'Sampling interval. Reading the process table took {ms} ms last time.',
   },
+  // P352: 휴대폰 이상 동작 기록
+  phoneErrors: {
+    newKind: 'New phone error: {kind} (atrium remote errors)',
+    kind_err: 'Screen error',
+    kind_rej: 'Unhandled rejection',
+    kind_api: 'API failure',
+    kind_send: 'Send failure',
+    kind_ws: 'Reconnect',
+  },
 };

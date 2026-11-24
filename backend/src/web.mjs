@@ -19,6 +19,7 @@ import { BACKEND_ROOT, envVar } from './config.mjs';
 import { loginAllowed, parseLogins, isRemoteRequest, diagnose, requestAddr, nodeCheck, whoisMatch, needsRepair } from './tailscale.mjs'; // P49(R3), P57(기기 확인)
 import { WebAuth, sessionIdOf, sessionCookie, clearCookies, isHttpsOrigin, sentSecureCookie, COOKIE_MAX_MS } from './web-auth.mjs'; // P56(S2·S3)
 import { PasskeyError, passkeyKind } from './passkey.mjs';
+import { errorSummary, teleKey, ERROR_KINDS, TELE_BATCH_MAX, TELE_BOOT_MAX } from './phone-errors.mjs'; // P352: 휴대폰 이상 동작 기록과 요약
 import { RemoteLog, ConnectWatch, browserOf } from './remote-log.mjs'; // P58(S4): 연결 기록, 새로 붙음 알림
 import { Pusher } from './web-push.mjs'; // P88: 웹 푸시
 import { ACTIVE_MS } from './multiclient.mjs';
@@ -379,7 +380,7 @@ export class WebServer {
     try { cleanupUploads(this.uploadDir); } catch {}
     this.sweepTimer = setInterval(() => { this.pairing.sweep(); this.sweepSessions(); }, 15_000); this.sweepTimer.unref();
     // P58: 연결 기록과 새로 붙음 알림. 끊기 고리(onDisconnectDevice)는 기기의 다른 상태(P56 세션 등)를 함께 끝낸다
-    this.remoteLog = new RemoteLog({ file: cfg.dataDir ? path.join(cfg.dataDir, 'remote-log.jsonl') : null, now, log, onAppend: (e) => this.sendLocal('remote.logged', e) });
+    this.remoteLog = new RemoteLog({ file: cfg.dataDir ? path.join(cfg.dataDir, 'remote-log.jsonl') : null, now, log, onAppend: (e) => { if (e.event !== 'tele') this.sendLocal('remote.logged', e); } }); // P352: tele 줄은 연결 기록 화면을 다시 읽게 하지 않는다
     this.watch = new ConnectWatch({ now, quietMs: Number(envVar('REMOTE_QUIET_MS')) > 0 ? Number(envVar('REMOTE_QUIET_MS')) : undefined }); // 시험: ATRIUM_REMOTE_QUIET_MS로 줄인다
     this.disconnectHooks = [];
     this.pairMeta = new Map(); // 허락 요청 ID → 요청한 곳(기록용)
@@ -428,6 +429,18 @@ export class WebServer {
     const remote = isRemoteRequest(req, this.cfg.port);
     const login = req.headers['tailscale-user-login'];
     return { remote, login: login != null ? String(login) : null, addr: remote ? clientIp(req) : null, browser: browserOf(req.headers['user-agent']) };
+  }
+  // P352: 처음 보는 오류 종류(7일 안에 같은 열쇠가 없던 것)면 PC 창에 알린다. 같은 종류는 다시 알리지 않는다
+  noteErrorKind(e) {
+    const key = teleKey(e.tele);
+    if (!this.teleSeen) {
+      this.teleSeen = new Set();
+      const since = this.now() - 7 * 864e5;
+      for (const x of this.remoteLog.entries) if (x !== e && x.event === 'tele' && x.tele && x.at >= since) this.teleSeen.add(teleKey(x.tele));
+    }
+    if (this.teleSeen.has(key)) return;
+    this.teleSeen.add(key);
+    this.sendLocal('remote.errorKind', { at: e.at, k: e.tele.k, m: e.tele.m || null, code: e.tele.code || null, device: e.deviceName || null });
   }
   note(event, req, fields = {}) { try { return this.remoteLog.add(event, { ...(req ? this.reqMeta(req) : {}), ...fields }); } catch (e) { this.log(`remote log error: ${e.message}`); return null; } }
   // 연결 거부: 까닭 코드를 남기고 null을 돌려준다(P56·P57이 더하는 까닭도 이 함수로 남긴다)
@@ -830,7 +843,9 @@ export class WebServer {
       'device.approve': localOnly((p) => this.decide(String(p.id || ''), true)),
       'device.deny': localOnly((p) => this.decide(String(p.id || ''), false)),
       'device.disconnect': localOnly((p) => this.disconnect(String(p.id || ''))), // P58: 지금 연결만 닫는다
-      'remote.log': localOnly((p) => ({ entries: this.remoteLog.list({ limit: p && Number.isInteger(p.limit) ? p.limit : 100 }) })), // P58: 연결 기록(최근 것부터)
+      'remote.log': localOnly((p) => ({ entries: this.remoteLog.list({ limit: p && Number.isInteger(p.limit) ? p.limit : 100, except: p && p.tele ? null : ['tele'] }) })), // P352: 휴대폰 이상 동작 줄(tele)은 remote.errors로 본다
+      // P352: 휴대폰 이상 동작 요약(atrium remote errors). sinceMs: 이만큼 전부터(기본 하루)
+      'remote.errors': localOnly((p) => errorSummary(this.remoteLog.entries, { since: this.now() - (p && Number.isFinite(p.sinceMs) && p.sinceMs > 0 ? p.sinceMs : 864e5), limit: p && Number.isInteger(p.limit) ? Math.min(Math.max(p.limit, 1), 100) : 20 })), // P58: 연결 기록(최근 것부터)
       'web.status': () => this.status(),
       // P84: 웹 화면이 정상 떠남 없이 다시 읽혔다(페이지가 죽음). 기기 연결 하나에 한 번만 남긴다(넘치는 요청이 기록을 밀어내지 않게)
       'web.boot': (p, c) => {
@@ -841,8 +856,30 @@ export class WebServer {
         // P87: 같은 죽음(id: 죽은 페이지의 부팅 시각)은 한 번만. 답을 받기 전에 끊긴 창이 다시 붙어 또 보낸다
         const bootId = Number.isFinite(p.id) && p.id > 0 ? Math.round(p.id) : null;
         if (bootId != null && this.remoteLog.entries.some((e) => e.event === 'boot' && e.bootId === bootId)) return { logged: false, dup: true };
-        this.note('boot', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, crashed: true, light: p.light === true, ...(p.lite === true ? { lite: true } : {}), crash: p.crash, level: p.level, bootId }); // P293: lite = 가볍게 연 휴대폰 맵
+        this.note('boot', null, { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name, crashed: true, light: p.light === true, ...(p.lite === true ? { lite: true } : {}), crash: p.crash, level: p.level, bootId, why: p.why }); // P352: why = 이 부팅의 판단 까닭 // P293: lite = 가볍게 연 휴대폰 맵
         return { logged: true };
+      },
+      // P352: 휴대폰 화면의 이상 동작 묶음. 줄마다 tele 줄 하나(phone-errors.mjs teleInfo가 고른 필드만). 한 번에 TELE_BATCH_MAX줄, 부팅(bootAt)마다 TELE_BOOT_MAX줄.
+      // 처음 보는 오류 종류면 PC 창에 조용한 알림 한 줄(remote.errorKind)
+      'web.telemetry': (p, c) => {
+        const d = c && c.auth && c.auth.kind === 'device' && c.auth.device;
+        const local = c && c.auth && c.auth.kind === 'local';
+        if (!d && !local) throw apiErr('forbidden', 'only a paired browser reports telemetry', 403);
+        const lines = p && Array.isArray(p.lines) ? p.lines.slice(0, TELE_BATCH_MAX) : [];
+        const who = d ? { ...(c.auth.meta || {}), deviceId: d.id, deviceName: d.name, node: c.auth.tsNode && c.auth.tsNode.name } : { deviceName: 'local', remote: false };
+        const bk = `${who.deviceId || 'local'}|${Number.isFinite(p && p.bootAt) ? Math.round(p.bootAt) : 'x'}`;
+        if (!this.teleBoots) this.teleBoots = new Map();
+        let used = this.teleBoots.get(bk) || 0, logged = 0;
+        for (const x of lines) {
+          if (used >= TELE_BOOT_MAX) break;
+          const e = this.note('tele', null, { deviceId: who.deviceId, deviceName: who.deviceName, node: who.node, browser: who.browser, remote: who.remote, tele: x });
+          if (!e || !e.tele) continue;
+          used++; logged++;
+          if (ERROR_KINDS.includes(e.tele.k)) this.noteErrorKind(e);
+        }
+        this.teleBoots.set(bk, used);
+        if (this.teleBoots.size > 200) this.teleBoots.delete(this.teleBoots.keys().next().value);
+        return { logged };
       },
       // P86: 가벼운 보드 단계가 이 기기에서 살아남았다(1분 넘게 살았거나 정상으로 떠남). 기기 연결 하나에 한 번
       'web.level': (p, c) => {

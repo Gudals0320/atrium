@@ -10,7 +10,7 @@
 //   색은 tokens.css, 글꼴은 fonts.css(앱에 넣은 OFL 글꼴). 글꼴을 읽은 뒤에 그린다(터미널이 처음부터 제 글꼴로 칸 크기를 잰다)
 // P48(원격 R2): Electron 밖(브라우저)에서 돌면 웹 어댑터(web.js)가 window.mt를 두고, 짝을 맺기 전에는 짝 맺기 화면(Pair.jsx)만 보인다.
 //   PC 창에는 브라우저의 허락 요청 카드(WebDevices.jsx)가 뜬다
-import { lightMode, startCrashWatch, setCrumbSampler, bootState, boardPlan } from './crash-watch.js'; // P84: 죽기 전 기록, 반복해서 죽으면 가벼운 화면
+import { lightMode, startCrashWatch, setCrumbSampler, bootState, boardPlan, crumbSteps } from './crash-watch.js'; // P84: 죽기 전 기록, 반복해서 죽으면 가벼운 화면
 import { isWeb } from './web.js';
 import { RemoteBar } from './RemoteBar.jsx'; // P49: 웹 화면의 다시 연결 띠와 왕복 지연
 import { webGate } from './Pair.jsx';
@@ -21,6 +21,7 @@ import { PhoneApp, usePhoneLayout, useScreenFix, LightBanner, LevelBadge, phoneS
 import { startRemoteNotice, remoteNotices } from './remote-notice.js'; // P58
 import { watchPerfTrace } from './perf-trace.js'; // P146
 import { startPushClient } from './push.js'; // P88: 웹 푸시
+import { startPhoneTelemetry } from './lib/phone-telemetry.js'; // P352: 휴대폰 이상 동작 기록
 import '@xyflow/react/dist/style.css';
 import '@xterm/xterm/css/xterm.css';
 import './fonts.css';
@@ -274,6 +275,13 @@ const fontsReady = Promise.race([
 { const pl = boardPlan(); if (pl.level && !(isWeb && phoneScreen())) { document.documentElement.dataset.level = String(pl.level); if (!pl.effects) document.documentElement.classList.add('mt-lite'); } }
 function boot() {
   fontsReady.then(() => root.render(<ReactFlowProvider><App /></ReactFlowProvider>));
+  // P352: 휴대폰 화면이면 이상 동작(화면 오류, 실패한 API, 보내기 실패, 다시 붙기, 받은 크기)을 모아 판에 보낸다. 첫 연결의 받은 크기부터 세도록 연결 전에 켠다
+  if (isWeb && phoneScreen()) {
+    const ph = () => document.querySelector('[data-role=phone]');
+    startPhoneTelemetry({ api, boot: bootState(), steps: crumbSteps,
+      context: () => { const el = ph(); const id = history.state && history.state.mtPhone; const s = id ? getState().sessions.get(id) : null; return { view: el ? el.dataset.view : 'other', session: s ? s.name : null }; },
+      versions: () => ({ app: api.info && api.info.appVersion, board: getState().compat && getState().compat.version }) });
+  }
   api.connect();
   startNotifier();
   startUsageAlerts(); // P211

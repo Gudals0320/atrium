@@ -22,6 +22,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   remote block|allow                      원격 접속 차단·허용. 차단 시 등록된 기기와 Tailscale 요청을 거부하며 serve 설정은 유지
   remote log [--limit n]                  원격 연결 기록 (기기 등록, 연결·연결 종료, 접속 거부와 사유)
   remote push-test [기기]                 알림을 켠 기기(또는 지정한 기기)에 시험 알림 보내기
+  remote errors [--since 1d] [--json]     휴대폰 화면의 오류·실패를 종류별로 묶어 보기(횟수, 그때 상황)
   devices kick <id>                       현재 기기 연결 종료 (기기는 다시 연결할 수 있음)
   remote enable|disable [--yes] [--https-port n]   tailscale serve 시작·중지 (--yes 지정 시 실행, funnel 사용 안 함)
   terminal start|stop|restart [--yes]     보드 전용 터미널 서버 시작·중지·재시작

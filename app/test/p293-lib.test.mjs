@@ -28,18 +28,18 @@ test('휴대폰: 열린 지 몇 초 만에 죽으면 다음 열기는 가볍게,
   assert.equal(d.crashed, false); assert.equal(d.lite, false, '살아남음 → 보통');
 });
 
-test('휴대폰: 오래 쓰다 죽음(세션 화면 터미널 등)은 가볍게 열지 않는다, 가려진 채 죽음은 판단을 바꾸지 않는다', () => {
+test('휴대폰: 오래 쓰다 죽음(세션 화면 터미널 등)은 가볍게 열지 않는다, 가려진 채 죽음은 가벼운 보기를 잇지 않는다(P352)', () => {
   let t = 2e6;
   let d = boot(null, t);
   let s = die(d.state, t, LITE_FAST_MS + 60_000, 'session'); t += 200_000;
   d = boot(s, t);
   assert.equal(d.crashed, true); assert.equal(d.lite, false, '오래 산 뒤 죽음 → 보통');
-  // 빠른 죽음 → 가볍게, 그 다음 페이지가 가려진 채 죽음 → 여전히 가볍게
+  // 빠른 죽음 → 가볍게, 그 다음 페이지가 가려진 채 죽음 → 보통(P352: 예전에는 가볍게를 이어 가 풀리지 않았다)
   s = die(d.state, t, 1500); t += 5000;
   d = boot(s, t); assert.equal(d.lite, true);
   s = json({ ...d.state, cur: { ...d.state.cur, alive: t + 60_000, hidden: true } }); t += 120_000;
   d = boot(s, t);
-  assert.equal(d.hidden, true); assert.equal(d.lite, true, '가려진 채 죽음은 그대로');
+  assert.equal(d.hidden, true); assert.equal(d.lite, false, '가려진 채 죽음은 가벼운 보기를 잇지 않는다'); assert.equal(d.why, 'hidden');
 });
 
 test('휴대폰: 보드 단계를 올리지 않고(맵에 끄는 것이 없다), 가벼운 화면 표시가 걸려 있으면 살아남을 때 푼다', () => {

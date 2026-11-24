@@ -3280,4 +3280,13 @@ export default {
     rowCpuTitle: '코어 하나 대비 CPU입니다(100% = 코어 하나를 다 씀). 아래 "CPU: 세션 · PC 전체"는 PC 전체 대비입니다.',
     everyTitle: '측정 간격입니다. 마지막 측정의 프로세스 표 읽기에 {ms}ms 걸렸습니다.',
   },
+  // P352: 휴대폰 이상 동작 기록
+  phoneErrors: {
+    newKind: '휴대폰에서 새 오류가 생겼습니다: {kind} (atrium remote errors)',
+    kind_err: '화면 오류',
+    kind_rej: '처리되지 않은 거부',
+    kind_api: 'API 실패',
+    kind_send: '보내기 실패',
+    kind_ws: '다시 연결',
+  },
 };
