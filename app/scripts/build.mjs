@@ -1,6 +1,7 @@
 // 창 화면(renderer)을 묶는다: src/renderer → dist/renderer.js, dist/renderer.css, dist/index.html, dist/fonts/(P11 글꼴)
 // P353: 묶음이 넷이다. boot.js(첫 스크립트, 휴대폰이면 mobile을 아니면 renderer를 읽는다), renderer(판 화면 main.jsx), mobile(휴대폰 전용 페이지),
 //   fullmap(휴대폰 페이지의 "전체 맵", 누를 때만). 함께 쓰는 모듈은 dist/chunk-<해시>.js로 나눈다(splitting). CSS는 묶음마다 하나
+//   P355: mterm(휴대폰 페이지 세션 화면의 터미널 보기, xterm·TerminalView. "터미널"을 고를 때만)
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,7 +16,7 @@ fs.mkdirSync(out, { recursive: true });
 for (const f of fs.readdirSync(out)) if (/^chunk-[A-Za-z0-9]+\.(js|css)(\.map)?$/.test(f)) fs.rmSync(path.join(out, f));
 
 await esbuild.build({
-  entryPoints: { boot: path.join(ROOT, 'src', 'renderer', 'boot.js'), renderer: path.join(ROOT, 'src', 'renderer', 'main.jsx'), mobile: path.join(ROOT, 'src', 'renderer', 'mobile.jsx'), fullmap: path.join(ROOT, 'src', 'renderer', 'fullmap.jsx') },
+  entryPoints: { boot: path.join(ROOT, 'src', 'renderer', 'boot.js'), renderer: path.join(ROOT, 'src', 'renderer', 'main.jsx'), mobile: path.join(ROOT, 'src', 'renderer', 'mobile.jsx'), fullmap: path.join(ROOT, 'src', 'renderer', 'fullmap.jsx'), mterm: path.join(ROOT, 'src', 'renderer', 'mterm.jsx') },
   outdir: out,
   bundle: true,
   splitting: true, // P353

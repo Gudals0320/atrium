@@ -1,35 +1,32 @@
 // P353: 휴대폰 전용 간소 페이지. 옛 휴대폰 화면(Phone.jsx: 세션 맵 캔버스, xterm 터미널)을 바꾼다. 무거운 모듈(캔버스, xterm, 세션 맵)은 들이지 않는다.
 // - 아래 탭: 홈(수, 응답 필요 카드와 번호 단추, 할 일 카드, 작업 완료), 세션(찾기, 고정, 워크스페이스 묶음, 잠든 세션 접기), 맵(관계 나무, "전체 맵"은 옛 휴대폰 맵을 늦게 읽는다)
-// - 세션 화면: 기다리는 요청, 마지막 답(마크다운), 지시, 터미널 끝 줄(글), 기록 더 보기, 빠른 키(Esc Enter ↑ ↓ 1 2 3 y n), 입력(대기열·스티어링·음성), 대기 글
+// - 세션 화면: MobileSession.jsx(P355: 답 | 터미널 보기, 키 줄, 입력)
 // - 자료는 mobile-store.js(phone.subscribe의 작은 줄과 이벤트). 세션 화면은 phone.session을 열 때와 그 줄이 바뀔 때 다시 받는다
 // - 글자 크기는 옛 휴대폰 화면의 값(mt.phoneTermScale)을 페이지 전체에 쓴다. 키보드가 열리면 보이는 높이(visualViewport)에 맞춘다
 // - 알림을 누르면 그 세션 화면을 바로 연다(push.js setOpenHandler, ?open=)
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast } from './store.js';
-import { useMobile, getMobile, call, putDeliveries, setCardsLocal, noteFail } from './mobile-store.js';
+import { useMobile, getMobile, call, setCardsLocal, noteFail } from './mobile-store.js';
 import { useT, errText } from './lib/i18n.js';
-import { STATE_LABEL, deliveryText, shellStateText } from './lib/labels.js';
-import { homeOf, listOf, treeOf, toneOf, needsYou, isDone, QUICK_KEYS, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, TREE_LIMIT, togglePin, readList, detailStale, mergeHistory, choiceButtons, shortChoice, uiFactor } from './lib/mobile.js';
-import { keyQueue, sendPlan, nextNeed, screenBox, kbOpenOf } from './lib/phone.js';
-import { steerBlock } from './lib/steer.js';
+import { STATE_LABEL, shellStateText } from './lib/labels.js';
+import { homeOf, listOf, treeOf, toneOf, needsYou, isDone, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, TREE_LIMIT, togglePin, readList, choiceButtons, shortChoice, uiFactor, pageBox } from './lib/mobile.js';
+import { kbOpenOf } from './lib/phone.js';
+import { SessionScreen } from './MobileSession.jsx'; // P355: 세션 화면
+import { noteLayout } from './lib/phone-telemetry.js'; // P355: 배치 값 한 번(아래 잘림을 숫자로)
 import { activeCards, snoozeTimes } from './lib/decisions.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js';
 import { isStandalone } from './lib/pwa.js';
 import { useConnSteady } from './steady.js';
-import { Markdown } from './Markdown.jsx';
-import { PushButton, PushSheet, SessionMuteButton } from './PhonePush.jsx';
+import { PushButton, PushSheet } from './PhonePush.jsx';
 import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js';
-import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx';
-import { markInteracted, enterSession } from './touch.js';
-import { setDraftSource, takeSavedDraft } from './shell-update.js';
+import { markInteracted } from './touch.js';
 import './phone.css';
 import './mobile.css';
 
 const store = () => { try { return localStorage; } catch { return null; } };
 const SCALE_KEY = 'mt.phoneTermScale'; // 옛 휴대폰 화면과 같은 값
 const readScaleNow = () => { try { return clampPhoneScale(store().getItem(SCALE_KEY)); } catch { return PHONE_SCALE_DEFAULT; } };
-const DONE = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
 const I = {
   home: 'M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z',
   list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
@@ -92,8 +89,10 @@ export function MobileApp() {
   useEffect(() => {
     const vv = window.visualViewport; const el = rootRef.current; const tall = { w: 0, h: 0 };
     const fit = () => {
-      const b = screenBox({ vv, innerHeight: window.innerHeight, innerWidth: window.innerWidth, screenW: window.screen && window.screen.width, screenH: window.screen && window.screen.height, standalone: isStandalone() });
+      const b = pageBox({ vv, innerHeight: window.innerHeight, innerWidth: window.innerWidth, screenW: window.screen && window.screen.width, screenH: window.screen && window.screen.height, standalone: isStandalone() });
       if (el) { el.style.height = b.height + 'px'; el.style.transform = b.top ? 'translateY(' + b.top + 'px)' : ''; }
+      // P355: 홈 화면 앱이 창 높이를 짧게 주면 html·body도 화면 높이까지(옛 휴대폰 화면 useScreenFix, phone.css html.mt-tall)
+      if (b.tall) { document.documentElement.style.setProperty('--mt-screen-h', b.height + 'px'); document.documentElement.classList.add('mt-tall'); } else document.documentElement.classList.remove('mt-tall');
       const vh = vv && vv.height > 0 ? vv.height : window.innerHeight;
       if (tall.w !== window.innerWidth) { tall.w = window.innerWidth; tall.h = 0; }
       tall.h = Math.max(tall.h, vh, window.innerHeight);
@@ -103,7 +102,9 @@ export function MobileApp() {
     if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); }
     window.addEventListener('resize', fit);
     document.documentElement.classList.add('mt-mp-on');
-    return () => { if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } window.removeEventListener('resize', fit); document.documentElement.classList.remove('mt-mp-on', 'mt-kb-open'); };
+    // P355: 자리가 잡힌 뒤 배치 값을 한 번 남긴다(창·보이는 높이, 화면, 안전 영역, 뿌리·아래 줄의 아래 끝)
+    const lay = setTimeout(() => noteLayout(), 2500);
+    return () => { clearTimeout(lay); if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } window.removeEventListener('resize', fit); document.documentElement.classList.remove('mt-mp-on', 'mt-kb-open', 'mt-tall'); };
   }, []);
   // 세션 화면은 history에 둔다(뒤로 가기 = 목록)
   useEffect(() => { const onPop = (e) => setOpen((e.state && e.state.mtMobile) || null); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop); }, []);
@@ -127,7 +128,7 @@ export function MobileApp() {
   const toastsView = <div className="mt-mp-toasts">{toasts.map((x) => <div key={x.id} className={'mt-mp-toast ' + x.kind}>{x.text}</div>)}</div>;
   return (
     <div className="mt-mp" ref={rootRef} data-role="mp" data-tab={tab} data-view={s ? 'session' : tab}>
-      {s ? <SessionScreen key={s.sessionId} s={s} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} needIds={home.needs.map((x) => x.sessionId)} bump={bump} />
+      {s ? <SessionScreen key={s.sessionId} s={s} onBack={() => go(null)} onGo={(id) => go(id, { replace: true })} needIds={home.needs.map((x) => x.sessionId)} bump={bump} scale={scale} />
         : (
           <>
             <header className="mt-mp-head">
@@ -365,167 +366,7 @@ function FullMap({ onClose, onOpen }) {
   );
 }
 
-// ---------- 세션 화면 ----------
-function SessionScreen({ s, onBack, onGo, needIds, bump }) {
-  const t = useT();
-  const id = s.sessionId;
-  const ws = useMobile((m) => m.workspaces);
-  const deliveries = useMobile((m) => m.deliveries);
-  const [detail, setDetail] = useState(null);
-  const [termOpen, setTermOpen] = useState(null); // null: 저절로(일하거나 기다리거나 셸이면 펼침)
-  const [hist, setHist] = useState({ items: [], more: true, before: null, busy: false });
-  const [pins, setPins] = useState(() => readList(store(), PINS_KEY));
-  const live = s.state !== 'sleeping' && s.state !== 'exited';
-  const need = needsYou(s);
-  const prev = useRef(null);
-  const timer = useRef(0);
-  const lastFetch = useRef(0);
-  const fetchDetail = () => {
-    clearTimeout(timer.current);
-    const run = () => { lastFetch.current = Date.now(); call('phone.session', { session: id, lines: 40 }).then((d) => { setDetail(d); putDeliveries(d.deliveries); }).catch(() => {}); };
-    const wait = 1200 - (Date.now() - lastFetch.current);
-    if (wait > 0) timer.current = setTimeout(run, wait); else run();
-  };
-  // 열 때, 줄이 바뀔 때(상태·답·활동·요청), 다시 붙을 때
-  // 보는 중: 이 세션은 저절로 잠재우지 않는다(판 sleep.mjs board.viewing). 30초마다, 떠나면 비운다
-  useEffect(() => { const say = (on) => api.call('board.viewing', on ? { focus: id, close: [id], inputAgoMs: 0 } : { focus: null, close: [] }).catch(() => {}); say(true); const iv = setInterval(() => say(true), 30000); return () => { clearInterval(iv); say(false); }; }, [id]);
-  useEffect(() => { enterSession(id); if (s.unseen) call('session.markSeen', { session: id }).catch(() => {}); fetchDetail(); const off = api.on('$open', () => fetchDetail()); return () => { off(); clearTimeout(timer.current); api.call('phone.close').catch(() => {}); }; }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (prev.current && detailStale(prev.current, s)) fetchDetail(); prev.current = s; if (s.unseen && prev.current) call('session.markSeen', { session: id }).catch(() => {}); }, [s]); // eslint-disable-line react-hooks/exhaustive-deps
-  const keys = useMemo(() => keyQueue((list) => call('session.keys', { session: id, keys: list }, { kind: 'keys' }), (e) => { if (e.code !== 'disconnected') toast(t('phoneKeys.failed', { error: errText(e) }), 'error'); }), [id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const press = (k) => { markInteracted(id); keys.push(k); setTimeout(fetchDetail, 700); };
-  const next = nextNeed(needIds, id);
-  const pinned = pins.includes(id);
-  const pin = () => { const n = togglePin(pins, id); setPins(n); try { store().setItem(PINS_KEY, JSON.stringify(n)); } catch {} };
-  const showTerm = termOpen != null ? termOpen : (need || s.state === 'working' || s.kind === 'shell' || !(detail && detail.lastAnswer));
-  const loadMore = () => {
-    if (hist.busy) return;
-    setHist((h) => ({ ...h, busy: true }));
-    call('phone.history', { session: id, limit: 6, ...(hist.before != null ? { before: hist.before } : {}) }).then((r) => setHist((h) => ({ items: mergeHistory(h.items, r.items), more: r.more, before: r.before, busy: false }))).catch(() => setHist((h) => ({ ...h, busy: false })));
-  };
-  const queue = [...deliveries.values()].filter((d) => d.sessionId === id && !DONE.has(d.status)).sort((a, b) => (a.seq || 0) - (b.seq || 0));
-  const a = detail && detail.ask;
-  const sub = [stateText(t, s), detail && detail.model ? String(detail.model).replace(/^claude-/, '') : s.model, wsNameOf(ws, s.workspaceKey)].filter(Boolean).join(' · ');
-  return (
-    <div className="mt-mp-session" data-role="mp-session" data-session={id} data-state={s.state}>
-      <header className="mt-mp-shead">
-        <button type="button" className="mt-mp-back" data-action="mp-back" onClick={onBack}><Ic d={I.back} /><span>{t('phone.list')}</span></button>
-        <div className="mt-mp-title"><b><span className="mt-mp-dot" data-tone={toneOf(s)} />{s.name}</b><span>{sub}</span></div>
-        {next && <button type="button" className="mt-mp-next" data-action="mp-next" onClick={() => onGo(next)}>{t('phone.nextShort', { n: needIds.filter((x) => x !== id).length })}<Ic d={I.right} s={16} /></button>}
-        {s.kind !== 'shell' && <SessionMuteButton sessionId={id} />}
-        <button type="button" className={'mt-mp-ib' + (pinned ? ' on' : '')} data-action="mp-pin-session" aria-pressed={pinned} aria-label={t(pinned ? 'mobile.unpin' : 'mobile.pin')} onClick={pin}><Ic d={I.star} /></button>
-      </header>
-      <div className="mt-mp-sbody" data-role="mp-sbody">
-        {s.state === 'sleeping' && <div className="mt-mp-cover" data-role="mp-asleep"><p>{t('phone.asleep')}</p><button type="button" className="mt-mp-btn pri" data-action="mp-wake" onClick={() => call('session.wake', { session: id }).catch((e) => toast(errText(e), 'error'))}>{s.waking ? t('phone.waking') : t('phone.wake')}</button></div>}
-        {s.state === 'exited' && <div className="mt-mp-cover"><p>{t('phone.exited')}</p></div>}
-        {need && (
-          <div className="mt-mp-block need" data-role="mp-ask">
-            <div className="mt-mp-block-h">{s.state === 'trust_wait' ? t('phone.ask_trust') : a && a.kind === 'permission' ? t('phone.ask_permission', { tool: a.tool || '' }) : t(`phone.ask_${(s.line && s.line.key) || 'screen'}`)}</div>
-            {a && a.summary && <div className="mt-mp-sub pad">{a.summary}</div>}
-            {a && a.plan && <div className="mt-mp-md"><Markdown text={a.plan} /></div>}
-            {a && a.questions && a.questions.map((q, i) => <div key={i} className="mt-mp-qq"><b>{q.question}</b>{q.options.length > 0 && <ol>{q.options.map((o) => <li key={o}>{o}</li>)}</ol>}</div>)}
-            {a && a.choices && a.choices.length > 0 && <div className="mt-mp-choices col">{a.choices.map((c) => <button key={c.n} type="button" className="mt-mp-choice" data-mp-choice={c.n} onClick={() => press(String(c.n))}><b>{c.n}</b> {c.label}</button>)}</div>}
-            {a && a.question && !(a.choices && a.choices.length) && <div className="mt-mp-sub pad">{a.question}</div>}
-          </div>
-        )}
-        {detail && detail.lastAnswer && (
-          <div className="mt-mp-block" data-role="mp-answer">
-            <div className="mt-mp-block-h">{t('mobile.lastAnswer')}<span className="when">· {ago(t, detail.lastAnswerAt, Date.now())}</span></div>
-            <div className="mt-mp-md"><Markdown text={detail.lastAnswer} /></div>
-          </div>
-        )}
-        {detail && detail.lastPrompt && (
-          <div className="mt-mp-block" data-role="mp-prompt">
-            <div className="mt-mp-block-h">{t('mobile.prompt')}{detail.promptAt && <span className="when">· {ago(t, detail.promptAt, Date.now())}</span>}</div>
-            <div className="mt-mp-prompt">{detail.lastPrompt}</div>
-          </div>
-        )}
-        {detail && detail.tail != null && (
-          <div className="mt-mp-block" data-role="mp-term">
-            <div className="mt-mp-block-h"><button type="button" className="mt-mp-hbtn" data-action="mp-tail" aria-expanded={showTerm} onClick={() => setTermOpen(!showTerm)}>{t('mobile.terminal')}<Ic d={I.chev} s={14} /></button><span className="mt-mp-sp" />
-              <button type="button" data-action="mp-font-down" aria-label={t('mobile.fontDown')} onClick={() => bump(-0.05)}>A−</button><button type="button" data-action="mp-font-up" aria-label={t('mobile.fontUp')} onClick={() => bump(0.05)}>A+</button><button type="button" data-action="mp-refresh" onClick={() => { lastFetch.current = 0; fetchDetail(); }}>{t('mobile.refresh')}</button></div>
-            {showTerm && <pre className="mt-mp-term" data-role="mp-tail">{detail.tail || ' '}</pre>}
-          </div>
-        )}
-        {!detail && <div className="mt-mp-empty">{t('common.loading')}</div>}
-        {hist.items.length > 0 && (
-          <div className="mt-mp-block" data-role="mp-history"><div className="mt-mp-block-h">{t('mobile.history')}</div>{hist.items.map((m) => <div key={m.seq} className="mt-mp-turn" data-role={m.role}>{m.role === 'assistant' ? <Markdown text={m.text} /> : m.text}</div>)}</div>
-        )}
-        {s.kind !== 'shell' && hist.more && <button type="button" className="mt-mp-more" data-action="mp-more-history" disabled={hist.busy} onClick={loadMore}>{hist.busy ? t('common.loading') : t('mobile.moreHistory')}</button>}
-      </div>
-      {queue.length > 0 && (
-        <div className="mt-mp-queue" data-role="mp-queue">{queue.slice(0, 3).map((d) => (
-          <div key={d.deliveryId} className="q"><span>{deliveryText(d)}{d.text ? ' · “' + d.text + '”' : ''}</span>
-            {d.status === 'queued' && <button type="button" onClick={() => call('delivery.now', { deliveryId: d.deliveryId }).catch((e) => toast(errText(e), 'error'))}>{t('mobile.sendNow')}</button>}
-            <button type="button" onClick={() => call('delivery.cancel', { deliveryId: d.deliveryId }).catch((e) => toast(errText(e), 'error'))}>{t('common.cancel')}</button></div>
-        ))}</div>
-      )}
-      {live && (
-        <div className={'mt-mp-keys' + (need ? ' need' : '')} data-role="mp-keys" role="group" aria-label={t('phoneKeys.group')}>
-          {QUICK_KEYS.map((k) => <button key={k} type="button" className={'mt-mp-key' + (/^[0-9]$/.test(k) ? ' num' : '')} data-mp-key={k} aria-label={t(`mobile.key_${k}`)} onPointerDown={(e) => e.preventDefault()} onClick={() => press(k)}>{KEY_GLYPH[k] || k}</button>)}
-        </div>
-      )}
-      {live && <InputRow s={s} />}
-    </div>
-  );
-}
-const KEY_GLYPH = { esc: 'Esc', enter: '⏎', up: '↑', down: '↓' };
-
-// 입력 줄: 에이전트는 대기열(session.send, 고르면 스티어링), 셸은 한 줄 치기(phone.type)
-function InputRow({ s }) {
-  const t = useT();
-  const id = s.sessionId;
-  const taRef = useRef(null);
-  const [text, setText] = useState(() => takeSavedDraft(id) || '');
-  const [busy, setBusy] = useState(false);
-  const [steer, setSteer] = useState(false);
-  const [note, setNote] = useState(null);
-  const deliveries = useMobile((m) => m.deliveries);
-  const textRef = useRef(text); textRef.current = text;
-  useEffect(() => setDraftSource(() => ({ sessionId: id, text: textRef.current })), [id]);
-  const voice = useVoice({ text, setText, taRef, inline: false });
-  const grow = (el) => { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 132) + 'px'; };
-  useEffect(() => { if (taRef.current && text) grow(taRef.current); }, [text]);
-  const why = steerBlock(s);
-  async function send() {
-    let cur = text;
-    if (voice.active) { await voice.finish(1000); cur = voice.current(); }
-    const plan = sendPlan(s, cur, { steer });
-    if (!plan || busy) return;
-    setBusy(true); markInteracted(id);
-    try {
-      if (plan.method === 'session.send') {
-        const r = await call('session.send', { target: [id], text: plan.text, ...(plan.steer ? { steer: true } : {}) }, { kind: 'send' });
-        const d = r && r.deliveries && r.deliveries[0];
-        if (d) putDeliveries([{ ...d, sessionId: id }]);
-        setNote(d ? { deliveryId: d.deliveryId, at: Date.now() } : { text: t('phone.sent'), at: Date.now() });
-        setSteer(false);
-      } else {
-        await call('phone.type', { session: id, text: cur }, { kind: 'send' });
-        setNote({ text: t('phone.sent'), at: Date.now() });
-      }
-      setText(''); requestAnimationFrame(() => { if (taRef.current) taRef.current.style.height = ''; });
-    } catch (e) { if (e.code !== 'disconnected') toast(t('phone.sendFailed', { error: errText(e) }), 'error'); }
-    setBusy(false);
-  }
-  const now = useNow(5000);
-  const d = note && note.deliveryId ? deliveries.get(note.deliveryId) : null;
-  const noteText = note && now - note.at < 20000 ? (d ? deliveryText(d) : note.text || null) : null;
-  return (
-    <>
-      {noteText && !voice.active && <div className="mt-mp-note" data-role="mp-note">{noteText}</div>}
-      <form className="mt-mp-input" data-role="mp-input" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <VoiceInterim voice={voice} />
-        <VoiceButton voice={voice} className="mt-mp-round mt-ph-voice" />
-        <textarea ref={taRef} rows={1} value={text} data-field="mp-text" enterKeyHint="enter" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          placeholder={s.kind === 'shell' ? t('phone.inputShell') : steer && !why ? t('cmdHead.phoneSteerOn') : t('phone.inputAgent')}
-          onChange={(e) => { setText(e.target.value); grow(e.target); }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
-        {s.kind !== 'shell' && <button type="button" className={'mt-mp-round' + (steer && !why ? ' on' : '')} data-action="mp-steer" aria-pressed={steer && !why} aria-label={t('cmdSteer.label')} title={why ? t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) }) : t('cmdSteer.phoneTitle')} onPointerDown={(e) => e.preventDefault()} onClick={() => { if (why) toast(t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) })); else setSteer((v) => !v); }}><Ic d={I.bolt} /></button>}
-        <button type="submit" className="mt-mp-round send" data-action="mp-send" disabled={busy || (!text.trim() && !voice.active)} aria-label={t('phone.send')}><Ic d={I.up} /></button>
-      </form>
-    </>
-  );
-}
+// ---------- 세션 화면: MobileSession.jsx(P355) ----------
 
 // ---------- 새 세션 ----------
 function SpawnSheet({ onClose, onStarted }) {

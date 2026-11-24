@@ -17,7 +17,7 @@ export const SNAP_BOOT_MAX = 10;
 export const API_REPEAT = 3, API_REPEAT_MS = 60_000; // 같은 메서드가 이 사이에 이만큼 실패하면 상황 기록
 export const WS_LOOP = 5, WS_LOOP_MS = 120_000; // 다시 붙기 고리
 export const WS_DOWN_MS = 60_000; // 이보다 길게 끊겼다가 다시 붙으면 상황 기록
-export const TELE_KINDS = ['err', 'rej', 'api', 'send', 'ws', 'bytes', 'snap', 'cap'];
+export const TELE_KINDS = ['err', 'rej', 'api', 'send', 'ws', 'bytes', 'snap', 'cap', 'lay']; // P355: lay(배치 값, 부팅마다 한 번)
 const QUIET = new Set(['web.telemetry']); // 자기 보내기 실패는 세지 않는다
 
 const CODE = /^[A-Za-z0-9_.:$-]{1,48}$/;
@@ -149,6 +149,53 @@ export class TeleBuffer {
   }
 }
 
+// P355: 배치 값 한 줄(아래 잘림을 숫자로 보려고 부팅마다 한 번). 창 크기(iw·ih), 문서 높이(ch), 보이는 높이·위치(vh·vt, visualViewport),
+// 화면(sw·sh), 안전 영역 네 값(st·sr·sb·sl, env(safe-area-inset-*)), 페이지 뿌리의 아래 끝(rb), 맨 아래 줄(on: tabs | input | keys)의 아래 끝(tb),
+// 홈 화면 앱인지(sd), 키보드가 열렸는지(kb). 값은 CSS px(소수 한 자리). 잘림 = rb - (vt + vh)
+export const LAY_FIELDS = ['iw', 'ih', 'ch', 'vh', 'vt', 'sw', 'sh', 'st', 'sr', 'sb', 'sl', 'rb', 'tb'];
+const n1 = (v) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e5 ? Math.round(v * 10) / 10 : null);
+export function layoutLine(m = {}, at = Date.now()) {
+  const lay = {};
+  for (const f of LAY_FIELDS) { const v = n1(m[f]); if (v != null) lay[f] = v; }
+  if (m.sd != null) lay.sd = !!m.sd;
+  if (m.kb != null) lay.kb = !!m.kb;
+  if (m.on === 'tabs' || m.on === 'input' || m.on === 'keys') lay.on = m.on;
+  return { k: 'lay', at, lay };
+}
+// 지금 화면에서 잰다(휴대폰 페이지의 [data-role=mp] 뿌리와 맨 아래 줄)
+export function measureLayout(win = window, doc = document) {
+  const vv = win.visualViewport;
+  const probe = doc.createElement('div');
+  probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  doc.body.appendChild(probe);
+  const cs = win.getComputedStyle(probe);
+  const px = (v) => parseFloat(v) || 0;
+  const sa = { st: px(cs.paddingTop), sr: px(cs.paddingRight), sb: px(cs.paddingBottom), sl: px(cs.paddingLeft) };
+  probe.remove();
+  const root = doc.querySelector('[data-role=mp]');
+  const low = doc.querySelector('.mt-mp-tabs') || doc.querySelector('[data-role=mp-input]') || doc.querySelector('[data-role=mp-keys]');
+  let sd = false;
+  try { sd = win.matchMedia('(display-mode: standalone)').matches || win.navigator.standalone === true; } catch {}
+  return {
+    iw: win.innerWidth, ih: win.innerHeight, ch: doc.documentElement.clientHeight,
+    vh: vv ? vv.height : null, vt: vv ? vv.offsetTop : null, sw: win.screen && win.screen.width, sh: win.screen && win.screen.height, ...sa,
+    rb: root ? root.getBoundingClientRect().bottom : null, tb: low ? low.getBoundingClientRect().bottom : null,
+    on: low ? (low.classList.contains('mt-mp-tabs') ? 'tabs' : low.dataset.role === 'mp-input' ? 'input' : 'keys') : null,
+    sd, kb: doc.documentElement.classList.contains('mt-kb-open'),
+  };
+}
+// 기록을 켰으면(휴대폰 페이지) 배치 값을 한 번 남긴다. 돌려줌: 남긴 줄(이미 남겼거나 기록이 꺼졌으면 null)
+export function noteLayout() {
+  if (!rt || rt.layoutNoted) return null;
+  let m;
+  try { m = measureLayout(); } catch { return null; }
+  rt.layoutNoted = true;
+  const line = layoutLine(m);
+  rt.buf.out.push(line);
+  rt.soon();
+  return line;
+}
+
 // ---------- 화면에서 돌리기 ----------
 let rt = null;
 // opts: api(판 API 클라이언트), boot(crash-watch bootState), context()(화면, 열린 세션 이름), steps()(이 부팅의 단계 기록), versions()({ app, board })
@@ -199,7 +246,7 @@ export function startPhoneTelemetry({ api, boot = {}, context = () => ({}), step
   // 보이는 채 죽은 뒤 다시 열림(가려진 채 죽음은 iOS의 정리라 빼고): 죽은 페이지의 상태(boot 줄과 같은 것)와 함께
   if (boot.crashed && !boot.hidden) snapNow('reload', boot.report ? { prev: boot.report } : {});
   rt = {
-    buf, flush, snapNow,
+    buf, flush, snapNow, soon, layoutNoted: false,
     // 보내기·키 보내기 실패(Phone.jsx). 늘 상황을 함께 남긴다
     sendFail(m, e, { steer = false } = {}) { buf.note('send', { m, code: (e && e.code) || 'error', steer }); snapNow('send', { m: codeOf(m) }); },
   };

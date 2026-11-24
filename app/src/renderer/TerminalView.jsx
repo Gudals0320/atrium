@@ -16,7 +16,7 @@
 //   캔버스를 장치 픽셀 경계에 맞춘다(lib/term-sharp.js). 패널 줄·칸 수는 배율 1 칸으로 잰다(배율을 바꿔도 패널 크기는 그대로).
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useStoreApi } from '@xyflow/react';
+import { useFlowApi } from './term-flow.js'; // P355: 판 배율(판 화면은 xyflow 스토어, 휴대폰 페이지는 배율 1)
 import { Terminal } from '@xterm/xterm';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -77,9 +77,12 @@ function fixMouseScale(term, sessionId) {
 
 // P74: fontScale을 주면 store의 터미널 글자 배율 대신 그 값(휴대폰 화면의 글자 크기). webgl = false면 DOM으로 그린다(휴대폰: 터미널 하나, 높은 DPR)
 // P151: touchSelect = 손가락으로 길게 눌러 글 고르기(휴대폰 세션 화면·전체 보기). 태블릿 판은 길게 누르기가 노드 옮기기라 주지 않는다
-export function TerminalView({ sessionId, width, height, onActivate, onInput, focusTick, fontScale = null, webgl = true, touchSelect = false }) {
+// P355: info = { kind, state }를 주면 판 store의 세션 대신 그 값을 쓴다(휴대폰 전용 페이지는 판 store에 세션이 없다)
+export function TerminalView({ sessionId, width, height, onActivate, onInput, focusTick, fontScale = null, webgl = true, touchSelect = false, info = null }) {
   const t = useT();
-  const flow = useStoreApi(); // P65: 판 배율·이동을 렌더 없이 구독한다
+  const flow = useFlowApi(); // P65: 판 배율·이동을 렌더 없이 구독한다
+  const infoRef = useRef(info); infoRef.current = info; // P355
+  const kindOf = () => (infoRef.current ? infoRef.current.kind : (getState().sessions.get(sessionId) || {}).kind);
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
   const onActivateRef = useRef(onActivate);
@@ -99,7 +102,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
     const host = hostRef.current;
     const st = ref.current = { pid: null, alive: true, acc: 0, lastSize: null, shared: 1, scale: 1, ownerIsMe: true, plan: null, comp: { sx: 1, sy: 1 }, shift: { x: 0, y: 0 }, dprMul: 1, movedAt: 0 };
     // P42: 셸은 앱이 스스로 스크롤하지 않아(PowerShell은 SGR 휠을 무시) 지난 출력을 xterm scrollback에 두고 판 안에서 스크롤한다
-    const shell = (getState().sessions.get(sessionId) || {}).kind === 'shell';
+    const shell = kindOf() === 'shell';
     const term = new Terminal({ allowProposedApi: true, fontFamily: TERM_FONT, fontSize: termFontSize(TERM_FONT_SIZE, fontScale ?? getState().termScale, fontScale != null ? clampPhoneScale : clampScale), lineHeight: TERM_LINE_HEIGHT, fontWeight: 500, fontWeightBold: 700, scrollback: shell ? SHELL_SCROLLBACK : 0, cursorBlink: false, theme: termTheme(), drawBoldTextInBrightColors: false });
     const u11 = new Unicode11Addon();
     term.loadAddon(u11);
@@ -345,7 +348,7 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
       if (files.length) return uploadInto(files);
       const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
       // P51(#3): 셸 노드는 줄바꿈을 Shift+Enter로 보내 여러 줄이 입력줄에 쌓이게 한다(지금 종류로 본다. 셸 안에서 띄운 에이전트로 바뀔 수 있다)
-      send(wrapPaste(text, { shell: (getState().sessions.get(sessionId) || {}).kind === 'shell' }));
+      send(wrapPaste(text, { shell: kindOf() === 'shell' }));
     };
     host.addEventListener('paste', onPaste, true);
     const onDragOver = (e) => { if (isWeb && hasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } };
@@ -575,8 +578,11 @@ export function TerminalView({ sessionId, width, height, onActivate, onInput, fo
 
   // 터미널 서버가 다시 뜨거나(C3) 백엔드가 다시 붙어 제어기가 끝났으면, 세션이 다시 살아난 뒤 저절로 다시 붙는다.
   // 다른 클라이언트가 이 패널을 가져간 경우(takeover)는 서로 빼앗지 않게 저절로 붙지 않는다. 같은 끊김에 다섯 번까지.
-  const termUp = useStore((st) => st.terminal.connected);
-  const sstate = useStore((st) => (st.sessions.get(sessionId) || {}).state);
+  const termUpStore = useStore((st) => st.terminal.connected);
+  const sstateStore = useStore((st) => (st.sessions.get(sessionId) || {}).state);
+  // P355: 휴대폰 페이지는 판 store에 세션이 없고 터미널 서버 상태는 terminal 이벤트가 올 때만 안다(모르면 붙은 것으로 본다)
+  const termUp = info ? termUpStore !== false : termUpStore;
+  const sstate = info ? info.state : sstateStore;
   const autoTries = useRef(0);
   useEffect(() => {
     if (status.kind === 'attached') { autoTries.current = 0; return; }

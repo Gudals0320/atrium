@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applySync, applyRow, applyGone, homeOf, listOf, treeOf, togglePin, readList, detailStale, mergeHistory, choiceButtons, shortChoice, uiFactor, QUICK_KEYS, matches } from '../src/renderer/lib/mobile.js';
+import { applySync, applyRow, applyGone, homeOf, listOf, treeOf, togglePin, readList, detailStale, mergeHistory, choiceButtons, shortChoice, uiFactor, MOBILE_KEYS, keyId, matches } from '../src/renderer/lib/mobile.js';
 import { KEY_NAMES } from '../../backend/src/keys.mjs';
 import { swRoute, shellList } from '../src/renderer/lib/sw-rules.js';
 import en from '../src/renderer/locales/en.js';
@@ -90,9 +90,9 @@ test('기록 더 보기는 앞에 붙이고 겹친 seq는 한 번', () => {
   assert.deepEqual(mergeHistory([{ seq: 5 }, { seq: 6 }], [{ seq: 3 }, { seq: 5 }]).map((x) => x.seq), [3, 5, 6]);
 });
 
-test('빠른 키(Esc Enter ↑ ↓ 1 2 3 y n)는 모두 백엔드 session.keys 허용 키', () => {
-  assert.deepEqual(QUICK_KEYS, ['esc', 'enter', 'up', 'down', '1', '2', '3', 'y', 'n']);
-  for (const k of QUICK_KEYS) assert.ok(KEY_NAMES.includes(k), k);
+test('빠른 키는 모두 백엔드 session.keys 허용 키(P355: 키 줄이 늘었다, p355-lib)', () => {
+  for (const k of ['esc', 'enter', 'up', 'down', '1', '2', '3', 'y', 'n']) assert.ok(MOBILE_KEYS.includes(k), k);
+  for (const k of MOBILE_KEYS) assert.ok(KEY_NAMES.includes(k), k);
 });
 
 test('홈 카드 번호 단추: 요청 보기가 있으면 그 번호와 짧은 글, 없으면 1·2·3', () => {
@@ -118,7 +118,7 @@ test('묶음 나누기: 서비스 워커가 새 묶음과 조각을 껍데기로
 
 test('휴대폰 페이지 묶음은 판 화면의 무거운 모듈(캔버스, xterm, 세션 맵)을 들이지 않는다', () => {
   const src = (f) => fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8');
-  for (const f of ['MobileApp.jsx', 'mobile.jsx', 'mobile-store.js']) {
+  for (const f of ['MobileApp.jsx', 'MobileSession.jsx', 'mobile.jsx', 'mobile-store.js']) { // P355: 세션 화면도(터미널은 mterm.js를 늦게 읽는다)
     const s = src(f);
     for (const bad of ['@xyflow', '@xterm', './Canvas.jsx', './TerminalView.jsx', './PhoneMission.jsx', './Phone.jsx', './Settings.jsx', './RemoteBar.jsx', './main.jsx']) assert.ok(!s.includes("from '" + bad), f + ' ← ' + bad);
   }
@@ -126,5 +126,5 @@ test('휴대폰 페이지 묶음은 판 화면의 무거운 모듈(캔버스, xt
 
 test('사전: 휴대폰 페이지 글은 영어·한국어 열쇠가 같다', () => {
   assert.deepEqual(Object.keys(ko.mobile).sort(), Object.keys(en.mobile).sort());
-  for (const k of QUICK_KEYS) assert.ok(en.mobile['key_' + k] && ko.mobile['key_' + k], k);
+  for (const k of MOBILE_KEYS) assert.ok(en.mobile['key_' + keyId(k)] && ko.mobile['key_' + keyId(k)], k);
 });
