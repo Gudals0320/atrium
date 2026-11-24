@@ -72,16 +72,18 @@ export function judge(hist, cfg, now = hist.length ? hist[hist.length - 1].at : 
   if (!hist || !hist.length) return out;
   const last = hist[hist.length - 1];
   // cpu: 끝에서부터 이어진 높은 측정. 시작은 그 첫 측정이 잰 구간의 앞끝. P348: DIP_MS 이하로 이어진 낮은 측정은 건너뛴다(모르는 값은 끊는다)
-  let start = null, dip = 0, peak = null;
+  const x = cfg.instantX > 0 ? cfg.instantX : null; // P348: 뚜렷함 배수
+  let start = null, dip = 0, peak = null, burst = false;
   for (let i = hist.length - 1; i >= 0; i--) {
     const h = hist[i];
     if (h.core == null) break;
     if (h.core < cfg.cpuPct) { dip += h.spanMs || 0; if (dip > DIP_MS) break; continue; }
     dip = 0; start = h.at - (h.spanMs || 0); if (peak == null) peak = h.core;
+    if (x && h.core >= cfg.cpuPct * x) burst = true;
   }
-  const x = cfg.instantX > 0 ? cfg.instantX : null; // P348: 뚜렷함 배수
   if (start != null && now - start >= cfg.cpuMs) out.push({ type: 'cpu', pct: Math.round(peak), ms: now - start, since: start });
-  else if (x && last.core != null && last.core >= cfg.cpuPct * x) out.push({ type: 'cpu', pct: Math.round(last.core), ms: last.spanMs || 0, since: last.at - (last.spanMs || 0), instant: true });
+  // 곧바로: 이어진 높은 측정 가운데 한 번이라도 기준 × 배수를 넘었다(넘은 뒤에는 기준 아래로 내려갈 때까지 이어 보인다. 경쟁으로 값이 오르내려 배지가 깜빡이지 않게)
+  else if (start != null && burst) out.push({ type: 'cpu', pct: Math.round(peak), ms: now - start, since: start, instant: true });
   if (last.memMB != null && last.memMB >= cfg.memMB) {
     const tail = hist.slice(-MEM_CONFIRM);
     if (tail.length >= MEM_CONFIRM && tail.every((h) => h.memMB != null && h.memMB >= cfg.memMB)) out.push({ type: 'mem', memMB: last.memMB });

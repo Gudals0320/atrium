@@ -3301,6 +3301,7 @@ export default {
     whyCpuNow: 'CPU {pct}% of a core right now (shown before the duration threshold)',
     instantX: 'Show at once (multiple)', instantXHint: 'When CPU goes over this many times the CPU threshold, or memory over this many times the memory threshold, the badge shows at the next sample without waiting. Cards still follow the duration thresholds. (default {n}, 0: off)',
     every: 'every {s}s',
+    rowCpuTitle: 'CPU relative to one core (100% = one full core). The "CPU: sessions · whole PC" line below is relative to the whole PC.',
     everyTitle: 'Sampling interval. Reading the process table took {ms} ms last time.',
   },
 };

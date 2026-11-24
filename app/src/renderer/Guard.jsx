@@ -90,7 +90,7 @@ function GuardNum({ k, settings, schema, label, hint, child = true, dim = false 
   const save = async (value) => { try { await api.call('settings.set', { key: k, value }); setV(null); toast(t('guard.set.saved')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); } };
   return (
     <SetRow id={k} name={t(label)} hint={t(hint, { n: sc.default ?? '' })} child={child} dim={dim}>
-      <input type="number" className="mt-set-num" min={sc.min} max={sc.max} step={k === 'guardInstantX' ? 0.5 : undefined} data-field={`setting-${k}`} value={v ?? settings[k] ?? sc.default ?? ''} onChange={(e) => setV(e.target.value)}
+      <input type="number" className="mt-set-num" min={sc.min} max={sc.max} data-field={`setting-${k}`} value={v ?? settings[k] ?? sc.default ?? ''} onChange={(e) => setV(e.target.value)}
         onBlur={() => v != null && v !== '' && save(Number(v))} onKeyDown={(e) => { if (e.key === 'Enter' && v != null && v !== '') save(Number(v)); }} />
     </SetRow>
   );

@@ -122,6 +122,10 @@ test('곧바로 배지: CPU가 기준 × 배수면 다음 측정에서(카드 �
   assert.equal(s.sessions[0].guard, undefined);
   // 기준 × 배수 아래(코어 하나 남짓)는 곧바로 배지 없음
   assert.deepEqual(judge(hist(2, () => ({ core: 170, memMB: 100 })), cfg), []);
+  // 한 번 넘은 뒤 기준(90%) 위에서 오르내리면 이어 보인다(실시험: 보통 이하 우선순위로 160~187%), 기준 아래로 길게 내려가면 끝
+  const flap = judge(hist(5, (i) => ({ core: [120, 187, 162, 170, 165][i], memMB: 100 })), cfg);
+  assert.equal(flap.length, 1); assert.equal(flap[0].instant, true); assert.equal(flap[0].pct, 165);
+  assert.deepEqual(judge(hist(8, (i) => ({ core: i < 3 ? 190 : 30, memMB: 100 })), cfg), []);
 });
 
 test('곧바로 배지 판정: 메모리 두 배면 한 번에, 한 배면 두 번 이어져야', () => {

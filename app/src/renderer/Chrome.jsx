@@ -266,7 +266,9 @@ function ResourcePill({ maxControllers }) {
     t('top.resAt', { time: fmtTime(r.at), ms: r.ms }),
   ].join('\n');
   const repos = memByRepo(r.sessions, sessions, workspaces); // 잰 뒤 잠든 세션은 잠든 줄로만
-  const order = resOrder(r.sessions, sessions); // P348: 위 세션 목록  const doSleep = async () => { setBusy(true); await sleepIdle(); setBusy(false); };
+  const order = resOrder(r.sessions, sessions); // P348: 위 세션 목록
+  const cores = (r.cpu && r.cpu.cores) || 1; // P348: 줄의 CPU는 코어 하나 대비로(폭주 배지·설정 기준과 같은 잣대)
+  const doSleep = async () => { setBusy(true); await sleepIdle(); setBusy(false); };
   return (
     <div className="mt-drop" ref={ref}>
       <button className={`mt-cp res${open ? ' on' : ''}${r.sessions.some((x) => x.guard && x.guard.kind === 'suspect') ? ' guard' : ''}`} title={title} data-role="resources" data-asleep={z.n} data-guard={r.sessions.filter((x) => x.guard).length || undefined} onClick={() => setOpen((o) => !o)}>
@@ -280,7 +282,7 @@ function ResourcePill({ maxControllers }) {
           <div className="mt-res-top" data-role="res-top">
             {order.map((x) => (
               <button key={x.sessionId} className={`mt-chip${x.guard ? ` mt-res-guard k-${x.guard.kind}${x.guard.paused ? ' paused' : ''}` : ''}`} data-role="res-row" data-session={x.sessionId} data-name={x.name} data-guard={x.guard ? x.guard.kind : undefined} onClick={() => { setOpen(false); go(x.sessionId); }}>
-                <span className="mt-chip-line"><b>@{x.name}</b>{x.cpuPct != null && <span className="mono" data-role="res-row-cpu"> CPU {fmtPct(x.cpuPct)}</span>} <span className="mono">{fmtMB(x.memMB)}</span> <span className="dim">{STATE_LABEL[x.state] || x.state}</span></span>
+                <span className="mt-chip-line"><b>@{x.name}</b>{x.cpuPct != null && <span className="mono" data-role="res-row-cpu" title={t('p348.rowCpuTitle')}> CPU {fmtPct(x.cpuPct * cores)}</span>} <span className="mono">{fmtMB(x.memMB)}</span> <span className="dim">{STATE_LABEL[x.state] || x.state}</span></span>
                 {x.guard ? <span className="mt-chip-line mt-guard-line"><GuardBadge sessionId={x.sessionId} where="list" /></span> : null}
               </button>
             ))}
