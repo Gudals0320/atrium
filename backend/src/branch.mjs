@@ -20,7 +20,7 @@ import { workspaceOf, gitProbe } from './git.mjs';
 import { uploadsReadRule } from './uploads.mjs'; // P162
 import { ROLE_RE } from './links.mjs';
 import { SIZE_STEPS } from './canvas.mjs';
-import { canvasItems, areaOfNode, lineTree, dockOf, dockOuter } from './canvas-ops.mjs';
+import { canvasItems, areaOfNode, lineTree, dockOf, dockOuter, pinnedIds } from './canvas-ops.mjs';
 import { parseArea, isBoxKey } from './worktree-areas.mjs'; // P27
 import { lineSlot, peerSlot, bandOf, boxFrame, frameInner, LINE_GAP_Y } from './tree-line.mjs'; // P75: 하위 세션 줄
 import { deriveState, isModelError } from './state.mjs';
@@ -575,12 +575,15 @@ export class Branch {
     if (!parent || parent.workspaceKey !== wsKey) return null;
     const pn = b.store.nodes().find((n) => n.session_id === parentId);
     if (!pn) return null;
-    const all = canvasItems(b);
-    const ak = areaOfNode(b, parentId, all); // P27: 부모가 든 영역(워크트리 상자일 수 있다)
+    const every = canvasItems(b);
+    const ak = areaOfNode(b, parentId, every); // P27: 부모가 든 영역(워크트리 상자일 수 있다)
+    // P350: 피할 것은 같은 워크스페이스의 것만. 다른 영역은 띄운 뒤 영역 겹침 풀기(settleRegions)가 영역째 민다.
+    //   전에는 이웃 영역의 노드도 막는 것으로 봐서 열이 쉽게 막히고, 막히면 판 끝까지 내려갔다
+    const all = every.filter((i) => (i.wsKey || null) === (wsKey || null));
     const inBox = !worktree && isBoxKey(ak); // 워크트리 없는 하위 세션은 부모의 상자 안에 든다
     const pd = dockOf(b, parentId);
     const pRect = pd ? dockOuter(b, pd) : pn;
-    const tree = lineTree(b, wsKey, all);
+    const tree = lineTree(b, wsKey, every);
     const pid = tree.blockOf.get(parentId);
     if (peer) {
       const ps = { w: pn.w, h: pn.h }; // 짝의 크기 그대로(단계 열쇠와 비율도)
@@ -593,7 +596,7 @@ export class Branch {
       const at = peerSlot({ partner: pRect, band, size: frame, obstacles: [...obstacles, pRect], gap: sib ? LINE_GAP_Y : LINE_GAP_Y * 2 });
       if (!at) return null;
       const pos = worktree ? frameInner(at) : at;
-      return { x: Math.round(pos.x), y: Math.round(pos.y), w: pn.w, h: pn.h, size: pn.size ?? null, aspect: pn.aspect ?? null, area: inBox ? parseArea(ak).wt : '', peer: true };
+      return { x: Math.round(pos.x), y: Math.round(pos.y), w: pn.w, h: pn.h, size: pn.size ?? null, aspect: pn.aspect ?? null, area: inBox ? parseArea(ak).wt : '', peer: true, ...(at.push ? { push: true } : {}) };
     }
     const size = SIZE_STEPS[CHILD_SIZE];
     // 이미 줄에 선 형제의 띠: 부모와 다른 블록이면 그 블록의 나무째, 부모 블록 안(부모 상자 안의 형제)이면 그 노드
@@ -609,10 +612,11 @@ export class Branch {
     }
     const frame = worktree ? boxFrame({ x: 0, y: 0, ...size }) : { w: size.w, h: size.h };
     const obstacles = all.filter((i) => !(inBox && i.box === ak) && !(i.kind === 'node' && i.id === parentId)); // P35: 부모 상자 안에 놓을 때 그 상자 자신은 피하지 않는다
-    const at = lineSlot({ parent: pRect, bands, size: frame, obstacles: [...obstacles, pRect] });
+    const pins = pinnedIds(b);
+    const at = lineSlot({ parent: pRect, bands, size: frame, obstacles: [...obstacles, pRect], keep: true, pinned: all.filter((i) => i.kind === 'node' && pins.has(i.id)) }); // P350(2단계): 정리 모양 지키기(정리가 놓을 자리), 핀 꽂힌 노드는 피한다
     if (!at) return null;
     const pos = worktree ? frameInner(at) : at;
-    return { x: Math.round(pos.x), y: Math.round(pos.y), w: size.w, h: size.h, size: CHILD_SIZE, aspect: '16:9', area: inBox ? parseArea(ak).wt : '' };
+    return { x: Math.round(pos.x), y: Math.round(pos.y), w: size.w, h: size.h, size: CHILD_SIZE, aspect: '16:9', area: inBox ? parseArea(ak).wt : '', ...(at.push ? { push: true } : {}) };
   }
 
   // ---------- HTTP: 하위 세션 명령 ----------

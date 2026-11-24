@@ -45,7 +45,7 @@ import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
-import { canvasHandlers, slotFor, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes } from './canvas-ops.mjs';
+import { canvasHandlers, slotFor, placeSpawn, markPinned, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules, resolveBotSettings } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
@@ -1747,11 +1747,10 @@ export class Backend {
       });
       if (claude && this.briefNotices) try { this.briefNotices.stamp(s, 'start'); } catch {} // P317: 띄울 때 받은 판 안내문 판(하네스는 startHarness가)
       // 빈자리는 그 워크스페이스 영역 안이나 바로 옆(P6a H1). 사람이 보는 화면은 옮기지 않는다. P8(K4): 하위 세션은 부모 오른쪽 열에 형제끼리 쌓는다
-      const place = p.branch && !p.branch.head ? this.branch.placeChild(p.parentSessionId, ws.key, { worktree: p.branch.worktree || null, peer: p.branch.relation === 'peer' }) : null; // P75: 워크트리 워커는 상자 테두리까지 비워 둔다
+      // P75: 워크트리 워커는 상자 테두리까지 비워 둔다. P350: 사람이 claude -w로 띄운 세션(빠른 워크트리 세션)도(canvas-ops.mjs placeSpawn)
+      if (p.worktree && !p.branch) s.wtSpawn = String(p.worktree);
       const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : ''; // P27: 워크트리 폴더에서 띄우면 그 워크트리 영역
-      const slot = place || slotFor(this, { wsKey: ws.key, size: NODE, area });
-      this.store.setNode({ session_id: sessionId, x: slot.x, y: slot.y, w: place ? place.w : NODE.w, h: place ? place.h : NODE.h, z: 0, size: place ? place.size : NODE.size, aspect: place ? place.aspect : NODE.aspect, area: place ? place.area ?? area : area });
-      if (place && !place.peer) reflowLines(this, sessionId, 'spawn'); // P175: 동료 자리는 다른 노드를 옮기지 않는다(정리가 맞춘다) // P75: 부모 나무가 길어져 부모 줄의 뒤 형제와 겹치면 그 형제를 아래로
+      const place = placeSpawn(this, s, { branch: p.branch || null, worktree: p.worktree || null, area });
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
@@ -2402,6 +2401,8 @@ export class Backend {
         if (before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h)) && (before.aspect || before.size)) this.store.setNodeAspect(s.sessionId, null, null);
         if (p.cause === 'resize' && before && (Math.round(before.w) !== Math.round(n.w) || Math.round(before.h) !== Math.round(n.h))) markHandSize(this, s.sessionId, true, n); // P177: 사람이 끌어 정한 크기. P310: 값도
         noteNodeMove(this, s, before, n, p.cause);
+        // P350: 사람이 끌어 옮긴 노드는 핀(다음 정리까지 줄 밀기가 옮기지 않고 새 자리가 피한다)
+        if (before && /^drag/.test(String(p.cause || '')) && (Math.abs(before.x - n.x) > 0.5 || Math.abs(before.y - n.y) > 0.5)) markPinned(this, [s.sessionId], true);
         // P47: 다른 창도 옮긴 자리를 바로 그린다(예전에는 다음 board.changed까지 옛 자리). 보낸 창은 by로 알아보고 무시한다
         this.api.broadcast('board.node', { sessionId: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z, by: (c && c.clientId) || null });
         // P75: 테두리를 끌어 키웠으면 줄의 뒤 형제를 아래로 민다(작아지면 당기지 않는다)

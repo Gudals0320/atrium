@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { parseWorktreeList, liveWorktrees, worktreeOfPath, areaKey, wsOfArea, boxSlot } from './worktree-areas.mjs';
-import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, anchorWorkspace, reflowLines } from './canvas-ops.mjs';
+import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, anchorWorkspace, reflowLines, wtWanted } from './canvas-ops.mjs';
 import { slotInRegion } from './canvas.mjs';
 import { boxFrame } from './tree-line.mjs'; // P75
 import { pathKey, goneWorkspaces, workspaceNames, GONE_GRACE_MS } from './workspaces.mjs';
@@ -37,7 +37,8 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
   }
   const cwdOf = (s) => (s.rt && s.rt.cwd) || s.cwd;
   // P75: --worktree 워커(info.worktree)는 claude -w가 만든 그 워크트리(브랜치 worktree-<이름>)에만 든다. 그 전(부모 폴더에서 막 떴을 때)에는 옮기지 않는다
-  const wantsWt = (s) => { const i = b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null; return i && i.worktree ? String(i.worktree).toLowerCase() : null; };
+  // P350: 사람이 claude -w로 띄운 빠른 워크트리 세션도(canvas-ops.mjs wtWanted). 전에는 하위만 봐서 그 세션의 상자가 리포 영역 맨 오른쪽에 생기고 노드가 그리 옮겨졌다
+  const wantsWt = (s) => { const n = wtWanted(b, s); return n ? n.toLowerCase() : null; };
   const fitsWt = (s, wt) => {
     const name = wantsWt(s);
     if (!name) return true;
@@ -53,7 +54,7 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
   function expectedWt(wsKey, s) {
     const name = wantsWt(s);
     const i = name && b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null;
-    if (!i || !i.wtHome) return '';
+    if (!name || (i ? !i.wtHome : !(s.wtSpawn || s.quickWorktree))) return '';
     const live = listOf.get(wsKey) || [];
     const exact = findClaudeWt(live, name);
     return exact ? exact.key : '';
@@ -70,7 +71,7 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
   // 워크트리 wt에서 도는 세션 노드 가운데 상자가 감쌀 것: 덩어리 밖, 먼저 띄운 것(빈 상자를 그 노드 자리로 놓는다)
   function homeNode(wsKey, wt) {
     const list = b.store.nodes().filter((n) => n.workspace_key === wsKey && !(n.area || '')).map((n) => ({ n, s: b.sessions.get(n.session_id) }))
-      .filter(({ n, s }) => s && wantsWt(s) && !dockOf(b, n.session_id) && placeOf(wsKey, s) === wt && fitsWt(s, wt))
+      .filter(({ n, s }) => s && !dockOf(b, n.session_id) && placeOf(wsKey, s) === wt && fitsWt(s, wt)) // P350: 워크트리 폴더에서 띄운 다른 세션(셸 등)도. 전에는 --worktree 워커만 감싸고 나머지는 리포 맨 오른쪽 새 상자로 옮겼다
       .sort((p, q) => (p.s.createdAt || 0) - (q.s.createdAt || 0));
     return list.length ? list[0].n : null;
   }
@@ -159,8 +160,8 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
       // P75: 빈 상자(사람이 옮기지 않은 것)에 처음 드는 --worktree 워커는 그 자리에 두고 상자를 노드 둘레로 옮긴다. 워커가 선 줄에 상자도 선다.
       //   다른 세션(사람이 워크트리 폴더에서 띄운 셸 등)은 지금처럼 상자의 빈자리로 옮긴다
       const row = want && k !== w.key ? b.store.worktreeAreas().find((a) => a.wsKey === w.key && a.wt === want) : null;
-      if (row && wantsWt(s) && !row.movedAt && !items.some((i) => i.ws === k && i.kind !== 'wtbox')) {
-        const f = boxFrame(n);
+      const f = boxFrame(n);
+      if (row && (wantsWt(s) || (row.x === f.x && row.y === f.y)) && !row.movedAt && !items.some((i) => i.ws === k && i.kind !== 'wtbox')) { // P350: 상자가 이 노드 둘레에 섰으면(homeNode) 그 자리 그대로
         if (row.x !== f.x || row.y !== f.y) b.store.putWorktreeArea({ ...row, x: f.x, y: f.y });
         b.store.setNode({ ...n, area: want });
         b.store.addEvent(s.sessionId, 'worktree_box_wrapped', { area: want, at: { x: f.x, y: f.y } });

@@ -137,6 +137,22 @@ export function newRegionSlot(regions, size = EMPTY_REGION, { aspect = 1.6 } = {
   return { x: Math.round(all.x), y: Math.round(all.y + all.h + REGION_GAP) };
 }
 
+// P350: 새 영역을 near(부모 세션이 든 영역) 가까이에. near의 오른쪽·아래·왼쪽·위(REGION_GAP 띄움)와 다른 영역 변 바로 바깥 줄의 교차점 가운데
+// 어느 영역과도 REGION_GAP 넘게 떨어진 곳을 near에서 가까운 순으로(오른쪽·아래를 조금 먼저). 없으면 newRegionSlot(판 전체 기준)
+export function nearRegionSlot(near, regions, size = EMPTY_REGION) {
+  const rs = [...(regions instanceof Map ? regions.values() : regions)].filter(Boolean);
+  if (!near) return newRegionSlot(rs, size);
+  const free = (c) => !rs.some((r) => overlaps({ x: c.x, y: c.y, w: size.w, h: size.h }, r, REGION_GAP - 1));
+  const xs = new Set([near.x, near.x + near.w + REGION_GAP, near.x - size.w - REGION_GAP]), ys = new Set([near.y, near.y + near.h + REGION_GAP, near.y - size.h - REGION_GAP]);
+  for (const r of rs) { xs.add(r.x + r.w + REGION_GAP); xs.add(r.x); ys.add(r.y + r.h + REGION_GAP); ys.add(r.y); }
+  const d = (c) => { const dx = Math.max(0, Math.max(near.x, c.x) - Math.min(near.x + near.w, c.x + size.w)), dy = Math.max(0, Math.max(near.y, c.y) - Math.min(near.y + near.h, c.y + size.h)); return Math.hypot(dx, dy) + ((c.x + size.w <= near.x ? 1 : 0) + (c.y + size.h <= near.y ? 1 : 0)) * REGION_GAP; }; // 왼쪽·위는 조금 미룬다
+  const cands = [];
+  for (const x of xs) for (const y of ys) cands.push({ x, y });
+  cands.sort((a, b) => d(a) - d(b) || a.y - b.y || a.x - b.x);
+  for (const c of cands) if (free(c)) return { x: Math.round(c.x), y: Math.round(c.y) };
+  return newRegionSlot(rs, size);
+}
+
 // 새 노드를 둘 빈자리(H1). wsKey 워크스페이스의 영역 안이나 바로 옆. 어느 노드·그룹과도 겹치지 않고, 그 영역이 커져도 다른 영역과 겹치지 않게
 // items: [{ ws, x, y, w, h, id? }] 모든 노드와 그룹, regions: regionsOf 결과, near: 이 사각형(부모 노드) 가까이부터 찾는다
 // 영역 사이 틈은 REGION_GAP/2를 먼저 지키고, 그런 자리가 없으면(사람이 영역을 다른 영역 바로 옆에 둔 경우) 겹치지만 않는 자리로 찾는다.

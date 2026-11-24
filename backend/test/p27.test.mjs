@@ -122,11 +122,12 @@ test('P27 판(P35 상자): 워크트리 둘이 생기면 리포 영역 안에 �
   assert.ok(inside(regs.get(k1), main) && inside(regs.get(k2), main), `상자는 리포 영역 안 ${JSON.stringify([main, regs.get(k1), regs.get(k2)])}`);
   const m0 = nodeOf(b, 'main');
   assert.ok(regs.get(k1).x >= m0.x + m0.w || regs.get(k1).y >= m0.y + m0.h, '본 저장소 쪽 노드의 오른쪽이나 아래');
-  // 셸 노드는 그 워크트리 영역으로 옮겨졌다(본 영역에 있던 것)
+  // 셸 노드는 그 워크트리 영역에 든다(본 영역에 있던 것). P350: 새 상자가 그 노드 둘레에 서서 노드는 제자리다(전에는 리포 맨 오른쪽 상자로 옮겼다)
   const n1 = nodeOf(b, 's1');
   assert.equal(n1.area, pathKey(W1));
+  assert.deepEqual([n1.x, n1.y], [800, 112], '제자리');
   assert.ok(inside(n1, regs.get(k1)), '워크트리 영역 안');
-  assert.ok(b.store.events({}).some((e) => e.kind === 'node_moved' && e.data.cause === 'worktree area'));
+  assert.ok(b.store.events({}).some((e) => e.kind === 'worktree_box_wrapped'));
   assert.equal(nodeOf(b, 'main').area || '', '', '본 저장소 셸은 그대로');
   assert.ok(b.events.some((e) => e.event === 'board.changed'));
   // 다음 동기화는 아무것도 바꾸지 않는다
