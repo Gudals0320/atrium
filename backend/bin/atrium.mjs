@@ -54,7 +54,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   brief <이름>                              작업 재개를 위한 요약 (마지막 요청·응답, 상태, 질문)
   res                                     리소스 사용량 (세션별 메모리, 터미널 제어 프로세스, 동시 실행 수)
   usage [--json]                          구독 사용량 (Claude·Codex·AGY의 한도 창 사용률, 리셋까지 남은 시간, 크레딧)
-  docs [on|off] [--ws 리포] [--dir 폴더]   문서 점검 결과 (P257). on은 .atrium/(git 밖)과 점검을 켜고, off는 끈다
+  docs [init|on|off] [--ws 리포] [--dir 폴더] [--only brief,arch,plan]   문서 점검 결과 (P257). on은 .atrium/(git 밖)과 점검을 켜고, off는 끈다. init은 BRIEF·ARCH·PLAN 틀(없는 파일만)과 docs.json (P346)
   sleep [<리포>]                            프로젝트의 에이전트 세션(Claude Code, Codex, opencode, pi, AGY)을 절전 모드로 전환. 생략하면 대기 중인 프로젝트 전체에 적용
   wake <리포|이름>                            기존 대화로 재개. 리포면 절전 중인 모든 세션, 이름이면 그 세션(프로젝트 전체가 절전되었으면 그 프로젝트)
   sleep-status                            프로젝트별·세션별 자동 절전 제외 사유, 비활동 시간, 절전 중인 세션과 절전 범위(repo, session)
@@ -318,6 +318,13 @@ async function main() {
       case 'docs': { // P257: 문서 점검
         if (rest[0] === 'on') return out(await c.call('docs.enable', { workspace: flags.ws, dir: flags.dir }));
         if (rest[0] === 'off') return out(await c.call('docs.disable', { workspace: flags.ws }));
+        if (rest[0] === 'init') { // P346: 문서 시작
+          const only = typeof flags.only === 'string' ? flags.only : flags.only ? rest[1] : undefined;
+          const r = await c.call('docs.init', { workspace: flags.ws, dir: flags.dir, ...(only ? { only } : {}) });
+          if (JSONOUT) return out(r);
+          for (const line of r.lines || []) console.log(line);
+          return;
+        }
         const r = await c.call('docs.status', { workspace: flags.ws });
         if (JSONOUT) return out(r);
         for (const line of r.lines || []) console.log(line);

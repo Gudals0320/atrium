@@ -35,7 +35,7 @@ export const VERB_BRIEF = {
   child: '하위 워커·동료 띄우기', relate: '관계 바꾸기', log: '동료 소식에 한 줄 남기기', news: '동료 소식 읽기',
   children: '하위 세션 상태', 'child-kill': '하위 세션 끄기', 'child-wait': '하위 세션 준비 기다리기', wake: '잠든 세션 깨우기', models: '띄울 수 있는 모델',
   done: '맡은 일 닫기(ok|failed)', item: '나의 지금 일', items: '내가 맡긴 일들', guide: '자세한 사용법',
-  docs: '문서 점검 결과', usage: '구독 사용량',
+  docs: '문서 점검 결과·문서 시작(init)·켜기·끄기', usage: '구독 사용량',
   ask: '사람이 정할 질문을 결정 카드로 남기기',
   todo: '사람에게 넘기는 일·명령·확인·미룬 일을 할 일 카드로 남기기',
   plan: '리포의 목표·마일스톤 레인',

@@ -26,8 +26,12 @@ export const BUSY_FILES_MAX = 4;
 
 // 오케스트레이션 세션에 없는 동사(하위 세션 만들기·끄기·관계 바꾸기)
 export const ORCH_NO_SPAWN = Object.freeze(['child', 'child-kill', 'relate', 'child-wait']);
-// 하위 오케스트레이션 세션이 쓰는 동사(help는 CLI가 답한다). prompt는 부모에게만
+// 하위 오케스트레이션 세션이 쓰는 동사(help는 CLI가 답한다). prompt는 부모에게만.
+// P346: docs(점검 결과와 init·on·off)는 없다. 문서를 시작·켜고 끄는 것은 지휘 세션의 일이다(free 범위 오케스트레이션 세션은 docs를 모두 쓰고,
+//   보통 세션의 워커는 doc-watch.mjs mayWrite가 not_lead로 거절한다)
 export const ORCH_SUB_VERBS = Object.freeze(['help', 'prompt', 'done', 'item', 'me', 'usage']);
+// P346: 지휘 세션만 쓰는 낱말(동사 → 낱말). 판이 막고(doc-watch.mjs mayWrite) help가 보인다
+export const LEAD_ONLY_SUBS = Object.freeze({ docs: Object.freeze(['init', 'on', 'off']) });
 // atrium 동사 → /branch 요청 이름(cli-contract의 동사와 atrium-child.mjs의 길)
 export const VERB_OP = Object.freeze({ child: 'child', children: 'children', 'child-kill': 'kill', 'child-wait': 'wait', wake: 'wake', models: 'models', me: 'me', prompt: 'prompt', wait: 'turn', read: 'read', relate: 'relate', done: 'done', guide: 'guide', item: 'item', items: 'items', log: 'log', news: 'news', ask: 'ask', todo: 'todo', docs: 'docs', usage: 'usage', plan: 'plan' }); // P304: plan(하위 오케스트레이션 세션의 허용 동사에는 없다)
 export const OP_VERB = Object.freeze(Object.fromEntries(Object.entries(VERB_OP).map(([v, o]) => [o, v])));

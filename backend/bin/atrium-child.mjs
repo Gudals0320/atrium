@@ -16,7 +16,7 @@
 //       atrium item [--json] · atrium items [--json]   (P180: 지금 일, 네가 맡긴 일들)
 //       atrium log "<한 줄>" [--json] · atrium news [<이름>] [--all] [--json]   (P204: 동료 소식)
 //       atrium guide [merger] [--json]   (P182: 자세한 사용법. P267: merger 안내)
-//       atrium docs [--json]   (P257: 이 워크스페이스의 문서 점검 결과)
+//       atrium docs [init [--dir 폴더] [--only brief,arch,plan] | on [--dir 폴더] | off] [--json]   (P257: 이 워크스페이스의 문서 점검 결과. P346: 문서 시작·켜기·끄기, 지휘 세션만)
 //       atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"] [--no-wait | --wait] | --done <번호> | --list [--json]   (P284: 결정 카드. P295: 보내는 때)
 //       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] [--no-wait | --wait] | --done <번호> | --list [--json]   (P292: 사용자 몫. P295: 보내는 때)
 //       atrium plan [show|list|new|goal|metric|ms|focus|item|check|owner|status|import|export|log] … [--plan <이름|번호>] [--json]   (P304: 리포별 목표·마일스톤 레인. 사용법 atrium help plan)
@@ -100,6 +100,9 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       사람 몫 항목은 item <코드> "<글>" --who user(사람의 할 일 목록에 뜬다). 하위 낱말과 예: atrium help plan
   atrium guide                  이 사용법
   atrium guide merger           병합 merger의 안내(P267: 보드가 브랜치 워커의 병합을 맡기는 세션)
+  atrium docs [init [--dir 폴더] [--only brief,arch,plan] | on [--dir 폴더] | off]
+      문서 점검 결과(P257). init은 살아 있는 문서가 없는 저장소에 BRIEF·ARCH·PLAN 틀을 만들고(있는 파일은 덮지 않는다) .atrium/docs.json에 예산을 적어 점검을 켠다.
+      on·off는 점검을 켜고 끈다. init·on·off는 지휘 세션만(P346)
   PowerShell 셸(Codex 등)은 0이 아닌 종료 코드를 모두 1로 바꿀 수 있다. 결과는 종료 코드보다 출력의 첫 줄 글로 판단한다
   PowerShell에서 atrium은 atrium.exe로 여러 줄·< > | & %를 그대로 넘긴다. Windows PowerShell 5.1(Codex)은 글 안의 큰따옴표를 빼먹고, cmd를 거치면(atrium.cmd) 여러 줄이 첫 줄만 간다. 그런 글은 --file로 준다
 ${RELATION_HELP.join('\n')}
@@ -183,8 +186,13 @@ async function main() {
   if (cmd === 'ask') return askVerb(); // P284
   if (cmd === 'todo') return todoVerb(); // P292
   if (cmd === 'plan') return planVerb(); // P304
-  if (cmd === 'docs') { // P257: 문서 점검 결과
-    const u = await call('docs', {}, 30000);
+  if (cmd === 'docs') { // P257: 문서 점검 결과. P346: init | on | off
+    const action = rest[0] || 'status';
+    if (!['status', 'init', 'on', 'off'].includes(action)) fail(`알 수 없는 docs 낱말: ${action}. 사용: atrium docs [init [--dir 폴더] [--only brief,arch,plan] | on [--dir 폴더] | off]`, 2);
+    // --only는 child-kill의 켜기 낱말과 이름이 같아 값이 따로 온다(atrium docs init --only brief,plan)
+    const only = typeof flags.only === 'string' ? flags.only : flags.only ? rest[1] : undefined;
+    if (flags.only && !only) fail('--only에 brief, arch, plan을 쉼표로 준다', 2);
+    const u = await call('docs', { action, ...(flags.dir ? { dir: flags.dir } : {}), ...(only ? { only } : {}) }, 30000);
     if (flags.json) { say(JSON.stringify(u.result ?? { error: u.error }, null, 2)); if (u.error) process.exit(1); return; }
     if (u.error) fail(`읽지 않았다(${u.error.code}): ${u.error.message}`);
     for (const line of u.result.lines || []) say(line);
