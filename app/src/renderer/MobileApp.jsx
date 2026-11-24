@@ -269,7 +269,7 @@ function TodoCard({ d, now, cards, hot = false, later = false }) {
       {d.why && <div className="mt-mp-why">{d.why}</div>}
       <div className="mt-mp-acts">
         {kindKey === 'decide' && (d.options || []).map((o, i) => <button key={o} type="button" className={'mt-mp-btn' + (i === 0 ? ' pri' : '')} disabled={busy} data-action="mp-todo-answer" onClick={() => run('decision.answer', { answer: o })}>{o}</button>)}
-        {kindKey === 'do' && <button type="button" className="mt-mp-btn pri" disabled={busy} data-action="mp-todo-done" onClick={() => run('decision.done', {})}>{t('mobile.did')}</button>}
+        {kindKey === 'do' && d.kind !== 'guard' && <button type="button" className="mt-mp-btn pri" disabled={busy} data-action="mp-todo-done" onClick={() => run('decision.done', {})}>{t('mobile.did')}</button>}
         {kindKey === 'check' && <><button type="button" className="mt-mp-btn pri" disabled={busy} onClick={() => run('decision.check', { ok: true })}>{t('mobile.checkOk')}</button><button type="button" className="mt-mp-btn" disabled={busy} onClick={() => run('decision.check', { ok: false })}>{t('mobile.checkFail')}</button></>}
         <span className="mt-mp-sp" />
         {kindKey === 'decide' && <button type="button" className="mt-mp-btn ghost" onClick={() => setWriting((v) => !v)}>{t('mobile.writeAnswer')}</button>}
