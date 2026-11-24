@@ -3280,4 +3280,20 @@ export default {
     rowCpuTitle: '코어 하나 대비 CPU입니다(100% = 코어 하나를 다 씀). 아래 "CPU: 세션 · PC 전체"는 PC 전체 대비입니다.',
     everyTitle: '측정 간격입니다. 마지막 측정의 프로세스 표 읽기에 {ms}ms 걸렸습니다.',
   },
+  // P353: 휴대폰 전용 간소 페이지(MobileApp.jsx)
+  mobile: {
+    now: '방금', min: '{n}분', hour: '{n}시간', day: '{n}일',
+    done: '작업 완료',
+    tab_home: '홈', tab_sessions: '세션', tab_map: '맵',
+    count_need: '응답 필요', count_work: '작업 중', count_done: '작업 완료',
+    todo: '할 일', later: '나중 {n}', noTodo: '할 일이 없습니다.', readAll: '모두 읽음',
+    kind_decide: '결정', kind_do: '할 일', kind_check: '확인',
+    did: '했음', checkOk: '됐다', checkFail: '안 됐다', writeAnswer: '답 쓰기', answerPh: '답',
+    snooze: '미루기', snoozeHour: '1시간 뒤', snoozeMorning: '내일 오전 9시', todoFailed: '카드를 바꾸지 못했습니다: {error}',
+    pin: '위에 고정', unpin: '고정 풀기', search: '세션 찾기', pinned: '고정', showSleeping: '잠든 세션 {n}개 보기', noMatch: '맞는 세션이 없습니다.',
+    relations: '세션 관계', fullMap: '전체 맵', moreRows: '{n}개 더 보기', fullMapFailed: '전체 맵을 열지 못했습니다: {error}',
+    lastAnswer: '마지막 답', prompt: '지시', terminal: '터미널 · 마지막 40줄', fontDown: '글자 작게', fontUp: '글자 크게', refresh: '새로 고침',
+    history: '이전 기록', moreHistory: '이전 기록 더 보기', sendNow: '바로 보내기',
+    key_esc: 'Esc', key_enter: 'Enter', key_up: '위 화살표', key_down: '아래 화살표', key_1: '1번 키', key_2: '2번 키', key_3: '3번 키', key_y: 'y 키', key_n: 'n 키',
+  },
 };

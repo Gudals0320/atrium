@@ -3276,4 +3276,20 @@ export default {
     rowCpuTitle: 'CPU relative to one core (100% = one full core). The "CPU: sessions · whole PC" line below is relative to the whole PC.',
     everyTitle: 'Sampling interval. Reading the process table took {ms} ms last time.',
   },
+  // P353: 휴대폰 전용 간소 페이지(MobileApp.jsx)
+  mobile: {
+    now: 'now', min: '{n}m', hour: '{n}h', day: '{n}d',
+    done: 'Done',
+    tab_home: 'Home', tab_sessions: 'Sessions', tab_map: 'Map',
+    count_need: 'Needs you', count_work: 'Working', count_done: 'Done',
+    todo: 'To do', later: '{n} later', noTodo: 'Nothing to do.', readAll: 'Mark all read',
+    kind_decide: 'Decide', kind_do: 'To do', kind_check: 'Check',
+    did: 'Done', checkOk: 'Works', checkFail: 'Doesn’t work', writeAnswer: 'Write answer', answerPh: 'Your answer',
+    snooze: 'Later', snoozeHour: 'In 1 hour', snoozeMorning: 'Tomorrow 9:00', todoFailed: 'Could not update the card: {error}',
+    pin: 'Pin to top', unpin: 'Unpin', search: 'Find a session', pinned: 'Pinned', showSleeping: 'Show {n} sleeping sessions', noMatch: 'No session matches.',
+    relations: 'Session tree', fullMap: 'Full map', moreRows: 'Show {n} more', fullMapFailed: 'Could not open the full map: {error}',
+    lastAnswer: 'Last answer', prompt: 'Prompt', terminal: 'Terminal · last 40 lines', fontDown: 'Smaller text', fontUp: 'Larger text', refresh: 'Refresh',
+    history: 'Earlier', moreHistory: 'Show earlier messages', sendNow: 'Send now',
+    key_esc: 'Esc', key_enter: 'Enter', key_up: 'Up arrow', key_down: 'Down arrow', key_1: 'Key 1', key_2: 'Key 2', key_3: 'Key 3', key_y: 'Key y', key_n: 'Key n',
+  },
 };

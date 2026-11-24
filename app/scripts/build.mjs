@@ -1,4 +1,6 @@
-// 창 화면(renderer)을 한 파일로 묶는다: src/renderer → dist/renderer.js, dist/renderer.css, dist/index.html, dist/fonts/(P11 글꼴)
+// 창 화면(renderer)을 묶는다: src/renderer → dist/renderer.js, dist/renderer.css, dist/index.html, dist/fonts/(P11 글꼴)
+// P353: 묶음이 넷이다. boot.js(첫 스크립트, 휴대폰이면 mobile을 아니면 renderer를 읽는다), renderer(판 화면 main.jsx), mobile(휴대폰 전용 페이지),
+//   fullmap(휴대폰 페이지의 "전체 맵", 누를 때만). 함께 쓰는 모듈은 dist/chunk-<해시>.js로 나눈다(splitting). CSS는 묶음마다 하나
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,11 +11,15 @@ const SHELL_MARK = '__ATRIUM_SHELL__'; // P282: 16자. 같은 길이의 해시�
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(ROOT, 'dist');
 fs.mkdirSync(out, { recursive: true });
+// P353: 지난 빌드의 묶음 조각(이름에 해시)은 지운다(dist에 쌓이지 않게)
+for (const f of fs.readdirSync(out)) if (/^chunk-[A-Za-z0-9]+\.(js|css)(\.map)?$/.test(f)) fs.rmSync(path.join(out, f));
 
 await esbuild.build({
-  entryPoints: { renderer: path.join(ROOT, 'src', 'renderer', 'main.jsx') },
+  entryPoints: { boot: path.join(ROOT, 'src', 'renderer', 'boot.js'), renderer: path.join(ROOT, 'src', 'renderer', 'main.jsx'), mobile: path.join(ROOT, 'src', 'renderer', 'mobile.jsx'), fullmap: path.join(ROOT, 'src', 'renderer', 'fullmap.jsx') },
   outdir: out,
   bundle: true,
+  splitting: true, // P353
+  chunkNames: 'chunk-[hash]',
   format: 'esm',
   platform: 'browser',
   target: 'chrome140',
@@ -32,14 +38,15 @@ fs.cpSync(path.join(ROOT, 'src', 'renderer', 'assets'), path.join(out, 'assets')
 
 // P282: 화면 빌드 표식. 자리 글을 넣은 채 묶은 renderer.js와 renderer.css·index.html의 내용 해시(16자)를 renderer.js 안(__SHELL_BUILD__)과
 // dist/build.json에 함께 넣는다. 백엔드가 /web/me로 build.json 값을 알리고, 원격 웹 화면은 자기 값과 다르면 다시 불러온다(shell-update.js)
+// P353: 묶음을 나눈 뒤로 표식은 함께 쓰는 조각에 있을 수 있다. 모든 js·css(소스맵 빼고)를 해시에 넣고, 표식이 든 파일마다 바꾼다
 {
-  const rjs = path.join(out, 'renderer.js');
-  const src = fs.readFileSync(rjs, 'utf8');
-  if (!src.includes(SHELL_MARK)) throw new Error('renderer.js has no shell build mark');
+  const code = fs.readdirSync(out).filter((f) => /\.(js|css)$/.test(f) && f !== 'sw.js').sort();
+  const marked = code.filter((f) => f.endsWith('.js') && fs.readFileSync(path.join(out, f), 'utf8').includes(SHELL_MARK));
+  if (!marked.length) throw new Error('no output has the shell build mark');
   const h = crypto.createHash('sha256');
-  for (const [f, body] of [['index.html', fs.readFileSync(path.join(out, 'index.html'))], ['renderer.js', src], ['renderer.css', fs.existsSync(path.join(out, 'renderer.css')) ? fs.readFileSync(path.join(out, 'renderer.css')) : '']]) { h.update(f); h.update(body); }
+  for (const f of ['index.html', ...code]) { h.update(f); h.update(fs.readFileSync(path.join(out, f))); }
   const build = h.digest('hex').slice(0, SHELL_MARK.length);
-  fs.writeFileSync(rjs, src.split(SHELL_MARK).join(build));
+  for (const f of marked) { const p = path.join(out, f); fs.writeFileSync(p, fs.readFileSync(p, 'utf8').split(SHELL_MARK).join(build)); }
   fs.writeFileSync(path.join(out, 'build.json'), JSON.stringify({ build }) + '\n');
 }
 

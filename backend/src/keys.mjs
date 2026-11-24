@@ -5,7 +5,7 @@
 // - 한 세션의 요청은 차례로 보낸다(keyChain). 터미널 요청은 부를 때마다 연결이 따로라, 겹쳐 보내면 차례가 섞일 수 있다
 // - 무엇을 보냈는지는 세션 이벤트 'keys'로 남긴다(키 이름과 보낸 쪽만. 글은 없다)
 
-export const KEY_NAMES = Object.freeze(['up', 'down', 'left', 'right', 'enter', 'esc', 'tab', 'space', 'backspace', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+export const KEY_NAMES = Object.freeze(['up', 'down', 'left', 'right', 'enter', 'esc', 'tab', 'space', 'backspace', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'y', 'n']); // P353: 휴대폰 빠른 키 y·n
 const ALLOWED = new Set(KEY_NAMES);
 export const KEYS_MAX = 32;
 
