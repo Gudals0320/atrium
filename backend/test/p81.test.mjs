@@ -381,7 +381,10 @@ test('P81 API: session.detach와 link.delete(부모 선이면 고르기, detach�
   assert.match(src, /if \(p\.detach\) \{[\s\S]{0,200}this\.branch\.detach\(b, \{ by: 'user' \}\)/);
   assert.match(src, /m\('detach', \{ name: s\.name, parent: pname \}\)/);
   assert.match(src, /this\.bus\.emit\('closed', s, reason\)/);
-  assert.match(src, /p\.branch && !p\.branch\.head \? this\.branch\.placeChild/);
+  // P350: 새 세션 자리는 canvas-ops.mjs placeSpawn으로 옮겼다(헤드는 줄에 서지 않는다는 규칙 그대로)
+  assert.match(src, /placeSpawn\(this, s, \{ branch: p\.branch \|\| null/);
+  const ops = fs.readFileSync(path.join(HERE, '..', 'src', 'canvas-ops.mjs'), 'utf8');
+  assert.match(ops, /branch && !branch\.head \? b\.branch\.placeChild/);
 });
 
 // ---------- 안내와 스킬 ----------

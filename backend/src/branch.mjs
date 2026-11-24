@@ -575,12 +575,15 @@ export class Branch {
     if (!parent || parent.workspaceKey !== wsKey) return null;
     const pn = b.store.nodes().find((n) => n.session_id === parentId);
     if (!pn) return null;
-    const all = canvasItems(b);
-    const ak = areaOfNode(b, parentId, all); // P27: 부모가 든 영역(워크트리 상자일 수 있다)
+    const every = canvasItems(b);
+    const ak = areaOfNode(b, parentId, every); // P27: 부모가 든 영역(워크트리 상자일 수 있다)
+    // P350: 피할 것은 같은 워크스페이스의 것만. 다른 영역은 띄운 뒤 영역 겹침 풀기(settleRegions)가 영역째 민다.
+    //   전에는 이웃 영역의 노드도 막는 것으로 봐서 열이 쉽게 막히고, 막히면 판 끝까지 내려갔다
+    const all = every.filter((i) => (i.wsKey || null) === (wsKey || null));
     const inBox = !worktree && isBoxKey(ak); // 워크트리 없는 하위 세션은 부모의 상자 안에 든다
     const pd = dockOf(b, parentId);
     const pRect = pd ? dockOuter(b, pd) : pn;
-    const tree = lineTree(b, wsKey, all);
+    const tree = lineTree(b, wsKey, every);
     const pid = tree.blockOf.get(parentId);
     if (peer) {
       const ps = { w: pn.w, h: pn.h }; // 짝의 크기 그대로(단계 열쇠와 비율도)
@@ -593,7 +596,7 @@ export class Branch {
       const at = peerSlot({ partner: pRect, band, size: frame, obstacles: [...obstacles, pRect], gap: sib ? LINE_GAP_Y : LINE_GAP_Y * 2 });
       if (!at) return null;
       const pos = worktree ? frameInner(at) : at;
-      return { x: Math.round(pos.x), y: Math.round(pos.y), w: pn.w, h: pn.h, size: pn.size ?? null, aspect: pn.aspect ?? null, area: inBox ? parseArea(ak).wt : '', peer: true };
+      return { x: Math.round(pos.x), y: Math.round(pos.y), w: pn.w, h: pn.h, size: pn.size ?? null, aspect: pn.aspect ?? null, area: inBox ? parseArea(ak).wt : '', peer: true, ...(at.push ? { push: true } : {}) };
     }
     const size = SIZE_STEPS[CHILD_SIZE];
     // 이미 줄에 선 형제의 띠: 부모와 다른 블록이면 그 블록의 나무째, 부모 블록 안(부모 상자 안의 형제)이면 그 노드
@@ -612,7 +615,7 @@ export class Branch {
     const at = lineSlot({ parent: pRect, bands, size: frame, obstacles: [...obstacles, pRect] });
     if (!at) return null;
     const pos = worktree ? frameInner(at) : at;
-    return { x: Math.round(pos.x), y: Math.round(pos.y), w: size.w, h: size.h, size: CHILD_SIZE, aspect: '16:9', area: inBox ? parseArea(ak).wt : '' };
+    return { x: Math.round(pos.x), y: Math.round(pos.y), w: size.w, h: size.h, size: CHILD_SIZE, aspect: '16:9', area: inBox ? parseArea(ak).wt : '', ...(at.push ? { push: true } : {}) };
   }
 
   // ---------- HTTP: 하위 세션 명령 ----------

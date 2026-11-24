@@ -94,18 +94,19 @@ test('P200 (라) 워크트리 상자 테두리 크기로도 같다', () => {
   assert.notEqual(lineSlot({ parent: P, bands: short, size: fs_, obstacles: [P, ...short] }).y, bs[1].y);
 });
 
-test('P200 (마) 모든 열이 막히면 옛 자리(첫 열의 줄 끝, 그 아래로 잇기)를 돌려준다(null 아님)', () => {
+// P350: 모두 막히면 첫 열의 줄 끝(형제 띠 아래)에 서고 push를 단다(띄운 쪽의 줄 밀기가 그 자리의 것을 민다). 전에는 막은 것 아래로 내려갔다(판 끝까지)
+test('P200 (마)·P350 모든 열이 막히면 첫 열의 줄 끝(push)을 돌려준다(null 아님, 막은 것 아래로 내려가지 않는다)', () => {
   const bs = sibs(1);
   const wall = { x: X0 - 100, y: -500, w: 40000, h: 9000 }; // 오른쪽으로도 멀리 막는 벽(그 너머로 건너지 않는다)
   const at = lineSlot({ parent: P, bands: bs, size: S, obstacles: [P, ...bs, wall] });
   assert.ok(at, '자리 없음으로 실패하지 않는다');
-  assert.deepEqual(at, { x: X0, y: wall.y + wall.h + LINE_GAP_Y });
+  assert.deepEqual(at, { x: X0, y: bs[0].y + bs[0].h + LINE_GAP_Y, push: true });
   // 열마다 막히는 벽이 LINE_COLS개
   let x = X0;
   const walls = [];
   for (let i = 0; i < LINE_COLS; i++) { walls.push({ x, y: -100, w: 1500, h: 6000 }); x += 1500 + LINE_GAP_X; }
   const at2 = lineSlot({ parent: P, size: S, obstacles: [P, ...walls] });
-  assert.deepEqual(at2, { x: X0, y: 5900 + LINE_GAP_Y });
+  assert.deepEqual(at2, { x: X0, y: P.y, push: true }, '형제가 없으면 부모 높이');
   // LINE_COLS - 1개면 마지막 열에 선다
   const at3 = lineSlot({ parent: P, size: S, obstacles: [P, ...walls.slice(0, -1)] });
   assert.deepEqual(at3, { x: walls[LINE_COLS - 1].x, y: 0 });
@@ -124,9 +125,9 @@ test('P200 (바) 동료 자리도 상한: 짝 나무 아래가 길게 막히면 
   const line = [0, 1].map((i) => ({ x: 0, y: 2160 + i * 890, ...S }));
   assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: line.slice(0, 1) }), { x: 0, y: 2160 + 890 });
   assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: line }), { x: S.w + LINE_GAP_X, y: 2160 });
-  // 모두 막히면 옛 자리
+  // P350: 모두 막히면 짝 나무 바로 아래(push, 띄운 쪽이 뿌리 줄 밀기로 자리를 낸다)
   const wall = { x: -500, y: 1000, w: 40000, h: 9000 };
-  assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: [wall] }), { x: 0, y: 10000 + LINE_GAP_Y });
+  assert.deepEqual(peerSlot({ partner: P, band, size: S, gap: 160, obstacles: [wall] }), { x: 0, y: band.y + band.h + 160, push: true });
 });
 
 test('P200 (사) 줄 밀기(pushLine)는 새 열·비운 자리에 선 하위를 다시 밀지 않는다(순수)', () => {

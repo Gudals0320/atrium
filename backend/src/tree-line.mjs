@@ -52,22 +52,12 @@ function searchColumns({ x0, size, rects, top, limit, winTop, gapX, cols, reach 
   }
   return null;
 }
-// 옛 규칙(P75): y부터 그 자리에 다른 것이 있으면 그 아래로 잇는다. 모든 열이 막혔을 때만 쓴다
-function slideDown(x, y, size, os, gap) {
-  for (let i = 0; i < 10000; i++) {
-    const c = { x, y, w: size.w, h: size.h };
-    const hit = os.filter((r) => overlaps(c, r, gap - 1));
-    if (!hit.length) break;
-    y = Math.max(...hit.map((r) => r.y + r.h)) + gap;
-  }
-  return { x: Math.round(x), y: Math.round(y) };
-}
-
 // 새 하위 세션 블록의 자리(왼쪽 위). parent: 부모 블록 사각형(줄의 x와 시작 높이), bands: 이미 줄에 선 형제들의 띠(자기 나무까지 감싼 사각형),
 // size: 새 블록 크기, obstacles: 피할 사각형(노드, 메모·칸반, 상자 …). 다른 노드는 옮기지 않는다.
 // P200: 첫 열(부모 오른쪽 + gapX)에서 부모 위 끝부터 아래로 새 블록이 들어가는 가장 위 빈 칸을 고른다(형제 띠 사이의 빈 곳도 칸이다. 부모 위 끝보다 위는 보지 않는다).
 //   칸의 위 끝이 부모 아래 끝 + reach보다 아래면 막힌 열로 보고(형제 줄이 길어서 그런 것도 같다: 정리 P91처럼 긴 열은 나눈다), 그 열의 세로 창(부모 위 끝 ~ 그 상한)에 걸친 것들 오른쪽에 새 열을 연다(cols 열까지).
-//   끝내 없으면 옛 자리(첫 열의 줄 끝, 그 자리에 다른 것이 있으면 그 아래로)
+//   P350: 끝내 없으면 첫 열의 줄 끝(형제 띠 맨 아래 다음)에 선다. 그 자리의 것은 띄운 뒤 줄 밀기(reflowLines, 뿌리 줄까지)가 아래로 민다.
+//   전에는 그 자리에서 다른 것에 닿지 않을 때까지 아래로 내려가(slideDown) 판 끝(수천~만 px 아래)에 서곤 했다
 export function lineSlot({ parent, bands = [], size, obstacles = [], gapX = LINE_GAP_X, gapY = LINE_GAP_Y, gap = gapY, reach = LINE_REACH, cols = LINE_COLS }) {
   if (!parent || !size) return null;
   const x = Math.round(parent.x + parent.w + gapX);
@@ -78,13 +68,14 @@ export function lineSlot({ parent, bands = [], size, obstacles = [], gapX = LINE
   const at = searchColumns({ x0: x, size, rects, top: parent.y, limit: parent.y + parent.h + reach, winTop: parent.y, gapX, cols, reach });
   if (at) return { x: at.x, y: at.y };
   const y = bs.length ? Math.max(...bs.map((r) => r.y + r.h)) + gapY : parent.y;
-  return slideDown(x, y, size, os, gap);
+  return { x, y: Math.round(y), push: true };
 }
 
 // P175: 동료로 띄운 세션(atrium child --peer)의 자리(왼쪽 위). 정리(arrangeTree P177)와 같은 자리: 짝(partner)과 같은 x, 짝의 나무 띠(band) 바로 아래.
 // gap: 짝이 누군가의 하위면 같은 줄의 형제 사이(LINE_GAP_Y), 짝이 뿌리면 나무 사이(정리의 gapY * 2). 다른 노드는 옮기지 않는다.
 // P200: 짝 나무 아래(띠 아래 끝 + gap)부터 가장 위 빈 칸. 칸의 위 끝이 띠 아래 끝 + reach보다 아래면 막힌 것으로 보고, 짝 나무 아래 창에 걸친 것들 오른쪽에 새 열을 연다
-//   (여전히 짝 나무 아래 높이라서 짝의 하위 줄에 끼어들지 않는다. 정리를 누르면 짝과 같은 x로 돌아간다). 끝내 없으면 옛 자리(짝 x, 그 아래로 잇기)
+//   (여전히 짝 나무 아래 높이라서 짝의 하위 줄에 끼어들지 않는다. 정리를 누르면 짝과 같은 x로 돌아간다).
+//   P350: 끝내 없으면 짝 나무 바로 아래(짝 x)에 선다(push: 띄운 쪽이 뿌리 줄 밀기로 자리를 낸다). 전에는 아래로 끝없이 내려갔다(slideDown)
 export function peerSlot({ partner, band = null, size, obstacles = [], gap = LINE_GAP_Y, gapX = LINE_GAP_X, reach = LINE_REACH, cols = LINE_COLS }) {
   if (!partner || !size) return null;
   const x = Math.round(partner.x);
@@ -94,7 +85,7 @@ export function peerSlot({ partner, band = null, size, obstacles = [], gap = LIN
   const rects = os.map((r) => ({ r, gap: LINE_GAP_Y }));
   const at = searchColumns({ x0: x, size, rects, top: bottom + gap, limit: bottom + reach, winTop: bottom, gapX, cols, reach });
   if (at) return { x: at.x, y: at.y };
-  return slideDown(x, bottom + gap, size, os, LINE_GAP_Y);
+  return { x, y: Math.round(bottom + gap), push: true };
 }
 
 // 줄 밀기: units([{ id, rect }], 띄운 순서)를 차례로 보며, 앞의 것과 겹치면(gap 안) 그 아래로만 민다. 당기지 않는다(자리가 갑자기 움직이지 않게).
@@ -125,6 +116,40 @@ export function pushLine(units, { gap = LINE_GAP_Y } = {}) {
     }
     placed.push({ rect: shiftY(u.rect, dy), own: u.own ? shiftY(u.own, dy) : null, parts: u.parts ? u.parts.map((q) => shiftY(q, dy)) : null });
     if (dy) out.set(u.id, Math.round(dy));
+  }
+  return out;
+}
+
+// P350: 씨앗(seeds: 커지거나 새로 선 유닛 ID)에서 시작하는 줄 밀기. units는 pushLine과 같은 꼴이다.
+// 씨앗과 이미 민 유닛에 겹치는(gap 안) 유닛만 그 아래로 민다. 씨앗보다 위(윗변이 씨앗 윗변보다 위)는 보지 않는다.
+// 씨앗과 상관없이 전부터 겹쳐 있던 유닛끼리는 그대로 둔다(사람이 둔 자리를 건드리지 않는다). → Map id → dy(민 것만)
+export function pushFrom(units, seeds, { gap = LINE_GAP_Y } = {}) {
+  const list = (units || []).filter((u) => u && u.rect);
+  const seedSet = new Set(seeds || []);
+  // was: 밀기 전 사각형(씨앗은 지금 사각형. 씨앗이 커지기 전 자리는 모른다)
+  const active = list.filter((u) => seedSet.has(u.id)).map((u) => ({ id: u.id, rect: u.rect, was: u.was || u.rect, own: u.own || null, parts: u.parts || null }));
+  if (!active.length) return new Map();
+  const top = Math.min(...active.map((a) => a.rect.y));
+  const rest = list.filter((u) => !seedSet.has(u.id) && u.rect.y >= top).sort((p, q) => p.rect.y - q.rect.y || p.rect.x - q.rect.x);
+  const out = new Map();
+  for (const u of rest) {
+    let dy = 0;
+    for (let i = 0; i < 10000; i++) {
+      const r = shiftY(u.rect, dy);
+      let need = 0;
+      for (const p of active) {
+        // 같은 열: 전에 그 아래에 있던 것은 전의 틈(gap 이상, gap × 4까지. 정리의 나무 사이 160)을 지킨다
+        const keep = u.rect.y >= p.was.y + p.was.h ? Math.min(Math.max(gap, u.rect.y - (p.was.y + p.was.h)), gap * 4) : gap;
+        if (sameColumn(u, p)) { if (overlaps(r, p.rect, keep - 1)) need = Math.max(need, p.rect.y + p.rect.h + keep - r.y); continue; }
+        for (const q of u.parts || [u.rect]) {
+          const qq = shiftY(q, dy);
+          for (const o of p.parts || [p.rect]) if (overlaps(qq, o, gap - 1)) need = Math.max(need, o.y + o.h + gap - qq.y);
+        }
+      }
+      if (need <= 0) break;
+      dy += need;
+    }
+    if (dy) { out.set(u.id, Math.round(dy)); active.push({ id: u.id, rect: shiftY(u.rect, dy), was: u.rect, own: u.own ? shiftY(u.own, dy) : null, parts: u.parts ? u.parts.map((q) => shiftY(q, dy)) : null }); }
   }
   return out;
 }
