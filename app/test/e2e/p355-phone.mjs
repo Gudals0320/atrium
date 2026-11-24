@@ -369,6 +369,97 @@ async function shots() {
   });
 }
 
+async function cycles() {
+  const pw = await import('playwright');
+  const rows = [];
+  await withSim(async () => {
+    const browser = await pw.chromium.launch({ headless: true, ...(chromeExe ? { executablePath: chromeExe } : {}) });
+    try {
+      const ctx = await browser.newContext(ctxOpts());
+      const p0 = await ctx.newPage(); await pair(p0); await p0.close();
+      const ids = Object.fromEntries(call('session.list').map((s) => [s.name, s.sessionId]));
+      const pg = await ctx.newPage();
+      await pg.addInitScript(() => { try { localStorage.setItem('mt.mobileView', 'answer'); } catch {} });
+      const cdp = await ctx.newCDPSession(pg);
+      await cdp.send('Performance.enable');
+      const heap = async () => { for (let i = 0; i < 3; i++) { await cdp.send('HeapProfiler.collectGarbage').catch(() => {}); await sleep(300); } const m = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((x) => [x.name, x.value])); return Math.round(m.JSHeapUsedSize / 1e4) / 100; };
+      await pg.goto('http://localhost:' + SIM + '/');
+      await pg.waitForSelector('[data-role=mp-ready]', { state: 'attached', timeout: 60000 });
+      await pg.evaluate((id) => window.__mtMobile.open(id), ids[process.env.P355_TERM || 'sh0']);
+      await pg.waitForSelector('[data-role=mp-session]'); await sleep(3000);
+      rows.push({ at: 'session', heap: await heap() });
+      for (let i = 0; i < Number(process.env.P355_CYCLES || 6); i++) {
+        if (!process.env.P355_NOTERM) {
+          await pg.click('[data-action=mp-view-term]');
+          await pg.waitForFunction(() => { const r = document.querySelector('[data-role=mp-termbox] .xterm-rows'); return r && r.textContent.trim().length > 0; }, null, { timeout: 30000 }).catch(() => {});
+        }
+        await sleep(4000);
+        const open = await heap();
+        if (!process.env.P355_NOTERM) await pg.click('[data-action=mp-view-answer]');
+        await sleep(3000);
+        rows.push({ i, open, closed: await heap(), terms: await pg.evaluate(() => (window.__mtMobileTerm ? window.__mtMobileTerm.terms.size : -1)) });
+      }
+      log(JSON.stringify(rows));
+      await ctx.close();
+    } finally { await browser.close(); }
+  });
+  fs.writeFileSync(path.join(OUT, 'cycles.json'), JSON.stringify(rows, null, 2));
+  const closed = rows.filter((r) => r.closed != null).map((r) => r.closed);
+  // 닫은 뒤 힙은 처음 몇 번 V8 컴파일 코드(code)만큼 늘다가 멈춘다(leak 모드의 스냅숏 견주기: 남는 객체는 몇 KB). 마지막 네 번 사이 0.2MB 안
+  const tail = closed.slice(-4);
+  check('터미널을 열고 닫기를 되풀이하면 닫은 뒤 힙이 멈춘다(마지막 네 번 사이 0.2MB 안)', closed.length < 8 || Math.max(...tail) - Math.min(...tail) <= 0.2, closed);
+}
+
+async function snapCounts(cdp) {
+  for (let i = 0; i < 3; i++) { await cdp.send('HeapProfiler.collectGarbage').catch(() => {}); await sleep(200); }
+  let buf = '';
+  const on = (e) => { buf += e.chunk; };
+  cdp.on('HeapProfiler.addHeapSnapshotChunk', on);
+  await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
+  cdp.off('HeapProfiler.addHeapSnapshotChunk', on);
+  const s = JSON.parse(buf);
+  const f = s.snapshot.meta.node_fields, types = s.snapshot.meta.node_types[0];
+  const nf = f.length, ti = f.indexOf('type'), ni = f.indexOf('name'), si = f.indexOf('self_size');
+  const counts = {};
+  for (let i = 0; i < s.nodes.length; i += nf) {
+    const t = types[s.nodes[i + ti]];
+    const name = (t === 'object' || t === 'closure') ? t + ':' + s.strings[s.nodes[i + ni]] : 'T:' + t;
+    const c = counts[name] || (counts[name] = { n: 0, size: 0 });
+    c.n++; c.size += s.nodes[i + si];
+  }
+  return counts;
+}
+async function leakHunt() {
+  const pw = await import('playwright');
+  await withSim(async () => {
+    const browser = await pw.chromium.launch({ headless: true, ...(chromeExe ? { executablePath: chromeExe } : {}) });
+    try {
+      const ctx = await browser.newContext(ctxOpts());
+      const p0 = await ctx.newPage(); await pair(p0); await p0.close();
+      const ids = Object.fromEntries(call('session.list').map((s) => [s.name, s.sessionId]));
+      const pg = await ctx.newPage();
+      await pg.addInitScript(() => { try { localStorage.setItem('mt.mobileView', 'answer'); } catch {} });
+      const cdp = await ctx.newCDPSession(pg);
+      await pg.goto('http://localhost:' + SIM + '/');
+      await pg.waitForSelector('[data-role=mp-ready]', { state: 'attached', timeout: 60000 });
+      await pg.evaluate((id) => window.__mtMobile.open(id), ids[process.env.P355_TERM || 'sh0']);
+      await pg.waitForSelector('[data-role=mp-session]'); await sleep(2000);
+      const cyc = async () => { await pg.click('[data-action=mp-view-term]'); await pg.waitForFunction(() => { const r = document.querySelector('[data-role=mp-termbox] .xterm-rows'); return r && r.textContent.trim().length > 0; }, null, { timeout: 30000 }).catch(() => {}); await sleep(2500); await pg.click('[data-action=mp-view-answer]'); await sleep(1500); };
+      await cyc();
+      const A = await snapCounts(cdp);
+      for (let i = 0; i < 4; i++) await cyc();
+      const B = await snapCounts(cdp);
+      const diff = Object.keys(B).map((k) => ({ k, dn: B[k].n - ((A[k] || {}).n || 0), ds: B[k].size - ((A[k] || {}).size || 0) })).filter((x) => x.dn > 0).sort((a, b) => b.ds - a.ds).slice(0, 40);
+      const byType = Object.keys(B).filter((k) => k.startsWith('T:')).map((k) => ({ k, dn: B[k].n - ((A[k] || {}).n || 0), ds: B[k].size - ((A[k] || {}).size || 0), total: B[k].size }));
+      log('types ' + JSON.stringify(byType));
+      const byN = Object.keys(B).map((k) => ({ k, dn: B[k].n - ((A[k] || {}).n || 0) })).filter((x) => x.dn >= 4).sort((a, b) => b.dn - a.dn).slice(0, 40);
+      fs.writeFileSync(path.join(OUT, 'leak.json'), JSON.stringify({ diff, byN }, null, 2));
+      log(JSON.stringify({ diff: diff.slice(0, 25), byN: byN.slice(0, 25) }));
+      await ctx.close();
+    } finally { await browser.close(); }
+  });
+}
+
 async function stopBoard() {
   try { for (const s of call('session.list')) atrium('kill', s.sessionId, '--yes', '--delete'); } catch (e) { log('kill ' + e.message.slice(0, 120)); }
   try { log(atrium('terminal', 'stop', '--yes').slice(0, 200)); } catch (e) { log('terminal stop ' + e.message.slice(0, 120)); }
@@ -379,6 +470,8 @@ try {
   if (WHAT === 'setup') await setupBoard();
   else if (WHAT === 'measure') await measure();
   else if (WHAT === 'shots') await shots();
+  else if (WHAT === 'cycles') await cycles();
+  else if (WHAT === 'leak') await leakHunt();
   else if (WHAT === 'stop') await stopBoard();
   else if (WHAT === 'backend-stop') log(atrium('backend', 'stop').slice(0, 200));
   else if (WHAT === 'backend-start') log(atrium('backend', 'start').slice(0, 200));
