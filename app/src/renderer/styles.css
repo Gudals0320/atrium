@@ -1803,6 +1803,9 @@ html[data-board-moving="1"] .mt-node-run { visibility: hidden; }
 .mt-cmd-to-chip .n { font-weight: 500; color: color-mix(in srgb, currentColor 75%, transparent); }
 .mt-cmd-to-chip.st-unknown, .mt-cmd-to-chip.st-shell { color: var(--bad); background: var(--bad-bg); border-color: color-mix(in srgb, var(--bad) 60%, transparent); border-style: dashed; text-decoration: line-through; }
 .mt-cmd-to-chip.more { flex: none; color: var(--chrome-text-2); background: none; border-color: var(--chrome-line-2); }
+/* P354: 시선 태그 칩이 바뀔 때 부드럽게 나타난다(움직임 줄이기면 바로). 나머지 시선 태그 모양은 파일 끝 P354 덩어리 */
+@keyframes mt-gaze-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) { .mt-cmd-to-chip.gaze { animation: mt-gaze-in .28s ease-out; } }
 /* 칩 줄은 바가 자란 만큼 위로 비킨다(CommandBar가 판에 --mt-cmd-grow를 둔다) */
 .mt-chips { bottom: calc(104px + var(--mt-cmd-grow, 0px)); }
 
@@ -3198,3 +3201,10 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
   html:not(.mt-lite)[data-work-light="system"] [data-role="mission"]:not([data-moving="1"]) .mt-mm-light { will-change: transform; }
 }
 [data-role="mission"][data-moving="1"] .mt-mm-lring { display: none; }
+
+/* P354: 시선 태그(GazeTag.jsx). 시선으로 명령줄 받는 이가 된 판 노드는 세션 맵의 태그된 카드(바깥 테)와 같은 말씨로, 더 옅은 점선 테.
+   명령줄의 태그·받는 이 칩은 사람이 고른 태그보다 옅은 점선이고, 바뀔 때 부드럽게 나타난다(움직임 줄이기면 바로) */
+.mt-node.gazed { outline: calc(2px * var(--inv, 1)) dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: calc(5px * var(--inv, 1)); }
+.mt-node.gazed.selected { outline: none; }
+.mt-cmd-tag.gaze { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: none; outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -1px; }
+.mt-cmd-to-chip.gaze { border-style: dashed; background: color-mix(in srgb, var(--accent) 8%, transparent); }

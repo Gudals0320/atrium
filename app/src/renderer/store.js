@@ -9,6 +9,7 @@ import { step, bootState, liteHold, onShowAll } from './crash-watch.js'; // P86:
 import { setLanguage, t, errText } from './lib/i18n.js';
 import { readScale, saveScale, SCALE_KEYS } from './lib/scale.js'; // P45
 import { loadSpot, saveSpot, applySpot } from './lib/overview.js'; // P85
+import { loadGazeOn, saveGazeOn } from './lib/gaze-pick.js'; // P354
 import { decisionsOf, withoutCard, heldOf, withDeferred } from './lib/decisions.js'; // P284: 결정 카드. P286: 모은 답. P292: 사용자 몫
 import { laneOf } from './lib/plans.js'; // P306: 목표·마일스톤 레인
 import { mergerViewOf, withAsk, withoutAsk, rememberParents } from './lib/merger.js'; // P268. P276: rememberParents
@@ -437,6 +438,11 @@ export function setUiScale(f) { state.uiScale = saveScale(scaleStore(), SCALE_KE
 state.spotlight = loadSpot(scaleStore());
 applySpot(state.spotlight);
 export function setSpotlight(on) { state.spotlight = saveSpot(scaleStore(), on); applySpot(state.spotlight); changed(); }
+// P354: 시선 태그(판 가운데 세션을 받는 이로, lib/gaze-pick.js, GazeTag.jsx). 켬·끔은 이 창(프로필)의 localStorage, gazeId는 지금 시선으로 태그된 세션(판 노드 표시)
+state.gazeOn = loadGazeOn(scaleStore());
+state.gazeId = null;
+export function setGazeOn(on) { state.gazeOn = saveGazeOn(scaleStore(), on); changed(); }
+export function setGazeId(id) { const v = id || null; if (state.gazeId === v) return; state.gazeId = v; changed(); }
 
 // P268: 합치기 merger(판 쪽 P267). 판 API merger.status를 처음 붙을 때와 merger.updated·merger.answered 때 모아서 다시 읽는다.
 //   merger.ask는 카드를 바로 넣는다(읽기를 기다리지 않게). merger를 모르는 옛 판이면 null(설정 칸·카드·선이 없다)

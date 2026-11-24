@@ -41,6 +41,7 @@ export const ITEMS = [
   { id: 'uiScale', page: 'general', name: 'scale.uiName', hint: 'scale.uiHint' },
   { id: 'termScale', page: 'general', name: 'scale.termName', hint: 'scale.termHint' },
   { id: 'workLight', page: 'general', name: 'workLight.name', hint: 'workLight.hint', note: 'workLight.note' },
+  { id: 'gazeTag', page: 'general', name: 'gaze.name', hint: 'gaze.hint', note: 'gaze.note' }, // P354
   { id: 'tray', page: 'general', name: 'settings.trayName', hint: 'settings.tray', note: 'settings.trayNote' },
   { id: 'updateCheck', page: 'general', name: 'update.checkName', hint: 'update.checkHint', note: 'update.note' },
   { id: 'updateChannel', page: 'general', name: 'update.channelName', hint: 'update.channelDevHint', parent: 'updateCheck' },
