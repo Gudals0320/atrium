@@ -255,6 +255,7 @@ export class Backend {
     this.api.handlers['relay.status'] = (p = {}) => ({ ...this.authRelay.status(), recent: this.authRelay.recent(Math.min(Math.max(Number(p && p.limit) || 10, 1), 100)) });
     this.api.handlers['relay.setKey'] = pcOnly((p) => this.authRelay.setKey(p.key));
     this.api.handlers['relay.removeKey'] = pcOnly(() => this.authRelay.removeKey());
+    this.api.handlers['relay.stop'] = pcOnly(async () => { await this.authRelay.stop(); return this.authRelay.status(); }); // 다음 API 런처 세션을 띄울 때 다시 켠다
     this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
     // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄, decisions.mjs autoTurn). 단위 시험 판에서는 끈다(진짜 claude를 부르지 않게)
     // P338: 할 일 정리 봇이 런처를 골랐으면 하네스·모델·노력은 그 런처(settings.mjs resolveBotSettings)
