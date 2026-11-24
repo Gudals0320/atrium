@@ -264,15 +264,18 @@ test('P284 웹 푸시: 결정 카드는 응답 필요 스위치를 따르고 카
   const p = new Pusher({ store: null, timers: false, batchMs: 60000 });
   try {
     p.mem = [{ deviceId: 'd1', endpoint: 'https://fcm.googleapis.com/x', kinds: { need: false } }];
-    p.decision({ id: 1, sessionId: 's1', name: 'lead', workspaceKey: null });
+    p.decision({ id: 1, sessionId: 's0', name: 'lead', workspaceKey: null }); // P357: 세션마다 쿨다운이 있어 다른 세션으로
     assert.equal(p.decisions.at(-1).why, 'kind_off');
     p.mem = [{ deviceId: 'd1', endpoint: 'https://fcm.googleapis.com/x' }];
     p.decision({ id: 2, sessionId: 's1', name: 'lead' });
     assert.equal(p.pending.get('d1').items.get('s1').kind, 'decision');
     p.decision({ id: 2, sessionId: 's1', name: 'lead' });
     assert.equal(p.decisions.at(-1).why, 'cooldown', '같은 카드는 한 번');
-    const before = p.decisions.length;
     p.decision({ id: 3, sessionId: 's1', name: 'lead' });
-    assert.equal(p.decisions.length, before, '다른 카드는 다시 묶음에 든다(쿨다운 아님)');
+    assert.equal(p.decisions.at(-1).why, 'cooldown', 'P357: 같은 세션의 다른 카드도 쿨다운 안에는 한 번');
+    const before = p.decisions.length;
+    p.decision({ id: 4, sessionId: 's2', name: 'other' });
+    assert.equal(p.decisions.length, before, '다른 세션의 카드는 묶음에 든다(쿨다운 아님)');
+    assert.equal(p.pending.get('d1').items.get('s2').decisionId, 4, 'P357: 누르면 갈 카드 번호');
   } finally { p.stop(); }
 });

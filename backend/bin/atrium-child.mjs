@@ -320,6 +320,7 @@ async function askVerb() {
   let body;
   if (flags.list) { if (rest.length || flags.done != null) fail('사용법: atrium ask --list', 2); body = { list: true }; }
   else if (flags.done != null && flags.done !== true) { if (rest.length) fail('사용법: atrium ask --done <번호>', 2); body = { done: String(flags.done) }; }
+  else if (flags.reopen != null) { if (flags.reopen === true || rest.length) fail('사용법: atrium ask --reopen <번호>', 2); body = { reopen: String(flags.reopen) }; } // P357
   else {
     if (flags.done != null) fail('닫을 카드 번호를 준다: atrium ask --done <번호>', 2);
     const question = rest.join(' ').replace(/\s+/g, ' ').trim();
@@ -334,7 +335,7 @@ async function askVerb() {
   const r = await call('ask', body, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1); return; }
-  if (r.error) fail(`결정 카드를 ${body.list ? '읽지' : body.done ? '닫지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
+  if (r.error) fail(`결정 카드를 ${body.list ? '읽지' : body.done ? '닫지' : body.reopen ? '다시 열지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
   const x = r.result; const now = Date.now();
   if (body.list) {
     if (!x.cards.length) return say('열린 결정 카드가 없다.');
@@ -343,8 +344,9 @@ async function askVerb() {
     return say('사람이 다른 길로 답했거나 쓸모없어진 카드는 atrium ask --done <번호>로 닫는다.');
   }
   if (body.done) return say(x.closed ? `결정 카드 #${x.id}를 닫았다.` : `결정 카드 #${x.id}는 이미 끝났다(${x.state}).`);
+  if (body.reopen) return say(x.reopened ? `카드 #${x.id}를 다시 열었다. 사람이 카드에서 답하면 글로 들어온다.` : `카드 #${x.id}는 이미 열려 있다.`); // P357
   say(`결정 카드 #${x.id}를 보드에 남겼다(열린 카드 ${x.open}/${x.max}). 사람이 카드에서 답하면 "[결정] <질문> → <답>" 글로 들어온다. 무시하면 아무것도 오지 않는다.${(x.card && TIMING_SAY[x.card.timing]) || ''}`);
-  say('대화에 쓴 질문은 그대로 두고 턴을 끝낸다. 사람이 대화로 답하면 그 카드를 atrium ask --done ' + x.id + '로 닫는다.'); // P303: 사람의 직접 글은 손 카드를 닫지 않는다
+  say('대화에 쓴 질문은 그대로 두고 턴을 끝낸다. 사람이 터미널에 직접 답하면 보드가 닫고 한 줄로 알린다. 다른 길로 답을 받았으면 atrium ask --done ' + x.id + '로 닫는다.'); // P357: 터미널 글은 손 결정·확인 카드를 닫는다
 }
 
 // ---------- P292: atrium todo ----------
@@ -358,6 +360,7 @@ async function todoVerb() {
   let body;
   if (flags.list) { if (rest.length || flags.done != null) fail('사용법: atrium todo --list', 2); body = { list: true }; }
   else if (flags.done != null && flags.done !== true) { if (rest.length) fail('사용법: atrium todo --done <번호>', 2); body = { done: String(flags.done) }; }
+  else if (flags.reopen != null) { if (flags.reopen === true || rest.length) fail('사용법: atrium todo --reopen <번호>', 2); body = { reopen: String(flags.reopen) }; } // P357
   else {
     if (flags.done != null) fail('닫을 카드 번호를 준다: atrium todo --done <번호>', 2);
     const text = rest.join(' ').replace(/\s+/g, ' ').trim();
@@ -374,7 +377,7 @@ async function todoVerb() {
   const r = await call('todo', body, 20000);
   { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
   if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1); return; }
-  if (r.error) fail(`할 일 카드를 ${body.list ? '읽지' : body.done ? '닫지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
+  if (r.error) fail(`할 일 카드를 ${body.list ? '읽지' : body.done ? '닫지' : body.reopen ? '다시 열지' : '남기지'} 않았다(${r.error.code}): ${r.error.message}`, r.error.code === 'bad_request' || r.error.code === 'too_long' ? 2 : 1);
   const x = r.result; const now = Date.now();
   if (body.list) {
     if (!x.cards.length) return say('열린 카드가 없다.');
@@ -384,6 +387,7 @@ async function todoVerb() {
     return say('끝났거나 쓸모없어진 카드는 atrium todo --done <번호>로 닫는다.');
   }
   if (body.done) return say(x.closed ? `카드 #${x.id}를 닫았다.` : `카드 #${x.id}는 이미 끝났다(${x.state}).`);
+  if (body.reopen) return say(x.reopened ? `카드 #${x.id}를 다시 열었다.` : `카드 #${x.id}는 이미 열려 있다.`); // P357
   const c = x.card || {};
   const what = x.kind === 'check' ? '사람이 됐다/안 됐다로 답하면 "[확인] <할 일> → 됐다: 메모" 글로 들어온다.'
     : c.cond ? '사람이 꺼낼 때까지 "나중"에 둔다.'

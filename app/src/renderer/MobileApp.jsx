@@ -14,12 +14,12 @@ import { homeOf, listOf, toneOf, needsYou, isDone, PINS_KEY, TAB_KEY, OPEN_GROUP
 import { kbOpenOf } from './lib/phone.js';
 import { SessionScreen } from './MobileSession.jsx'; // P355: 세션 화면
 import { noteLayout } from './lib/phone-telemetry.js'; // P355: 배치 값 한 번(아래 잘림을 숫자로)
-import { activeCards, snoozeTimes } from './lib/decisions.js';
+import { activeCards, laterCards, snoozeTimes, kindWord, cardPlace, whenText } from './lib/decisions.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js';
 import { isStandalone } from './lib/pwa.js';
 import { useConnSteady } from './steady.js';
 import { PushButton, PushSheet } from './PhonePush.jsx';
-import { setOpenHandler, launchOpen, clearLaunchOpen } from './push.js';
+import { setOpenHandler, launchOpen, launchCard, clearLaunchOpen } from './push.js';
 import { markInteracted } from './touch.js';
 import { cardFacts, DoneMark, ST } from './MapCard.jsx'; // P356: 줄·카드 얼굴은 판 세션 맵 카드와 같은 함수
 import { nodeTier } from './lib/mission-model.js';
@@ -106,6 +106,7 @@ export function MobileApp() {
   const [open, setOpen] = useState(() => (history.state && history.state.mtMobile) || null);
   const [spawn, setSpawn] = useState(false);
   const [push, setPush] = useState(false);
+  const [focus, setFocus] = useState(null); // P357: 결정 카드 알림을 눌러 갈 카드 { id, n }
   const [scale, setScale] = useState(readScaleNow);
   const fs = uiFactor(scale);
 
@@ -143,12 +144,15 @@ export function MobileApp() {
   };
   const goRef = useRef(go); goRef.current = go;
   // 알림을 누르면 그 세션으로(열린 창: 서비스 워커 메시지, 새로 연 창: ?open=)
-  useEffect(() => setOpenHandler((id) => { if (getMobile().rows.has(id)) goRef.current(id); }), []);
+  // P357: 결정 카드 알림(카드 번호가 있으면)은 홈의 할 일에서 그 카드로 간다(세션 화면이 아니다)
+  const toCard = (card) => { goRef.current(null); setTabRaw('home'); setFocus({ id: card, n: Date.now() }); };
+  useEffect(() => setOpenHandler((id, o) => { if (o && o.card) toCard(o.card); else if (getMobile().rows.has(id)) goRef.current(id); }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const launch = useRef(launchOpen());
-  useEffect(() => { const id = launch.current; if (!id || !loaded) return; launch.current = null; clearLaunchOpen(); if (rows.has(id)) goRef.current(id); }, [loaded, rows]);
+  const launchC = useRef(launchCard());
+  useEffect(() => { const id = launch.current; const card = launchC.current; if ((!id && !card) || !loaded) return; launch.current = null; launchC.current = null; clearLaunchOpen(); if (card) toCard(card); else if (rows.has(id)) goRef.current(id); }, [loaded, rows]); // eslint-disable-line react-hooks/exhaustive-deps
   // 연 세션이 사라지면 목록으로
   useEffect(() => { if (open && loaded && !rows.has(open)) { setOpen(null); try { history.replaceState(null, ''); } catch {} } }, [open, loaded, rows]);
-  window.__mtMobile = { open: (id) => go(id), tab: setTab, state: getMobile };
+  window.__mtMobile = { open: (id) => go(id), tab: setTab, state: getMobile, toCard: (card) => toCard(card) }; // P357: 시험이 알림 누르기를 흉내 낸다
 
   const home = useMemo(() => homeOf(rows), [rows]);
   const s = open ? rows.get(open) : null;
@@ -167,7 +171,7 @@ export function MobileApp() {
             </header>
             <div className="mt-mp-body" data-role={'mp-' + tab}>
               {!loaded ? <div className="mt-mp-empty">{t('app.connecting')}</div>
-                : tab === 'home' ? <Home home={home} onOpen={go} onTab={(k, f) => { setFilter(f || null); setTab(k); }} />
+                : tab === 'home' ? <Home home={home} onOpen={go} onTab={(k, f) => { setFilter(f || null); setTab(k); }} focus={focus} />
                 : tab === 'sessions' ? <Sessions filter={filter} setFilter={setFilter} onOpen={go} />
                 : <MapTab onOpen={go} />}
               {loaded && <span data-role="mp-ready" hidden />}
@@ -190,14 +194,27 @@ export function MobileApp() {
 }
 
 // ---------- 홈 ----------
-function Home({ home, onOpen, onTab }) {
+function Home({ home, onOpen, onTab, focus = null }) {
   const t = useT();
   const cards = useMobile((m) => m.cards);
   const ws = useMobile((m) => m.workspaces);
   const now = useNow(30000);
   const active = activeCards(cards);
-  const later = cards.length - active.length;
+  const later = laterCards(cards);
   const [allRead, setAllRead] = useState(false);
+  const [laterOpen, setLaterOpen] = useState(false);
+  // P357: 알림을 눌러 온 카드. 지금 목록이면 그 카드를, 나중이면 나중 묶음을 펼쳐 보이고 잠깐 강조한다. 없으면 한 줄
+  const [hot, setHot] = useState(null);
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    if (!focus) return undefined;
+    const where = cardPlace(cards, focus.id);
+    if (where === 'gone') { setGone(true); setHot(null); const tm = setTimeout(() => setGone(false), 6000); return () => clearTimeout(tm); }
+    setGone(false); if (where === 'later') setLaterOpen(true); setHot(focus.id);
+    const raf = requestAnimationFrame(() => { const el = document.querySelector(`[data-role="mp-todo"][data-id="${focus.id}"]`); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' }); });
+    const tm = setTimeout(() => setHot(null), 2600);
+    return () => { cancelAnimationFrame(raf); clearTimeout(tm); };
+  }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
   const todo = useMemo(() => todoCounts(cards), [cards]);
   return (
     <div data-role="mp-home">
@@ -208,9 +225,16 @@ function Home({ home, onOpen, onTab }) {
       </div>
       {home.needs.length > 0 && <div className="mt-mp-sec need"><h2>{t('mobile.count_need')}</h2><b>{home.needs.length}</b></div>}
       {home.needs.map((s) => <NeedCard key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} todo={todo.get(s.sessionId) || 0} />)}
-      <div className="mt-mp-sec"><h2>{t('mobile.todo')}</h2><b>{active.length}</b>{later > 0 && <><span className="mt-mp-sp" /><span className="mt-mp-dimnote">{t('mobile.later', { n: later })}</span></>}</div>
+      <div className="mt-mp-sec"><h2>{t('mobile.todo')}</h2><b>{active.length}</b></div>
+      {gone && <div className="mt-mp-gone" data-role="mp-card-gone" role="status">{t('mobile.cardGone')}</div>}
       {!active.length && <div className="mt-mp-empty small">{t('mobile.noTodo')}</div>}
-      {active.map((d) => <TodoCard key={d.id} d={d} now={now} cards={cards} />)}
+      {active.map((d) => <TodoCard key={d.id} d={d} now={now} cards={cards} hot={hot === d.id} />)}
+      {later.length > 0 && (
+        <div className={'mt-mp-later' + (laterOpen ? ' open' : '')} data-role="mp-later" data-count={later.length}>
+          <button type="button" className="mt-mp-later-head" data-action="mp-later-toggle" aria-expanded={laterOpen} onClick={() => setLaterOpen((v) => !v)}><span>{laterOpen ? '▾' : '▸'}</span>{t('mobile.later', { n: later.length })}</button>
+          {laterOpen && later.map((d) => <TodoCard key={d.id} d={d} now={now} cards={cards} hot={hot === d.id} later />)}
+        </div>
+      )}
       {home.done.length > 0 && (
         <>
           <div className="mt-mp-sec"><h2>{t('mobile.done')}</h2><b>{home.done.length}</b><span className="mt-mp-sp" /><button type="button" data-action="mp-read-all" disabled={allRead} onClick={() => { setAllRead(true); Promise.all(home.done.map((s) => call('session.markSeen', { session: s.sessionId }).catch(() => 0))).finally(() => setAllRead(false)); }}>{t('mobile.readAll')}</button></div>
@@ -248,7 +272,8 @@ function NeedCard({ s, ws, now, onOpen, todo = 0 }) {
 }
 
 // 할 일 카드: 결정(보기·답 쓰기), 실행(했음), 확인(됐다·안 됐다), 미루기(한 시간, 내일 아침)
-function TodoCard({ d, now, cards }) {
+// P357: 종류 꼬리표는 PC와 같은 말(userTasks.kind), 자동 카드는 작은 "자동". hot = 알림을 눌러 온 카드(잠깐 강조). later = 나중 묶음(꺼내기만)
+export function TodoCard({ d, now, cards, hot = false, later = false }) { // P357: 세션 화면(MobileSession.jsx)도 쓴다
   const t = useT();
   const [writing, setWriting] = useState(false);
   const [text, setText] = useState('');
@@ -257,14 +282,24 @@ function TodoCard({ d, now, cards }) {
   const run = (method, params) => { if (busy) return; setBusy(true); call(method, { id: d.id, ...params }, { kind: 'todo' }).then(() => { setCardsLocal(cards.filter((x) => x.id !== d.id || method === 'decision.snooze' ? x.id !== d.id : false)); }).catch((e) => toast(t('mobile.todoFailed', { error: errText(e) }), 'error')).finally(() => setBusy(false)); };
   const st = snoozeTimes(now);
   const kindKey = d.kind === 'decide' ? 'decide' : d.kind === 'check' ? 'check' : 'do';
+  const top = <div className="mt-mp-todo-line"><span className="nm">@{d.name}</span><span className={`kind k-${d.kind}`} data-k={d.kind} data-role="mp-todo-kind">{t(kindWord(d.kind))}</span>{d.auto && <span className="auto" data-role="mp-todo-auto">{t('autoDecisions.tag')}</span>}<span className="when">{ago(t, d.createdAt, now)}</span></div>;
+  const q = d.kind === 'guard' ? t('guard.cardQ') : d.question;
+  if (later) return (
+    <div className={`mt-mp-card mt-mp-todo k-${d.kind} later` + (hot ? ' hot' : '')} data-role="mp-todo" data-id={d.id} data-kind={d.kind} data-later="1" data-hot={hot ? '1' : undefined}>
+      {top}
+      <div className="mt-mp-q">{q}</div>
+      <div className="mt-mp-why">{d.cond ? t('userTasks.cond', { text: d.cond }) : d.wakeAt ? t('userTasks.at', { when: whenText(d.wakeAt, now) }) : null}</div>
+      <div className="mt-mp-acts"><button type="button" className="mt-mp-btn" disabled={busy} data-action="mp-later-raise" onClick={() => { if (busy) return; setBusy(true); call('decision.raise', { id: d.id }, { kind: 'todo' }).catch((e) => toast(t('mobile.todoFailed', { error: errText(e) }), 'error')).finally(() => setBusy(false)); }}>{t('userTasks.raise')}</button></div>
+    </div>
+  );
   return (
-    <div className={`mt-mp-card mt-mp-todo k-${kindKey}`} data-role="mp-todo" data-id={d.id} data-kind={d.kind}>
-      <div className="mt-mp-todo-line"><span className="nm">@{d.name}</span><span className={`kind k-${kindKey}`} data-k={kindKey}>{t(`userTasks.kind.${kindKey}`)}</span><span className="when">{ago(t, d.createdAt, now)}</span></div>
-      <div className="mt-mp-q">{d.question}</div>
+    <div className={`mt-mp-card mt-mp-todo k-${d.kind}` + (hot ? ' hot' : '')} data-role="mp-todo" data-id={d.id} data-kind={d.kind} data-hot={hot ? '1' : undefined}>
+      {top}
+      <div className="mt-mp-q">{q}</div>
       {d.why && <div className="mt-mp-why">{d.why}</div>}
       <div className="mt-mp-acts">
         {kindKey === 'decide' && (d.options || []).map((o, i) => <button key={o} type="button" className={'mt-mp-btn' + (i === 0 ? ' pri' : '')} disabled={busy} data-action="mp-todo-answer" onClick={() => run('decision.answer', { answer: o })}>{o}</button>)}
-        {kindKey === 'do' && <button type="button" className="mt-mp-btn pri" disabled={busy} data-action="mp-todo-done" onClick={() => run('decision.done', {})}>{t('mobile.did')}</button>}
+        {kindKey === 'do' && d.kind !== 'guard' && <button type="button" className="mt-mp-btn pri" disabled={busy} data-action="mp-todo-done" onClick={() => run('decision.done', {})}>{t('mobile.did')}</button>}
         {kindKey === 'check' && <><button type="button" className="mt-mp-btn pri" disabled={busy} onClick={() => run('decision.check', { ok: true })}>{t('mobile.checkOk')}</button><button type="button" className="mt-mp-btn" disabled={busy} onClick={() => run('decision.check', { ok: false })}>{t('mobile.checkFail')}</button></>}
         <span className="mt-mp-sp" />
         {kindKey === 'decide' && <button type="button" className="mt-mp-btn ghost" onClick={() => setWriting((v) => !v)}>{t('mobile.writeAnswer')}</button>}

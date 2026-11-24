@@ -277,3 +277,24 @@ html.mt-kb-open .mt-mp-input { padding-bottom: 8px; }
 .mt-mp-todo-line .when { margin-left: auto; flex: none; }
 .mt-mp-todo .mt-mp-q { color: var(--white); }
 .mt-mp-todo.k-decide .mt-mp-acts .mt-mp-btn[data-action=mp-todo-answer] { background: none; border-color: var(--teal); color: var(--text); }
+
+/* P357: 할 일 카드의 종류 꼬리표(PC 할 일 목록과 같은 색: 결정·실행·확인·나중에·폭주), 자동 표시, 알림을 눌러 온 카드 강조, 나중 묶음, 세션 화면의 할 일 */
+.mt-mp-todo-line .kind.k-decide { color: var(--teal); background: var(--teal-bg); }
+.mt-mp-todo-line .kind.k-do { color: var(--accent-2); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.mt-mp-todo-line .kind.k-check { color: var(--warn); background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.mt-mp-todo-line .kind.k-later { color: var(--dim); background: var(--panel-2); border: 1px solid var(--panel-line-2); }
+.mt-mp-todo-line .kind.k-guard { color: var(--bad); background: var(--bad-bg); }
+.mt-mp-todo-line .auto { padding: 0 5px; border-radius: 5px; border: 1px solid var(--panel-line-2); font-size: 0.6875rem; color: var(--dim); }
+.mt-mp-card.mt-mp-todo.hot { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.mt-mp-card.mt-mp-todo.k-later { border-left-color: var(--dim); }
+.mt-mp-card.mt-mp-todo.k-guard { border-left-color: var(--bad); }
+.mt-mp-card.mt-mp-todo.later { background: var(--panel); }
+.mt-mp-later { margin: 6px 0 2px; }
+.mt-mp-later-head { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 4px; border: 0; background: none; color: var(--dim); font-size: 0.8438rem; font-weight: 650; }
+.mt-mp-gone { margin: 6px 0; padding: 9px 12px; border-radius: 12px; background: var(--panel-2); color: var(--text-2); font-size: 0.8438rem; }
+.mt-mp-stodos { padding: 0 0 4px; }
+/* P357: 터미널 보기의 할 일(기본은 아래 작은 알약, 누르면 터미널 위에 겹친 작은 창. 질문 카드는 위, 할 일은 아래) */
+.mt-ms-todopill { position: absolute; z-index: 5; bottom: 8px; right: calc(env(safe-area-inset-right) + 8px); height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 17px; border: 0; background: var(--todo-sky); color: var(--todo-ink); font-size: 0.8125rem; font-weight: 700; box-shadow: var(--panel-shadow); }
+.mt-ms-todos { position: absolute; z-index: 5; bottom: 8px; left: calc(env(safe-area-inset-left) + 8px); right: calc(env(safe-area-inset-right) + 8px); max-height: 55%; overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 8px; border-radius: 12px; background: var(--panel); border: 1px solid var(--panel-line-2); box-shadow: var(--panel-shadow); }
+.mt-ms-todos .mt-mp-card { margin: 6px 0; padding: 9px 10px; }
+.mt-ms-todos .mt-mp-q { margin: 5px 0 8px; font-size: 0.9375rem; }

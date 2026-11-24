@@ -488,10 +488,12 @@ for (const ev of ['merger.updated', 'session.created', 'session.removed']) api.o
 state.decisions = [];
 state.decisionHeld = {}; // P286: 세션마다 모아 둔 답 수(그 세션의 열린 카드가 모두 끝나면 판이 한 글로 보낸다)
 state.decisionRiding = {}; // P295: 세션마다 다음 글에 실려 갈 답 수(모두 next라 붙잡아 둔 답)
-export function putDecisions(cards, held, riding) { state.decisions = decisionsOf(cards); if (held !== undefined) state.decisionHeld = heldOf(held); if (riding !== undefined || held !== undefined) state.decisionRiding = heldOf(riding); changed(); }
-export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards, (r && r.held) || {}, (r && r.riding) || {})).catch(() => {});
+state.decisionRecent = []; // P357: 최근 하루 사이 터미널 글로 닫은 손 카드("터미널에서 답함", 다시 열기)
+export function putDecisions(cards, held, riding, recent) { state.decisions = decisionsOf(cards); if (recent !== undefined) state.decisionRecent = Array.isArray(recent) ? recent.filter((d) => d && Number.isInteger(Number(d.id))) : []; if (held !== undefined) state.decisionHeld = heldOf(held); if (riding !== undefined || held !== undefined) state.decisionRiding = heldOf(riding); changed(); }
+export const loadDecisions = () => api.call('decision.list').then((r) => putDecisions(r && r.cards, (r && r.held) || {}, (r && r.riding) || {}, (r && r.recent) || [])).catch(() => {});
 // P293: 결정 카드도 loadAux가 받는다(가볍게 열림이면 "전부 보기" 뒤에)
-api.on('decision.changed', (d) => putDecisions(d && d.cards, d && d.held, d && d.riding));
+api.on('decision.changed', (d) => putDecisions(d && d.cards, d && d.held, d && d.riding, d && d.recent));
+export async function reopenDecision(id) { const r = await api.call('decision.reopen', { id }); state.decisionRecent = state.decisionRecent.filter((d) => d.id !== id); changed(); return r; } // P357
 export async function flushDecisions(sessionId) { const r = await api.call('decision.flush', { sessionId }); const h = { ...state.decisionHeld }; delete h[sessionId]; state.decisionHeld = h; const g = { ...state.decisionRiding }; delete g[sessionId]; state.decisionRiding = g; changed(); return r; } // P286: 모은 답 지금 보내기
 const timingOpt = (timing) => (timing ? { timing } : {}); // P295: 사람이 바꾼 보내는 때(now | next)
 export async function answerDecision(id, answer, timing = null) { const r = await api.call('decision.answer', { id, answer, ...timingOpt(timing) }); state.decisions = withoutCard(state.decisions, id); changed(); return r; }

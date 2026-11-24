@@ -14,13 +14,13 @@
 //   세션 카드·맵 카드 표식 옆에 "실어 보낼 답 n"(RideMark).
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GuardBody } from './Guard.jsx'; // P341: 폭주 카드
-import { useStore, getState, setMissionOpen, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, wsName } from './store.js';
+import { useStore, getState, setMissionOpen, toast, answerDecision, ignoreDecision, flushDecisions, doneDecision, checkDecision, snoozeDecision, raiseDecision, reopenDecision, wsName } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { ago } from './lib/labels.js';
 import { usePlanCards, PlanCardRow, PlanMoreLine } from './Plan.jsx'; // P306: 목표 레인의 가상 "실행" 카드
 import { planCountFor, planCards } from './lib/plans.js';
 import { goSession } from './lib/go-session.js'; // P328: 세션 맵에서 누르면 맵을 닫고 한 번에
-import { answerReady, firstCardIds, allAuto, activeCards, laterCards, actionOf, snoozeTimes, pickedTime, pickDefault, whenText, sendsAnswer, timingOf, flipTiming, heldOnly, heldTotal } from './lib/decisions.js';
+import { answerReady, firstCardIds, allAuto, activeCards, laterCards, actionOf, snoozeTimes, pickedTime, pickDefault, whenText, sendsAnswer, timingOf, flipTiming, heldOnly, heldTotal, kindWord } from './lib/decisions.js';
 
 function useNow(ms = 15000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const nameOf = (d) => { const s = getState().sessions.get(d.sessionId); return (s && s.name) || d.name || '?'; };
@@ -71,7 +71,7 @@ function CardHead({ d, onGo, now, t, timing = null, onTiming = null }) {
     <div className="mt-dc-line">
       <button type="button" className="mt-dc-name" data-action="decision-go" title={t('decisions.goTitle', { name })} onClick={() => onGo(d.sessionId)}>@{name}</button>
       {d.workspaceKey ? <span className="mt-chip-ws">{wsName(d.workspaceKey)}</span> : null}
-      <span className={`mt-ut-kind k-${d.kind}`} data-role="decision-kind" data-kind={d.kind}>{t(`userTasks.kind.${d.kind}`)}</span>
+      <span className={`mt-ut-kind k-${d.kind}`} data-role="decision-kind" data-kind={d.kind}>{t(kindWord(d.kind))}</span>
       {d.auto ? <span className="mt-dc-auto" data-role="decision-auto" title={t('autoDecisions.tagTitle')}>{t('autoDecisions.tag')}</span> : null}
       {d.tell ? <span className="mt-ut-tell" data-role="decision-tell" title={t('userTasks.tellTitle')}>{t('userTasks.tell')}</span> : null}
       {onTiming && sendsAnswer(d) ? <TimingTag d={d} timing={timing} onTiming={onTiming} t={t} /> : null}
@@ -288,18 +288,47 @@ function LaterSection({ cards, onGo, now, t }) {
   );
 }
 
+// P357: 사람이 터미널에 직접 친 글로 판이 닫은 손 카드(최근 하루). 접힌 한 줄 → 펼치면 카드마다 다시 열기
+function TerminalSection({ cards, onGo, now, t }) {
+  const say = useSay();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(null);
+  if (!cards || !cards.length) return null;
+  const reopen = async (d) => {
+    setBusy(d.id);
+    try { await reopenDecision(d.id); say(t('termAnswered.reopened'), t('termAnswered.reopened')); }
+    catch (e) { say(t('decisions.fail', { error: errText(e) }), t('decisions.fail', { error: errText(e) }), 'error'); }
+    setBusy(null);
+  };
+  return (
+    <div className={`mt-ut-later mt-ut-term${open ? ' open' : ''}`} data-role="term-answered" data-count={cards.length}>
+      <button type="button" className="mt-ut-later-head" data-action="term-toggle" title={t('termAnswered.headTitle')} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className="mt-ut-caret">{open ? '▾' : '▸'}</span>{t('termAnswered.head', { n: cards.length })}
+      </button>
+      {open && cards.map((d) => (
+        <div key={d.id} className={`mt-dc-row mt-ut-later-row k-${d.kind}`} data-role="term-card" data-id={d.id} data-kind={d.kind}>
+          <CardHead d={d} onGo={onGo} now={d.answeredAt || now} t={t} />
+          <div className="mt-dc-q" data-role="decision-question">{d.question}</div>
+          <div className="mt-ut-acts"><span className="mt-ut-termtag" data-role="term-tag">{t('termAnswered.tag')}</span><button type="button" className="mt-btn small" data-action="term-reopen" title={t('termAnswered.reopenTitle')} disabled={busy === d.id} onClick={() => reopen(d)}>{t('termAnswered.reopen')}</button></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DecisionList({ onGo }) {
   const t = useT();
   const all = useStore((st) => st.decisions);
   const held = useStore((st) => st.decisionHeld);
   const riding = useStore((st) => st.decisionRiding);
+  const recent = useStore((st) => st.decisionRecent); // P357
   const now = useNow();
   const cards = activeCards(all);
   const later = laterCards(all);
   const only = heldOnly(held, cards); // P295: 카드는 없고 붙잡은 답만 있는 세션
   const pc = usePlanCards(now); // P306: 레인마다 focus 사용자 항목 2장 + n개 더
   const say = useSay();
-  if (!cards.length && !later.length && !only.length && !pc.cards.length) return <div className="mt-dropdown-empty">{t('userTasks.empty')}</div>;
+  if (!cards.length && !later.length && !only.length && !pc.cards.length && !(recent && recent.length)) return <div className="mt-dropdown-empty">{t('userTasks.empty')}</div>;
   const firsts = firstCardIds(cards);
   return (
     <>
@@ -308,6 +337,7 @@ export function DecisionList({ onGo }) {
       {cards.map((d) => <div key={d.id} className="mt-dc-item">{firsts.has(d.id) && held && held[d.sessionId] ? <HeldLine sessionId={d.sessionId} n={held[d.sessionId]} t={t} riding={!!(riding && riding[d.sessionId])} /> : null}<DecisionRow d={d} onGo={onGo} now={now} t={t} /></div>)}
       {pc.cards.map((c, i) => <div key={c.key} className="mt-dc-item"><PlanCardRow c={c} onGo={onGo} t={t} say={say} />{pc.more.filter((m) => m.planId === c.planId && (i === pc.cards.length - 1 || pc.cards[i + 1].planId !== c.planId)).map((m) => <PlanMoreLine key={`more-${m.planId}`} m={m} t={t} />)}</div>)}
       <LaterSection cards={later} onGo={onGo} now={now} t={t} />
+      <TerminalSection cards={recent} onGo={onGo} now={now} t={t} />
     </>
   );
 }
@@ -317,7 +347,7 @@ export function DecisionPill() {
   const t = useT();
   const pn = useStore((st) => planCards([...st.plans.values()]).total); // P306: 목표 레인의 사용자 항목도 센다
   const n = useStore((st) => activeCards(st.decisions).length) + pn;
-  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)) + pn; // P295: 붙잡은 답만 있어도 알약을 둔다(지금 보내기)
+  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld) + (st.decisionRecent || []).length) + pn; // P295: 붙잡은 답만 있어도 알약을 둔다(지금 보내기)
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -362,7 +392,7 @@ export function PhoneDecisionPill({ onOpen }) {
   const t = useT();
   const pn = useStore((st) => planCards([...st.plans.values()]).total); // P306: 목표 레인의 사용자 항목도 센다
   const n = useStore((st) => activeCards(st.decisions).length) + pn;
-  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld)) + pn; // P295
+  const total = useStore((st) => st.decisions.length + heldTotal(st.decisionHeld) + (st.decisionRecent || []).length) + pn; // P295
   const [open, setOpen] = useState(false);
   const [note, say] = useSheetNote();
   useEffect(() => { if (!total) setOpen(false); }, [total]);

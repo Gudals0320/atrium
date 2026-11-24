@@ -20,6 +20,8 @@ import { SessionMuteButton } from './PhonePush.jsx';
 import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx';
 import { markInteracted, enterSession } from './touch.js';
 import { setDraftSource, takeSavedDraft } from './shell-update.js';
+import { activeCards } from './lib/decisions.js';
+import { TodoCard } from './MobileApp.jsx'; // P357: 할 일 카드(홈과 같은 카드)
 
 const store = () => { try { return localStorage; } catch { return null; } };
 const DONE = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']);
@@ -119,6 +121,10 @@ export function SessionScreen({ s, onBack, onGo, needIds, bump, scale }) {
   const id = s.sessionId;
   const ws = useMobile((m) => m.workspaces);
   const deliveries = useMobile((m) => m.deliveries);
+  const allCards = useMobile((m) => m.cards);
+  const mine = activeCards(allCards).filter((d) => d.sessionId === id); // P357: 이 세션의 열린 할 일 카드(답 보기 맨 위, 터미널 보기는 접힌 알약 → 겹친 작은 창)
+  const cardNow = useNow(30000);
+  const [todosOpen, setTodosOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const [termOpen, setTermOpen] = useState(null); // null: 저절로(일하거나 기다리거나 셸이면 펼침)
   const [hist, setHist] = useState({ items: [], more: true, before: null, busy: false });
@@ -202,9 +208,13 @@ export function SessionScreen({ s, onBack, onGo, needIds, bump, scale }) {
             : (
               <AskCompact s={s} a={a} t={t} press={press} onHide={() => setAskHidden(true)} />
             ))}
+          {mine.length > 0 && (todosOpen
+            ? <div className="mt-ms-todos" data-role="mp-term-todos" data-count={mine.length}>{mine.map((d) => <TodoCard key={d.id} d={d} now={cardNow} cards={allCards} />)}<div className="mt-mp-acts"><span className="mt-mp-sp" /><button type="button" className="mt-mp-btn ghost" data-action="mp-todos-hide" onClick={() => setTodosOpen(false)}>{t('mobile.askHide')}</button></div></div>
+            : <button type="button" className="mt-ms-todopill" data-action="mp-todos-show" data-count={mine.length} onClick={() => setTodosOpen(true)}>{t('termTodos.pill', { n: mine.length })}<Ic d={I.chevUp} s={14} /></button>)}
         </div>
       ) : (
         <div className="mt-mp-sbody" data-role="mp-sbody">
+          {mine.length > 0 && <div className="mt-mp-stodos" data-role="mp-session-todos" data-count={mine.length}>{mine.map((d) => <TodoCard key={d.id} d={d} now={cardNow} cards={allCards} />)}</div>}
           {s.state === 'sleeping' && <div className="mt-mp-cover" data-role="mp-asleep"><p>{t('phone.asleep')}</p><button type="button" className="mt-mp-btn pri" data-action="mp-wake" onClick={() => call('session.wake', { session: id }).catch((e) => toast(errText(e), 'error'))}>{s.waking ? t('phone.waking') : t('phone.wake')}</button></div>}
           {s.state === 'exited' && <div className="mt-mp-cover"><p>{t('phone.exited')}</p></div>}
           {need && (

@@ -5,6 +5,7 @@
 
 export const SID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
 export const OPEN_PARAM = 'open';
+export const CARD_PARAM = 'card'; // P357: 결정 카드 알림을 누르면 홈의 할 일에서 그 카드로
 export const PUSH_ICON = 'assets/brand/atrium-icon.svg';
 export const PUSH_KINDS = ['done', 'need', 'error']; // 백엔드 web-push.mjs와 같다(예기치 않은 끝남은 error를 따른다)
 export const SUB_MODES = ['need', 'all', 'off']; // P92: 하위 세션(워커) 알림. 백엔드 push-cycle.mjs와 같다(기본 need)
@@ -43,14 +44,19 @@ export function notificationOf(msg) {
   const tag = ok && /^[A-Za-z0-9_.:-]{1,100}$/.test(String(msg.tag || '')) ? String(msg.tag) : 'atrium';
   return {
     title: (ok && clip(msg.title, 120)) || 'Atrium',
-    options: { body: ok ? clip(msg.body, 240) : '', tag, icon: PUSH_ICON, data: { sessionId: sid, kind: ok ? clip(msg.kind, 20) : null } },
+    options: { body: ok ? clip(msg.body, 240) : '', tag, icon: PUSH_ICON, data: { sessionId: sid, kind: ok ? clip(msg.kind, 20) : null, ...(ok && cardIdOf(msg.decisionId) ? { decisionId: cardIdOf(msg.decisionId) } : {}) } }, // P357: decisionId(결정 카드 알림만)
   };
 }
 // 알림을 눌렀을 때 열 주소. scope = 서비스 워커 범위(끝이 /)
 export function clickUrl(data, scope) {
   const sid = data && SID_RE.test(String(data.sessionId || '')) ? String(data.sessionId) : null;
-  return sid ? `${scope}?${OPEN_PARAM}=${encodeURIComponent(sid)}` : scope;
+  const card = cardIdOf(data && data.decisionId);
+  return sid ? `${scope}?${OPEN_PARAM}=${encodeURIComponent(sid)}${card ? `&${CARD_PARAM}=${card}` : ''}` : scope;
 }
+// P357: 카드 번호(양의 정수) | null
+export function cardIdOf(v) { const n = Number(v); return Number.isInteger(n) && n > 0 && n < 1e12 ? n : null; }
+// 시작 주소의 ?card= → 카드 번호
+export function cardParam(search) { try { return cardIdOf(new URLSearchParams(String(search || '')).get(CARD_PARAM)); } catch { return null; } }
 // 시작 주소의 ?open= → 세션 ID
 export function openParam(search) {
   try { const v = new URLSearchParams(String(search || '')).get(OPEN_PARAM); return v && SID_RE.test(v) ? v : null; } catch { return null; }
