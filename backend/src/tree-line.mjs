@@ -58,17 +58,31 @@ function searchColumns({ x0, size, rects, top, limit, winTop, gapX, cols, reach 
 //   칸의 위 끝이 부모 아래 끝 + reach보다 아래면 막힌 열로 보고(형제 줄이 길어서 그런 것도 같다: 정리 P91처럼 긴 열은 나눈다), 그 열의 세로 창(부모 위 끝 ~ 그 상한)에 걸친 것들 오른쪽에 새 열을 연다(cols 열까지).
 //   P350: 끝내 없으면 첫 열의 줄 끝(형제 띠 맨 아래 다음)에 선다. 그 자리의 것은 띄운 뒤 줄 밀기(reflowLines, 뿌리 줄까지)가 아래로 민다.
 //   전에는 그 자리에서 다른 것에 닿지 않을 때까지 아래로 내려가(slideDown) 판 끝(수천~만 px 아래)에 서곤 했다
-export function lineSlot({ parent, bands = [], size, obstacles = [], gapX = LINE_GAP_X, gapY = LINE_GAP_Y, gap = gapY, reach = LINE_REACH, cols = LINE_COLS }) {
+// P350(2단계, keep): 정리 모양 지키기. 1) 줄 안의 빈 칸(닫힌 하위가 비운 자리, 줄 끝보다 위) 2) 줄의 마지막 열 끝(정리가 접은 열 순서, 부모 아래 끝 + reach 안이면, push)
+//   3) P200 새 열 4) 첫 열 줄 끝(push). 2)에서 그 자리의 것(아래 나무)은 띄운 쪽의 줄 밀기가 나무째 민다
+export function lineSlot({ parent, bands = [], size, obstacles = [], gapX = LINE_GAP_X, gapY = LINE_GAP_Y, gap = gapY, reach = LINE_REACH, cols = LINE_COLS, keep = false, pinned = [] }) {
   if (!parent || !size) return null;
+  // P350: 밀어 자리를 내는 자리(push)라도 핀 꽂힌 노드(사람이 옮긴 것, 밀지 않는다)와는 겹치지 않게. 겹치면 그 아래로
+  const ps = pinned.filter(finite);
+  const clearPins = (c) => { let y = c.y; for (let i = 0; i < 1000; i++) { const hit = ps.filter((r) => overlaps({ x: c.x, y, w: size.w, h: size.h }, r, gap - 1)); if (!hit.length) break; y = Math.max(...hit.map((r) => r.y + r.h)) + gap; } return { ...c, y: Math.round(y) }; };
   const x = Math.round(parent.x + parent.w + gapX);
   const bs = bands.filter(finite);
   const os = obstacles.filter(finite);
   // 형제 띠도 피한다(띠는 줄 밀기 pushLine이 보는 사각형이라, 그 안에 서면 다음 줄 밀기에 밀린다)
   const rects = [...bs.map((r) => ({ r, gap: gapY })), ...os.map((r) => ({ r, gap }))];
+  if (keep && bs.length) {
+    const lastX = Math.max(...bs.map((r) => r.x));
+    const lineEnd = Math.max(...bs.map((r) => r.y + r.h));
+    for (const cx of [...new Set(bs.map((r) => Math.round(r.x)))].sort((p, q) => p - q)) { const y = topFree(cx, size, rects, parent.y, lineEnd - size.h); if (y != null) return { x: cx, y: Math.round(y) }; }
+    const col = bs.filter((r) => Math.round(r.x) === Math.round(lastX));
+    const y = Math.max(...col.map((r) => r.y + r.h)) + gapY;
+    const c = clearPins({ x: Math.round(lastX), y: Math.round(y), push: true });
+    if (c.y <= parent.y + parent.h + reach) return c;
+  }
   const at = searchColumns({ x0: x, size, rects, top: parent.y, limit: parent.y + parent.h + reach, winTop: parent.y, gapX, cols, reach });
   if (at) return { x: at.x, y: at.y };
   const y = bs.length ? Math.max(...bs.map((r) => r.y + r.h)) + gapY : parent.y;
-  return { x, y: Math.round(y), push: true };
+  return clearPins({ x, y: Math.round(y), push: true });
 }
 
 // P175: 동료로 띄운 세션(atrium child --peer)의 자리(왼쪽 위). 정리(arrangeTree P177)와 같은 자리: 짝(partner)과 같은 x, 짝의 나무 띠(band) 바로 아래.
@@ -99,6 +113,7 @@ export function pushLine(units, { gap = LINE_GAP_Y } = {}) {
   const placed = [];
   for (const u of units || []) {
     if (!u || !u.rect) continue;
+    if (u.pinned) { placed.push({ rect: u.rect, own: u.own || null, parts: u.parts || null }); continue; } // P350: 핀 꽂힌 나무는 그대로(뒤의 것이 그 아래로 피한다)
     let dy = 0;
     for (let i = 0; i < 10000; i++) {
       const r = shiftY(u.rect, dy);
@@ -120,6 +135,36 @@ export function pushLine(units, { gap = LINE_GAP_Y } = {}) {
   return out;
 }
 
+// P350(2단계): 부모 없이 띄운 세션의 자리. 정리가 혼자인 블록을 늘어놓는 줄(영역 아래 끝, 왼쪽부터 한 줄, 너비 maxW에서 줄 바꿈)의 끝.
+// roots: [{ x, y, w, h, lone }](그 영역 본 저장소 쪽 뿌리 블록, lone: 하위가 없다), left: 줄의 왼쪽 끝 → { x, y }
+export function looseSlot({ roots = [], size, left = null, maxW = 2400, gap = 40, gapY = LINE_GAP_Y, pinned = [] }) {
+  const rs = roots.filter(finite);
+  if (!rs.length) return null;
+  const out = looseRaw({ rs, size, left, maxW, gap, gapY });
+  // P350: 핀 꽂힌 노드(사람이 옮긴 것)와 겹치면 그 아래 왼쪽 끝으로
+  const ps = pinned.filter(finite);
+  let c = { ...out };
+  for (let i = 0; i < 1000; i++) { const hit = ps.filter((r) => overlaps({ ...c, w: size.w, h: size.h }, r, gap - 1)); if (!hit.length) break; c = { x: Math.round(left ?? Math.min(...rs.map((r) => r.x))), y: Math.round(Math.max(...hit.map((r) => r.y + r.h)) + gapY) }; }
+  return c;
+}
+function looseRaw({ rs, size, left, maxW, gap, gapY }) {
+  const x0 = left ?? Math.min(...rs.map((r) => r.x));
+  const lone = rs.filter((r) => r.lone);
+  const bottom = Math.max(...rs.map((r) => r.y + r.h));
+  if (lone.length) {
+    const lastY = Math.max(...lone.map((r) => r.y));
+    const row = lone.filter((r) => r.y === lastY);
+    const right = Math.max(...row.map((r) => r.x + r.w));
+    const rowBottom = Math.max(...row.map((r) => r.y + r.h));
+    // 줄이 판 아래 끝에 있을 때만 그 줄에 잇는다(나무 사이에 낀 혼자인 블록 줄은 줄로 보지 않는다)
+    if (rowBottom >= bottom - 1) {
+      if (right + gap + size.w - x0 <= Math.max(maxW, size.w)) { const c = { x: right + gap, y: lastY, w: size.w, h: size.h }; if (!rs.some((r) => overlaps(c, r, gap - 1))) return { x: Math.round(c.x), y: Math.round(c.y) }; }
+      return { x: Math.round(x0), y: Math.round(rowBottom + gapY) };
+    }
+  }
+  return { x: Math.round(x0), y: Math.round(bottom + gapY * 2) };
+}
+
 // P350: 씨앗(seeds: 커지거나 새로 선 유닛 ID)에서 시작하는 줄 밀기. units는 pushLine과 같은 꼴이다.
 // 씨앗과 이미 민 유닛에 겹치는(gap 안) 유닛만 그 아래로 민다. 씨앗보다 위(윗변이 씨앗 윗변보다 위)는 보지 않는다.
 // 씨앗과 상관없이 전부터 겹쳐 있던 유닛끼리는 그대로 둔다(사람이 둔 자리를 건드리지 않는다). → Map id → dy(민 것만)
@@ -132,12 +177,14 @@ export function pushFrom(units, seeds, { gap = LINE_GAP_Y } = {}) {
   const top = Math.min(...active.map((a) => a.rect.y));
   const rest = list.filter((u) => !seedSet.has(u.id) && u.rect.y >= top).sort((p, q) => p.rect.y - q.rect.y || p.rect.x - q.rect.x);
   const out = new Map();
+  const pins = rest.filter((u) => u.pinned).map((u) => ({ id: u.id, rect: u.rect, was: u.rect, own: u.own || null, parts: u.parts || null }));
   for (const u of rest) {
+    if (u.pinned) continue; // P350: 핀 꽂힌 것(사람이 옮긴 것)은 밀지 않는다. 밀린 것이 그 위에 서면 그 아래로 더 간다
     let dy = 0;
     for (let i = 0; i < 10000; i++) {
       const r = shiftY(u.rect, dy);
       let need = 0;
-      for (const p of active) {
+      for (const p of dy > 0 ? [...active, ...pins] : active) {
         // 같은 열: 전에 그 아래에 있던 것은 전의 틈(gap 이상, gap × 4까지. 정리의 나무 사이 160)을 지킨다
         const keep = u.rect.y >= p.was.y + p.was.h ? Math.min(Math.max(gap, u.rect.y - (p.was.y + p.was.h)), gap * 4) : gap;
         if (sameColumn(u, p)) { if (overlaps(r, p.rect, keep - 1)) need = Math.max(need, p.rect.y + p.rect.h + keep - r.y); continue; }

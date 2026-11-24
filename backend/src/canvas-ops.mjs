@@ -9,7 +9,7 @@ import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
 import { layoutRegions, linkWeights } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치. P99: 다른 영역끼리의 연결 무게
 import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
-import { blockTree, pushLine, pushFrom, bandOf, subtreeIds, lineKids, boxFrame, frameInner, BOX_PAD } from './tree-line.mjs'; // P75: 하위 세션 줄. P350: 뿌리 줄 밀기(pushFrom)
+import { blockTree, pushLine, pushFrom, looseSlot, bandOf, subtreeIds, lineKids, boxFrame, frameInner, BOX_PAD } from './tree-line.mjs'; // P75: 하위 세션 줄. P350: 뿌리 줄 밀기(pushFrom)
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 import { keyed } from './msg.mjs'; // P16: 화면 글 열쇠
@@ -96,6 +96,18 @@ export function slotFor(b, { wsKey, size = NODE, near = null, area = '' }) {
   return slotInRegion({ wsKey: k, size, items: slotItems(items, k), regions: slotRegions(regs, k), near });
 }
 // P350: 세션이 claude -w로 들어갈 워크트리 이름(아직 상자가 없어도). 하위의 --worktree(가지 기록), 빠른 워크트리 세션(띄울 때 준 worktree, quickWorktree)
+// P350(2단계): 핀. 마지막 정리 뒤 사람이 끌어 옮긴 노드(meta handMoved { 세션: 때 }). 줄 밀기가 옮기지 않고 새 자리가 피한다. 정리를 누르면 풀린다
+export const PIN_META = 'handMoved';
+export function pinnedIds(b) {
+  const m = (b.store && b.store.getMeta ? b.store.getMeta(PIN_META) : null) || {};
+  return new Set(Object.keys(m).filter((sid) => b.sessions.has(sid)));
+}
+export function markPinned(b, sids, on = true) {
+  const m = { ...((b.store.getMeta(PIN_META)) || {}) };
+  for (const sid of sids) { if (on) m[sid] = Date.now(); else delete m[sid]; }
+  b.store.setMeta(PIN_META, Object.keys(m).length ? m : null);
+}
+const pinnedRects = (b) => { const p = pinnedIds(b); return b.store.nodes().filter((n) => p.has(n.session_id)); };
 export function wtWanted(b, s) {
   if (!s) return null;
   const i = b.branch && b.branch.info ? b.branch.info.get(s.sessionId) : null;
@@ -113,6 +125,19 @@ export function placeSpawn(b, s, { branch = null, worktree = null, area = '' } =
   if (parent && (parent.workspaceKey || null) !== wsKey) anchorWorkspace(b, wsKey, { near: parent.workspaceKey || null }); // 새 워크스페이스면 부모 영역 곁에
   const place = branch && !branch.head ? b.branch.placeChild(s.parentSessionId, wsKey, { worktree: branch.worktree || null, peer: branch.relation === 'peer' }) : null;
   let slot = place;
+  // P350(2단계): 부모 없는 세션은 정리가 놓을 자리(영역 아래의 혼자인 블록 줄 끝). 핀 꽂힌 노드는 피한다
+  if (!slot && !area && wsKey) {
+    anchorWorkspace(b, wsKey);
+    const tree = lineTree(b, wsKey);
+    const pins = pinnedIds(b);
+    const roots = [...tree.byId.keys()].filter((k) => !tree.parent.has(k) && !(tree.byId.get(k).members || []).some((m) => pins.has(m))).map((k) => ({ ...bandOf(tree, k), lone: !(tree.kids.get(k) || []).length })); // 핀 꽂힌 뿌리는 줄을 정하지 않는다(피하기만)
+    if (roots.length) {
+      const all = bbox(roots);
+      const f = worktree ? boxFrame({ x: 0, y: 0, w: SPAWN_NODE.w, h: SPAWN_NODE.h }) : SPAWN_NODE;
+      const at = looseSlot({ roots, size: { w: f.w, h: f.h }, left: all.x, maxW: Math.max(2400, all.w), pinned: pinnedRects(b) });
+      if (at) slot = worktree ? frameInner(at) : at;
+    }
+  }
   if (!slot && worktree && !area) {
     const f = boxFrame({ x: 0, y: 0, w: SPAWN_NODE.w, h: SPAWN_NODE.h });
     const at = slotFor(b, { wsKey, size: { w: f.w, h: f.h } });
@@ -120,8 +145,10 @@ export function placeSpawn(b, s, { branch = null, worktree = null, area = '' } =
   }
   if (!slot) slot = slotFor(b, { wsKey, size: SPAWN_NODE, area });
   b.store.setNode({ session_id: s.sessionId, x: Math.round(slot.x), y: Math.round(slot.y), w: place ? place.w : SPAWN_NODE.w, h: place ? place.h : SPAWN_NODE.h, z: 0, size: place ? place.size : SPAWN_NODE.size, aspect: place ? place.aspect : SPAWN_NODE.aspect, area: place ? place.area ?? area : area });
-  if (place && (!place.peer || place.push)) reflowLines(b, s.sessionId, 'spawn'); // P75: 부모 나무가 길어져 겹치면 뒤 형제를 아래로. P175: 동료 자리는 줄 끝에 섰을 때만(P350)
-  else if (!place && worktree && !area) reflowLines(b, s.sessionId, 'spawn'); // 상자 틀만큼 커진 자리(뿌리 줄)
+  // P75: 부모 나무가 길어져 겹치면 뒤 형제를 아래로. P175: 동료 자리는 줄 끝에 섰을 때만(P350)
+  if (place && (!place.peer || place.push)) reflowLines(b, s.sessionId, 'spawn');
+  // P350: 상자 틀만큼 비운 자리, 2단계의 혼자인 블록 줄 끝(아래에 다른 것이 있으면 뿌리 줄 밀기로 민다)
+  else if (!place && !area) reflowLines(b, s.sessionId, 'spawn');
   return place;
 }
 
@@ -654,12 +681,14 @@ export function reflowLines(b, sid, cause = 'unknown') {
   let tree = lineTree(b, ws);
   let cur = tree.blockOf.get(sid);
   const moved = [];
+  const pins = pinnedIds(b);
+  const hasPin = (k) => pins.size > 0 && subtreeIds(tree, k).some((x) => (tree.byId.get(x).members || []).some((m) => pins.has(m))); // P350: 그 나무에 사람이 옮긴 노드가 있다
   const seen = new Set();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     const p = tree.parent.get(cur);
     if (!p) break;
-    const shifts = pushLine(lineKids(tree, p).map((k) => ({ id: k, rect: bandOf(tree, k), own: tree.byId.get(k), parts: subtreeIds(tree, k).map((x) => tree.byId.get(x)) }))); // P206: 접힌 다른 열은 실제 블록이 겹칠 때만
+    const shifts = pushLine(lineKids(tree, p).map((k) => ({ id: k, rect: bandOf(tree, k), own: tree.byId.get(k), parts: subtreeIds(tree, k).map((x) => tree.byId.get(x)), pinned: hasPin(k) }))); // P206: 접힌 다른 열은 실제 블록이 겹칠 때만. P350: 핀 꽂힌 나무는 옮기지 않는다
     if (shifts.size) {
       const done = new Set();
       for (const [k, dy] of shifts) for (const x of subtreeIds(tree, k)) { if (done.has(x)) continue; done.add(x); lowerBlock(b, tree.byId.get(x), dy); moved.push({ block: x.startsWith('w:') || x.startsWith('d:') || !b.nameOf ? x : b.nameOf(x), dy }); }
@@ -671,7 +700,7 @@ export function reflowLines(b, sid, cause = 'unknown') {
   //   전에는 여기서 멈춰, 커진 나무가 아래 나무와 겹치면 영역 겹침 풀기(settleBoxes)가 상자만 아래로 밀어 나무가 흩어졌다(상자는 판 끝으로, 노드는 겹친 채)
   if (cur && !tree.parent.has(cur)) {
     const roots = [...tree.byId.keys()].filter((k) => !tree.parent.has(k));
-    const units = rootUnits(tree, roots);
+    const units = rootUnits(tree, roots).map((u) => ({ ...u, pinned: u.members.some(hasPin) }));
     const shifts = new Map();
     for (const [u, dy] of pushFrom(units, [units.find((x) => x.members.includes(cur)).id])) for (const k of units.find((x) => x.id === u).members) shifts.set(k, dy);
     const done = new Set();
@@ -909,6 +938,7 @@ export function arrange(b, p) {
   b.store.setMeta(undoKey, { at: Date.now(), nodes, items: itemsBefore, boxes: boxesBefore });
   b.store.setMeta(BOARD_UNDO, null); // 판 전체 정리의 되돌리기는 이 정리 뒤로는 맞지 않는다
   applyWorkspacePlan(b, pl);
+  markPinned(b, b.store.nodes().filter((n) => (n.workspace_key || null) === key).map((n) => n.session_id), false); // P350: 정리를 누르면 그 워크스페이스의 핀이 풀린다(상자 안 노드도)
   b.store.addEvent(null, 'arranged', { workspace: key, blocks: pl.blocks.length, edges: pl.edges.length, moved: pl.moved });
   b.api.broadcast('board.changed', { why: 'arrange' });
   return { plan: pl.out, applied: true, edges: pl.edges.length, undo: true };
@@ -975,6 +1005,7 @@ function arrangeBoard(b, p) {
   });
   for (const w of wss) b.store.setMeta(`arrangeUndo:${w.key}`, null); // 워크스페이스 하나의 되돌리기는 이 정리 뒤로는 맞지 않는다
   for (const pl of plans) applyWorkspacePlan(b, pl);
+  b.store.setMeta(PIN_META, null); // P350: 판 전체 정리는 모든 핀을 푼다
   const fresh = canvasItems(b);
   const moved = [];
   for (const e of entries) {

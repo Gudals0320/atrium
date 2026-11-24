@@ -178,7 +178,8 @@ function spawnChild(b, ws, parent, name) {
   return { s, at, moved };
 }
 
-test('P200 (사) 판: 다른 나무가 줄 끝을 길게 막으면 새 열에 서고, spawn 뒤 줄 밀기가 그 자리를 다시 밀지 않는다. 다음 하위는 그 아래', async () => {
+// P350(2단계): 줄 끝이 부모 아래 끝 + LINE_REACH 안이면 막은 나무가 있어도 줄 끝(정리가 놓을 자리)에 서고, 막은 나무를 나무째 민다. 넘으면 P200 새 열
+test('P200 (사)·P350 판: 다른 나무가 줄 끝을 막아도 상한 안이면 줄 끝에 서고 그 나무를 통째로 민다. 다음 하위는 상한 밖이라 새 열(아무것도 밀지 않는다)', async () => {
   const { b, ws } = await fakeBoard();
   const A = mk(b, ws, 'lead', null, { x: 0, y: 0, w: 1440, h: 810, size: 'wide-normal' });
   const c1 = spawnChild(b, ws, A, 'w1');
@@ -186,23 +187,19 @@ test('P200 (사) 판: 다른 나무가 줄 끝을 길게 막으면 새 열에 �
   assert.deepEqual([c1.at.x, c1.at.y, c2.at.x, c2.at.y], [X0, 0, X0, 890]);
   const end = c2.at.y + c2.at.h;
   const X = mk(b, ws, 'other', null, { x: X0 - 200, y: end + LINE_GAP_Y, w: 1920, h: 1080, size: 'wide-large' });
-  mk(b, ws, 'other-kid', X, { x: X0 - 200, y: end + LINE_GAP_Y + 1160, w: 1920, h: 1080, size: 'wide-large' });
-  mk(b, ws, 'other-kid2', X, { x: X0 - 200, y: end + LINE_GAP_Y + 2320, w: 1920, h: 1080, size: 'wide-large' });
-  const before = b.store.nodes().filter((n) => n.session_id !== A.sessionId).map((n) => [n.session_id, n.x, n.y]).sort();
+  const k1 = mk(b, ws, 'other-kid', X, { x: X0 - 200, y: end + LINE_GAP_Y + 1160, w: 1920, h: 1080, size: 'wide-large' });
+  const k2 = mk(b, ws, 'other-kid2', X, { x: X0 - 200, y: end + LINE_GAP_Y + 2320, w: 1920, h: 1080, size: 'wide-large' });
+  const ys = [X, k1, k2].map((s) => node(b, s).y);
   const c3 = spawnChild(b, ws, A, 'w3');
-  assert.equal(c3.at.x, X0 - 200 + 1920 + LINE_GAP_X, '막은 나무 오른쪽 새 열');
-  assert.equal(c3.at.y, 0);
-  assert.deepEqual(c3.moved, [], '줄 밀기가 아무것도 옮기지 않는다');
-  const n3 = node(b, c3.s);
-  assert.deepEqual([n3.x, n3.y], [c3.at.x, c3.at.y]);
-  const after = b.store.nodes().filter((n) => before.some(([id]) => id === n.session_id)).map((n) => [n.session_id, n.x, n.y]).sort();
-  assert.deepEqual(after, before, '다른 노드는 옮기지 않는다');
-  // 다음 하위: 첫 열은 여전히 막혔다 → 새 열에서 w3 아래
+  assert.deepEqual([c3.at.x, c3.at.y], [X0, end + LINE_GAP_Y], '줄 끝');
+  const dy = node(b, X).y - ys[0];
+  assert.ok(dy > 0, '막은 나무가 내려갔다');
+  assert.deepEqual([X, k1, k2].map((s) => node(b, s).y), ys.map((y) => y + dy), '나무째 같은 만큼');
+  const before = b.store.nodes().map((n) => [n.session_id, n.x, n.y]).sort();
   const c4 = spawnChild(b, ws, A, 'w4');
-  assert.deepEqual([c4.at.x, c4.at.y], [c3.at.x, c3.at.y + c3.at.h + LINE_GAP_Y]);
+  assert.ok(c4.at.x > X0 && c4.at.y === 0, '상한 밖: 새 열 ' + JSON.stringify(c4.at));
   assert.deepEqual(c4.moved, []);
-  const n3b = node(b, c3.s);
-  assert.deepEqual([n3b.x, n3b.y], [c3.at.x, c3.at.y], 'w3도 그대로');
+  assert.deepEqual(b.store.nodes().filter((n) => n.session_id !== c4.s.sessionId).map((n) => [n.session_id, n.x, n.y]).sort(), before);
 });
 
 test('P200 (다·사) 판: 끝난 하위가 지워져 비운 자리에 서고, 줄 밀기가 밀지 않는다', async () => {

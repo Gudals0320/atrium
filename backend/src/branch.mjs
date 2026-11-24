@@ -20,7 +20,7 @@ import { workspaceOf, gitProbe } from './git.mjs';
 import { uploadsReadRule } from './uploads.mjs'; // P162
 import { ROLE_RE } from './links.mjs';
 import { SIZE_STEPS } from './canvas.mjs';
-import { canvasItems, areaOfNode, lineTree, dockOf, dockOuter } from './canvas-ops.mjs';
+import { canvasItems, areaOfNode, lineTree, dockOf, dockOuter, pinnedIds } from './canvas-ops.mjs';
 import { parseArea, isBoxKey } from './worktree-areas.mjs'; // P27
 import { lineSlot, peerSlot, bandOf, boxFrame, frameInner, LINE_GAP_Y } from './tree-line.mjs'; // P75: 하위 세션 줄
 import { deriveState, isModelError } from './state.mjs';
@@ -612,7 +612,8 @@ export class Branch {
     }
     const frame = worktree ? boxFrame({ x: 0, y: 0, ...size }) : { w: size.w, h: size.h };
     const obstacles = all.filter((i) => !(inBox && i.box === ak) && !(i.kind === 'node' && i.id === parentId)); // P35: 부모 상자 안에 놓을 때 그 상자 자신은 피하지 않는다
-    const at = lineSlot({ parent: pRect, bands, size: frame, obstacles: [...obstacles, pRect] });
+    const pins = pinnedIds(b);
+    const at = lineSlot({ parent: pRect, bands, size: frame, obstacles: [...obstacles, pRect], keep: true, pinned: all.filter((i) => i.kind === 'node' && pins.has(i.id)) }); // P350(2단계): 정리 모양 지키기(정리가 놓을 자리), 핀 꽂힌 노드는 피한다
     if (!at) return null;
     const pos = worktree ? frameInner(at) : at;
     return { x: Math.round(pos.x), y: Math.round(pos.y), w: size.w, h: size.h, size: CHILD_SIZE, aspect: '16:9', area: inBox ? parseArea(ak).wt : '', ...(at.push ? { push: true } : {}) };

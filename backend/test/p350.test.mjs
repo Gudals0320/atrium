@@ -14,7 +14,7 @@ import { Branch } from '../src/branch.mjs';
 import { pathKey, normPath } from '../src/workspaces.mjs';
 import { attachWorktrees } from '../src/worktrees.mjs';
 import { areaKey } from '../src/worktree-areas.mjs';
-import { lineSlot, pushFrom, LINE_GAP_X, LINE_GAP_Y, boxFrame } from '../src/tree-line.mjs';
+import { lineSlot, pushFrom, pushLine, LINE_GAP_X, LINE_GAP_Y, boxFrame } from '../src/tree-line.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p350-'));
 const REPO = 'C:/repo', FOLD = 'C:/folder';
@@ -95,12 +95,16 @@ test('P350 원인1(판): 줄 끝이 아래 나무에 막히고 오른쪽도 막�
   assert.ok(c);
 });
 
-test('P350 원인1(판): 오른쪽이 비면 P200처럼 부모 높이의 오른쪽 새 열(다른 것을 옮기지 않는다)', () => {
+test('P350 2단계 규칙1(하위): 줄 끝이 부모 아래 끝 + 1200 안이면 오른쪽이 비어도 줄 끝(정리 자리)에 서고 아래를 민다. 넘으면 P200처럼 부모 높이의 새 열', () => {
   const { b, ws, A, spawn } = twoTrees();
-  const before = b.store.nodes().map((n) => [n.session_id, n.x, n.y]);
   spawn('a3', ws, { parent: A });
-  assert.deepEqual(at(b, 'a3'), [40 + 1440 + LINE_GAP_X + 1040 + LINE_GAP_X, 112]);
-  assert.deepEqual(b.store.nodes().filter((n) => n.session_id !== 'id-a3').map((n) => [n.session_id, n.x, n.y]), before);
+  assert.deepEqual(at(b, 'a3'), [nodeOf(b, 'a0').x, nodeOf(b, 'a2').y + 585 + LINE_GAP_Y], '줄 끝');
+  assert.deepEqual(clashes(b), []);
+  const before = b.store.nodes().map((n) => [n.session_id, n.x, n.y]);
+  spawn('a4', ws, { parent: A });
+  const n4 = nodeOf(b, 'a4');
+  assert.ok(n4.x > nodeOf(b, 'a0').x && n4.y === 112, '새 열, 부모 높이 ' + JSON.stringify([n4.x, n4.y]));
+  assert.deepEqual(b.store.nodes().filter((n) => n.session_id !== 'id-a4').map((n) => [n.session_id, n.x, n.y]), before, '다른 것은 그대로');
 });
 
 test('P350 원인2: 상자 안 워커의 하위로 상자가 커져도 아래 나무는 나무째 내려가고(상자만 판 끝으로 밀리지 않는다) 겹침이 없다', async () => {
@@ -194,4 +198,71 @@ test('P350 pushFrom(순수): 씨앗에 겹친 것만 아래로, 전부터 겹친
   // 밀린 것이 다시 아래 것을 민다(같은 열)
   const m2 = pushFrom([...units, u('below', 0, 340)], ['seed']);
   assert.equal(m2.get('below'), (300 + LINE_GAP_Y + 100 + LINE_GAP_Y) - 340);
+});
+
+test('P350 2단계 규칙1(부모 없음): 사람이 띄운 세션은 영역 아래 혼자인 블록 줄 끝에, 줄이 넓으면 다음 줄 첫 칸', () => {
+  const { b, ws, spawn } = twoTrees();
+  // 셸 셋 줄(3200)이 이미 영역 안 너비(나무 너비 2680, 최소 2400)를 넘어 다음 줄 첫 칸, 그다음은 그 줄 끝, 또 넘으면 다음 줄
+  const sh0 = nodeOf(b, 'sh0');
+  spawn('h1', ws, { kind: 'shell' });
+  assert.deepEqual(at(b, 'h1'), [sh0.x, sh0.y + sh0.h + LINE_GAP_Y], '다음 줄 첫 칸');
+  spawn('h2', ws, { kind: 'shell' });
+  assert.deepEqual(at(b, 'h2'), [sh0.x + NODE.w + 40, nodeOf(b, 'h1').y], '그 줄 끝');
+  spawn('h3', ws, { kind: 'shell' });
+  assert.deepEqual(at(b, 'h3'), [sh0.x, nodeOf(b, 'h1').y + NODE.h + LINE_GAP_Y], '넘으면 다음 줄');
+  assert.deepEqual(clashes(b), []);
+  // 빠른 워크트리 세션도 그 줄에(상자 틀만큼)
+  const q = spawn('q2', ws, { quick: 'q2' });
+  const f = boxFrame(nodeOf(b, 'q2'));
+  assert.ok(f.y >= nodeOf(b, 'sh0').y, '줄(영역 아래)');
+  for (const m of b.store.nodes()) if (m.session_id !== 'id-q2') assert.ok(!overlaps(f, m, -1), m.session_id);
+  assert.ok(q);
+});
+
+test('P350 2단계 규칙4(핀): 사람이 끌어 옮긴 노드는 줄 밀기가 옮기지 않고, 밀린 것과 새 자리는 그 아래로 피한다. 정리를 누르면 풀린다', () => {
+  const { b, ws, A, spawn } = twoTrees();
+  // 사람이 셸 하나를 끌어 B 나무 바로 아래로(판 API, cause drag)
+  const h = b.handlers();
+  const sh1 = nodeOf(b, 'sh1');
+  const B = nodeOf(b, 'B');
+  h['board.setNode']({ session: 'id-sh1', x: 3200, y: B.y, w: sh1.w, h: sh1.h, z: 0, cause: 'drag' });
+  assert.ok(ops.pinnedIds(b).has('id-sh1'), '핀');
+  // 밀지 않는 것을 보려고: 리드 A 줄이 길어져 B 나무를 미는 자리
+  const pinAt = at(b, 'sh1');
+  spawn('a3', ws, { parent: A });
+  assert.deepEqual(at(b, 'sh1'), pinAt, '핀 꽂힌 노드는 그대로');
+  assert.deepEqual(clashes(b), [], '밀린 것이 핀 위에 서지 않는다');
+  // drag-multi(여럿을 함께 끌기)도 핀
+  const s2 = nodeOf(b, 'sh2');
+  h['board.setNode']({ session: 'id-sh2', x: s2.x + 5000, y: s2.y, w: s2.w, h: s2.h, z: 0, cause: 'drag-multi' });
+  assert.ok(ops.pinnedIds(b).has('id-sh2'));
+  // 크기 바꾸기(resize)는 핀이 아니다
+  const sh0 = nodeOf(b, 'sh0');
+  h['board.setNode']({ session: 'id-sh0', x: sh0.x, y: sh0.y, w: sh0.w + 100, h: sh0.h, z: 0, cause: 'resize' });
+  assert.ok(!ops.pinnedIds(b).has('id-sh0'));
+  // 정리(이 워크스페이스)를 누르면 풀린다
+  ops.canvasHandlers(b)['board.arrange']({ workspace: ws.key, apply: true });
+  assert.equal(ops.pinnedIds(b).size, 0, '정리가 핀을 푼다');
+  h['board.setNode']({ session: 'id-sh1', x: 9000, y: 9000, w: 1040, h: 585, z: 0, cause: 'drag' });
+  ops.canvasHandlers(b)['board.arrange']({ all: true, apply: true });
+  assert.equal(ops.pinnedIds(b).size, 0, '판 전체 정리도');
+});
+
+test('P350 핀(순수): pushLine·pushFrom은 핀 꽂힌 유닛을 옮기지 않고, 밀린 것은 그 아래로 간다', () => {
+  const u = (id, x, y, extra = {}) => ({ id, rect: { x, y, w: 100, h: 100 }, own: { x, y, w: 100, h: 100 }, ...extra });
+  const m = pushFrom([u('seed', 0, 0, { rect: { x: 0, y: 0, w: 100, h: 300 }, own: { x: 0, y: 0, w: 100, h: 300 } }), u('pin', 0, 250, { pinned: true }), u('next', 0, 330)], ['seed']);
+  assert.ok(!m.has('pin'), '핀은 씨앗에 겹쳐도 그대로');
+  assert.equal(m.get('next'), 250 + 100 + LINE_GAP_Y - 330, '씨앗 아래로 가다 핀에 닿으면 핀 아래로');
+  const l = pushLine([u('a', 0, 0), u('pin', 0, 50, { pinned: true }), u('c', 0, 120)]);
+  assert.ok(!l.has('pin'));
+  assert.equal(l.get('c'), 150 + LINE_GAP_Y - 120, '핀 아래로');
+});
+
+test('P350 핀(순수): 줄 끝 자리(push)가 핀 꽂힌 노드에 닿으면 그 아래(핀을 덮지 않는다)', () => {
+  const P = { x: 0, y: 0, w: 1440, h: 810 };
+  const X0 = P.w + LINE_GAP_X;
+  const bands = [{ x: X0, y: 0, w: 1040, h: 585 }];
+  const pin = { x: X0 + 100, y: 600, w: 1040, h: 300 };
+  const s = lineSlot({ parent: P, bands, size: { w: 1040, h: 585 }, obstacles: [P, ...bands, { x: X0 + 1300, y: -100, w: 3000, h: 9000 }], keep: true, pinned: [pin] });
+  assert.deepEqual(s, { x: X0, y: pin.y + pin.h + LINE_GAP_Y, push: true });
 });
