@@ -30,6 +30,8 @@ export function bootState() {
   return (decided = { web: true, ...d });
 }
 export const lightMode = () => bootState().light;
+// P352: 지금 기기에 적힌 이 부팅의 단계들(자동 상황 기록이 읽는다). 숫자와 짧은 코드만
+export const crumbSteps = () => { const s = read(); return s.cur && Array.isArray(s.cur.steps) ? s.cur.steps : []; };
 // P293: 이 부팅이 "가볍게 열림" 휴대폰 맵인가(빠른 죽음 뒤). 사람이 "전부 보기"를 누르면(showAll) 이 페이지는 보통처럼 받고 그린다
 let allShown = false;
 const allSubs = new Set();
@@ -91,7 +93,7 @@ export function startCrashWatch() {
       if (sent || busy) return;
       if (id != null && read().sent === id) { sent = true; return; }
       busy = true;
-      api.call('web.boot', { crashed: true, id, light: b.light, lite: b.lite, crash: b.report, level: b.level }).then(() => { sent = true; write(crumbSent(read(), id)); }, () => {}).finally(() => { busy = false; });
+      api.call('web.boot', { crashed: true, id, light: b.light, lite: b.lite, crash: b.report, level: b.level, why: b.why }).then(() => { sent = true; write(crumbSent(read(), id)); }, () => {}).finally(() => { busy = false; });
     };
     api.on('$open', send);
     if (api.conn && api.conn.phase === 'open') send();

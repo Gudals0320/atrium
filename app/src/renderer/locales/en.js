@@ -3283,4 +3283,13 @@ export default {
     note: 'After you move the board and pause, the tag follows the session in the middle. Nothing is tagged when several sessions look about equal or when you are zoomed far out. A session you click comes first, and once you type in the command line the tag stays. Applies to this window only.',
     chipTitle: '@{name}: tagged because it is in the middle of the board. Moving the board changes it.',
   },
+  // P352: 휴대폰 이상 동작 기록
+  phoneErrors: {
+    newKind: 'New phone error: {kind} (atrium remote errors)',
+    kind_err: 'Screen error',
+    kind_rej: 'Unhandled rejection',
+    kind_api: 'API failure',
+    kind_send: 'Send failure',
+    kind_ws: 'Reconnect',
+  },
 };

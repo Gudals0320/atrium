@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { wsInfo, prevInfo } from './remote-ws.mjs'; // P82: 원격 소켓의 끊김(ws)과 창이 본 직전 닫힘(prev)
 import { crashInfo } from './web-crash.mjs'; // P84: 웹 화면이 죽은 뒤의 부팅(boot)
+import { teleInfo } from './phone-errors.mjs'; // P352: 휴대폰 이상 동작(tele)
 
 export const LOG_MAX = 2000;
 export const LOG_MAX_AGE_MS = 30 * 24 * 3600_000;
@@ -22,7 +23,9 @@ const FLUSH_MS = 500;
 // P62: passkey.on·passkey.off(패스키로 확인 켬·끔), passkey.add(패스키 없이 짝 맺은 기기가 패스키를 등록함). pair.ok의 passkey: false = 패스키 없이 짝 맺음
 // P84: boot(웹 화면이 정상 떠남 없이 다시 읽힘. crashed, 이 부팅이 가벼운 화면인지 light, 직전 상태 crash)
 // P88: push.on(알림 구독, host = 푸시 서비스 이름), push.off(해지, 까닭 user·unpair·blocked·gone_404·gone_410), push.fail(보내기 실패, 까닭 http_<코드>·timeout 등). 알림 내용은 받는 필드가 없다
-export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot', 'level', 'push.on', 'push.off', 'push.fail'];
+export const LOG_EVENTS = ['pair.request', 'pair.grant', 'pair.ok', 'pair.fail', 'login', 'logout', 'connect', 'disconnect', 'deny', 'unpair', 'kick', 'remote.block', 'remote.allow', 'passkey.on', 'passkey.off', 'passkey.add', 'boot', 'level', 'push.on', 'push.off', 'push.fail', 'tele'];
+// P352: tele(휴대폰 화면의 이상 동작 한 줄: 오류·실패·다시 연결·받은 크기·상황 기록, backend/src/phone-errors.mjs teleInfo). boot의 why(이 부팅의 판단 까닭)와 lite(이 부팅이 가볍게 열림)
+export const BOOT_WHY = ['first', 'clean', 'sent', 'hidden', 'board', 'slow', 'fast', 'repeat', 'expired', 'pc'];
 const MERGE = new Set(['deny', 'pair.fail', 'push.fail']); // 되풀이를 합치는 일
 
 const clip = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -60,6 +63,9 @@ export function logEntry(event, f = {}, at = Date.now()) {
   const prev = prevInfo(f.prev); if (prev) e.prev = prev; // P82: connect. 창이 본 직전 닫힘(CloseEvent.code, wasClean, 붙어 있던 ms)
   if (f.crashed === true) e.crashed = true; // P84: boot. 직전 페이지가 죽었다
   if (f.light === true) e.light = true; // P84: 이 부팅은 가벼운 화면
+  if (f.lite === true) e.lite = true; // P352: 이 부팅은 가볍게 연 휴대폰 맵(전에는 받기만 하고 남기지 않았다)
+  if (BOOT_WHY.includes(f.why)) e.why = f.why; // P352: 부팅 판단 까닭
+  const tele = teleInfo(f.tele); if (tele) e.tele = tele; // P352
   const crash = crashInfo(f.crash); if (crash) e.crash = crash; // P84: 죽기 전 상태(숫자와 짧은 코드만)
   if (Number.isInteger(f.level) && f.level >= 0 && f.level <= 4) e.level = f.level; // P86: boot(이 부팅의 보드 단계), level(살아남아 기억한 단계)
   if (Number.isFinite(f.bootId) && f.bootId > 0 && f.bootId < 1e14) e.bootId = Math.round(f.bootId); // P87: boot. 죽은 페이지의 부팅 시각(같은 죽음을 한 번만 남긴다)
@@ -110,9 +116,10 @@ export class RemoteLog {
     return e;
   }
   // 최근 것부터
-  list({ limit = 100 } = {}) {
+  // P352: except = 빼는 일(기본 연결 기록 화면은 tele를 빼고 본다)
+  list({ limit = 100, except = null } = {}) {
     const n = Math.max(1, Math.min(LIST_LIMIT_MAX, Number.isInteger(limit) ? limit : 100));
-    return this.entries.slice(-n).reverse().map((e) => ({ ...e }));
+    return (except ? this.entries.filter((e) => !except.includes(e.event)) : this.entries).slice(-n).reverse().map((e) => ({ ...e }));
   }
   schedule() {
     if (!this.file || this.timer) return;
