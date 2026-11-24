@@ -697,7 +697,7 @@ export class Branch {
     if (op === 'ask') return this.decisions.askVerb(s, body); // P284: atrium ask "<질문>" | --done <번호> | --list
     if (op === 'todo') return this.decisions.todoVerb(s, body); // P292: atrium todo "<할 일>" [--cmd …] [--check] [--later …] [--tell] | --done <번호> | --list
     if (op === 'plan') return this.plans.verb(s, body); // P304: atrium plan …
-    if (op === 'docs') return this.docs.verb(s); // P257: atrium docs(문서 점검 결과)
+    if (op === 'docs') return this.docs.verb(s, body); // P257: atrium docs(문서 점검 결과). P346: init|on|off(지휘 세션만)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
     if (op === 'perm') return this.permView(s); // P296: 이 세션의 허용 동사(atrium help가 묻는다)
     if (op === 'usage-report') return this.b.usage ? this.b.usage.report(String(body.kind || ''), body.input) : { ok: false }; // P211: 판의 상태 줄 명령이 알린 사용량

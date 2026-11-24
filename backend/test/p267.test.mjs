@@ -30,6 +30,10 @@ function repo() {
   G(dir, 'init', '-q', '-b', 'dev');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
   G(dir, 'add', '.'); G(dir, 'commit', '-q', '-m', 'init');
+  // P346: 이 시험은 병합 흐름만 본다. 문서 시작 알림(살아 있는 문서가 없는 저장소의 첫 위임)이 알림 글 앞에 붙지 않게 문서 점검을 꺼 둔다(git 밖)
+  fs.mkdirSync(path.join(dir, '.atrium'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.atrium', 'docs.json'), '{ "off": true }\n');
+  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), '\n/.atrium/\n');
   return dir;
 }
 function worktree(dir, name, { commit = true, file = name + '.txt', text = name + '\n' } = {}) {

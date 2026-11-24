@@ -39,7 +39,9 @@
 // P295: ask·todo의 --no-wait·--wait(보내는 때)와 카드의 timing 칸을 더했다(더하기만이라 올리지 않는다)
 // P334: done --record(일 기록 파일, 응답의 records 칸 { dir, files }, items의 records 칸)를 더했다(더하기만이라 9 그대로)
 // P304: plan 동사(리포별 목표·마일스톤 레인: 레인마다 관리자, 관리자 아닌 쓰기는 막지 않고 표시)와 me의 plans 칸을 더했다(더하기만이라 9 그대로)
-export const CONTRACT_VERSION = 9;
+// 10(P346): docs 동사에 init·on·off 낱말(문서 시작, 점검 켜기·끄기, 지휘 세션만 = 워커는 not_lead로 거절)과 응답의 action·created·skipped·next 칸을 더했다.
+//   에이전트가 저장소에 파일과 설정을 쓰는 새 약속이라 올렸다
+export const CONTRACT_VERSION = 10;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
 export const ASK_QUESTION_MAX = 300;
 export const ASK_OPTION_MAX = 80;
@@ -84,7 +86,8 @@ export const VERBS = [
   // P182: 자세한 사용법. P267: merger 안내
   { name: 'guide', args: ['[merger]', '[--json]'], does: '자세한 사용법(help --long). merger면 병합 merger의 안내', out: ['merger'] },
   // P257: 문서 점검(보드가 지휘 세션의 턴 끝과 done 알림에 한 줄로 알리는 것의 자세한 결과)
-  { name: 'docs', args: ['[--json]'], does: '이 워크스페이스의 문서 점검 결과: 문서마다 글자 수와 예산, 허락한 꼴, PLAN의 세 절과 끝남 표시, HEAD보다 커짐. 막지 않는다. 문서는 지휘 세션이 고치고 워커는 바꿀 문장을 done 보고에 적는다', out: ['on', 'dir', 'rows', 'total', 'problems', 'lead'] },
+  // P346: init·on·off(지휘 세션만)
+  { name: 'docs', args: ['[init [--dir 폴더] [--only brief,arch,plan] | on [--dir 폴더] | off]', '[--json]'], does: '이 워크스페이스의 문서 점검 결과: 문서마다 글자 수와 예산, 허락한 꼴, PLAN의 세 절과 끝남 표시, HEAD보다 커짐. 막지 않는다. 문서는 지휘 세션이 고치고 워커는 바꿀 문장을 done 보고에 적는다. init은 살아 있는 문서가 없는 저장소에 BRIEF(왜·무엇·정한 것)·ARCH(지금 구조)·PLAN(지금 / 다음 / 열린 결정) 틀을 만들고(없는 파일만, 있는 파일은 덮지 않는다) .atrium/docs.json에 예산을 적어 점검을 켠다(--only로 고르고 --dir로 자리를 정한다). on·off는 점검을 켜고 끈다. init·on·off는 지휘 세션만(워커는 not_lead로 거절)', out: ['on', 'dir', 'rows', 'total', 'problems', 'lead', 'action', 'created', 'skipped', 'next', 'off'] },
   // P211: 구독 사용량(보드가 로컬 출처에서 모은 마지막 값. 읽기만)
   { name: 'usage', args: ['[--json]'], does: '구독 사용량(Claude, Codex, AGY): 한도 창(5시간·주간 등)마다 사용률과 리셋까지 남은 시간, 크레딧, 요금제, 받은 때. 보드가 이 PC의 로컬 출처에서 모은 마지막 값이고 모르면 모름. 일을 크게 나누기 전에 남은 양을 볼 때', out: ['providers', 'alertsOn', 'at'] },
   // P284: 결정 카드(사람에게 글로 묻는 질문을 판에 따로 남긴다. 대화를 갈음하지 않는다)
