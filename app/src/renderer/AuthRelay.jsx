@@ -1,4 +1,4 @@
-// P359: 설정 › 런처 위의 API 키 칸과 중계기 상태. 런처 "Claude Code (API)"가 쓰는 키를 넣고 지운다.
+// P359: 설정 › 런처의 키 칸과 중계기 상태. P366: "SDK 키"(SDK 세션이 판 중계기로 쓰는 API 키)로 부르고 첫 "Claude Code SDK" 런처 줄 바로 아래(under)에 둔다.
 // 키는 비밀번호 칸으로 받아 relay.setKey로 한 번 보내고 곧바로 칸을 비운다. 판은 키를 OS 보호 저장소로 암호화해 암호문만 두고, 창에는 있음/없음만 돌려준다.
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
@@ -6,7 +6,7 @@ import { toast } from './store.js';
 import { useT, errText } from './lib/i18n.js';
 import { relayLine, lastErrorKind } from './lib/auth-relay.js';
 
-export function ApiKeyPanel() {
+export function ApiKeyPanel({ under = false }) {
   const t = useT();
   const [st, setSt] = useState(null);
   const [val, setVal] = useState('');
@@ -36,10 +36,9 @@ export function ApiKeyPanel() {
   const line = relayLine(st);
   const errKind = lastErrorKind(st);
   return (
-    <div className="mt-apikey" data-role="api-key-panel">
+    <div className={`mt-apikey${under ? ' under' : ''}`} data-role="api-key-panel" data-under={under ? '1' : '0'}>
       <div className="mt-apikey-head">
         <span className="mt-apikey-title">{t('authRelay.title')}</span>
-        <span className="mt-api-tag" title={t('authRelay.tagTitle')}>API</span>
         <span className="mt-apikey-state" data-role="api-key-state" data-present={st && st.keyPresent ? '1' : '0'}>{st && st.keyPresent ? t('authRelay.keySaved') : t('authRelay.keyNone')}</span>
       </div>
       <div className="mt-apikey-row">
@@ -56,11 +55,6 @@ export function ApiKeyPanel() {
   );
 }
 
-// 작은 "API" 표시(노드·맵 카드·런처 목록)
-export function ApiTag({ className = '' }) {
-  const t = useT();
-  return <span className={`mt-api-tag ${className}`} data-role="api-tag" title={t('authRelay.tagTitle')}>API</span>;
-}
 // P363: SDK 세션·SDK 런처 표시
 export function SdkTag({ className = '' }) {
   const t = useT();

@@ -13,8 +13,6 @@ import { useT, t, errText } from './lib/i18n.js';
 import { kindOf } from './lib/kinds.js';
 import { favoriteLaunchers, orderedLaunchers, previewLine } from './lib/launchers.js';
 import { launcherOrchestrates } from './lib/orch.js'; // P296
-import { isSdkLauncher } from './lib/auth-relay.js'; // P361
-import { usd } from './lib/api-credits.js'; // P361
 import { useDialog } from './dialog.js';
 
 export const startedText = (r) => t('spawn.started', { name: r.name, kind: r.flavor ? t('spawn.startedKind', { kind: kindOf(r.flavor).label + (r.command ? t('spawn.startedCommand') : '') }) : r.command ? t('spawn.startedKind', { kind: t('launchers.harness.command') }) : r.kind !== 'claude' ? t('spawn.startedKind', { kind: r.kind === 'shell' ? t('spawn.shell') : kindOf(r.kind).label }) : '', trust: r.trust && r.trust.needsTrust ? t('spawn.startedTrust') : '', ws: r.workspaceKey && r.workspaceKey !== getState().currentWs ? t('spawn.startedWs', { ws: wsName(r.workspaceKey) || r.workspaceRoot }) : '' });
@@ -115,7 +113,6 @@ export function SpawnDialog({ onClose, cwd: cwd0 = null, agentKind = null, launc
         </>}
         {/* P48: 찾아보기. Electron 창은 OS 대화상자, 웹 화면은 PC 폴더 탐색기(window.mt.pickFolder) */}
         <label>{t('spawn.folder')}<span className="mt-row-wide"><input value={cwd} onChange={(e) => setCwd(e.target.value)} data-field="cwd" /><button type="button" className="mt-btn" data-action="spawn-browse" onClick={async () => { try { const p = await window.mt.pickFolder(); if (p) setCwd(p); } catch {} }}>{t('workspaces.browse')}</button></span></label>
-        {L && isSdkLauncher(L) && usage && usage.apiCredits && usage.apiCredits.exhausted && <div className="mt-warn" data-role="spawn-credits-warn">{t('apiCredits.exhaustedWarn', { purchased: usd(usage.apiCredits.totals && usage.apiCredits.totals.purchased != null ? usage.apiCredits.totals.purchased : 0) })}</div>}{/* P361: 장부의 월·프로모션 크레딧이 바닥이고 구매 잔액이 0 이하 */}
         {claude && trust && trust.needsTrust && <div className="mt-warn">{t('spawn.trustNeeded')}</div>}
         {claude && trust && trust.needsTrust === false && <div className="mt-ok">{t('spawn.trusted', { by: trust.trustedBy })}</div>}
         <div className="mt-row">

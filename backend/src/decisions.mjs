@@ -50,7 +50,6 @@
 //   ride·human_front·ride_steer 하나가 아낀 턴 하나다. decision_end에 timing(정해진 값)과 timingBy(human | agent | board)를 남긴다.
 // 표는 store-decisions.mjs.
 import { shownName } from './session-label.mjs';
-const BOARD_SID = 'board'; // P361: 판이 남긴 카드(세션 없음, credit-book.mjs BOARD_CARD_SID)
 import { findAsks, mayAsk } from './auto-ask.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
 import { checkAgentText } from './work-units.mjs';
@@ -166,7 +165,7 @@ export class Decisions {
     return this.timingOf(d, s);
   }
   view(d) { const s = this.b.sessions.get(d.sessionId); return { ...d, name: s ? shownName(s) || s.name : d.name, workspaceKey: s ? s.workspaceKey || null : null, deferred: this.isDeferred(d), timing: d.state === 'open' ? this.timingOf(d, s).timing : d.timing, timingBy: d.state === 'open' ? this.timingOf(d, s).by : null }; } // P292: deferred(나중 줄). P295: 보내는 때(지금 정해진 값)
-  openAll() { return this.store().openDecisions().filter((d) => this.b.sessions.has(d.sessionId) || d.sessionId === BOARD_SID).map((d) => this.view(d)); } // P361: 판 카드(세션 없음, 크레딧 만료)도
+  openAll() { return this.store().openDecisions().filter((d) => this.b.sessions.has(d.sessionId)).map((d) => this.view(d)); }
   // P357: 최근 하루 사이 터미널 글로 닫은 손 카드(할 일 목록의 "터미널에서 답함" 줄, 다시 열기)
   recentTerminal() { return this.store().endedVia('terminal', this.now() - TERMINAL_RECENT_MS, 10).filter((d) => this.b.sessions.has(d.sessionId)).map((d) => this.view(d)); }
   changed() { try { this.b.api.broadcast('decision.changed', { cards: this.openAll(), held: this.heldCounts(), riding: this.ridingCounts(), recent: this.recentTerminal() }); } catch (e) { this.b.log('decision broadcast error', e && e.stack); } }
@@ -368,13 +367,6 @@ export class Decisions {
     const d = this.card(p.id);
     if (d.kind !== 'do' && d.kind !== 'later') throw apiError('wrong_kind', '실행 카드가 아닙니다.', { kind: d.kind });
     const s = this.b.sessions.get(d.sessionId);
-    if (!s && d.sessionId === BOARD_SID) { // P361: 판 카드는 보낼 세션이 없다. 기록만
-      const via = this.viaOf(c);
-      if (!this.store().endDecision(d.id, { state: 'answered', answer: DID, via, at: this.now() })) throw apiError('already_closed', '이미 끝난 카드입니다.');
-      this.b.store.addEvent(null, 'decision_end', { id: d.id, state: 'answered', via, kind: d.kind, by: 'board' });
-      this.changed(); this.scheduleWake();
-      return { id: d.id, state: 'answered', kind: d.kind, answer: DID, sent: false, deliveryId: null, held: false, waiting: 0, riding: false, open: 0, card: this.store().getDecision(d.id) };
-    }
     if (!s) throw apiError('closed', '그 세션은 닫혔습니다.');
     const via = this.viaOf(c);
     const tm = d.tell ? this.pickTiming(d, p, s) : null; // P295

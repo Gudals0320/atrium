@@ -143,6 +143,7 @@ export class Store {
 
   getMeta(key) { const r = this.st('SELECT value FROM meta WHERE key = ?').get(key); return r ? JSON.parse(r.value) : null; }
   setMeta(key, value) { this.st('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value)); }
+  deleteMeta(key) { this.st('DELETE FROM meta WHERE key = ?').run(key); } // P366
 
   insertSession(s) {
     this.st(`INSERT INTO sessions (session_id, name, cwd, pane_id, workspace_id, agent_name, model, effort, permission_mode, settings_path, hook_token, resume_argv, created_at, touched_at, runtime, kind, origin, parent_session_id, workspace_key, flavor, extra_args, start_command, harness, orch, billing)
