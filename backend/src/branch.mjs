@@ -703,7 +703,7 @@ export class Branch {
     if (op === 'usage-report') { // P211: 판의 상태 줄 명령이 알린 사용량. P359: API 키로 도는 세션(중계기)의 값은 구독 알약에 세지 않는다
       const sid = body.input && typeof body.input === 'object' ? body.input.session_id : null;
       const ss = (s && s.billing ? s : null) || (sid ? this.b.sessions.get(String(sid)) : null);
-      if (ss && ss.billing === 'api') return { ok: false, skipped: 'api' };
+      if (ss && (ss.billing === 'api' || ss.billing === 'sdk')) return { ok: false, skipped: ss.billing }; // P363: SDK 세션도
       return this.b.usage ? this.b.usage.report(String(body.kind || ''), body.input) : { ok: false };
     }
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
@@ -748,11 +748,11 @@ export class Branch {
     if (worktree && !repoHasCommit(cwd)) throw apiError('needs_commit', `이 저장소(${cwd.split(path.sep).join('/')})에 커밋이 없어 워크트리를 만들 수 없습니다. 먼저 첫 커밋을 만드세요. 보드에서 대신 생성하지는 않습니다.`);
     // Claude Code는 신뢰를 받지 않은 저장소에서 -w를 신뢰 대화상자 없이 거부하고 바로 끝난다("Workspace trust not yet accepted", P8·P36 시험).
     // P36: 미리 거부하지 않고 신뢰 관문으로 띄운다(그 저장소에서 claude를 띄워 신뢰 질문을 노드에 보이고, 사람이 답하면 claude -w로 다시 띄운다)
-    const gate = worktree && predictTrust(cwd, b.cfg.claudeJson).needsTrust ? worktree : null;
+    const gate = worktree && !route.sdk && predictTrust(cwd, b.cfg.claudeJson).needsTrust ? worktree : null; // P363: SDK 세션(claude -p)은 신뢰 화면이 없다(관문 없이 -w)
     // P41: 모델은 풀린 값(호출자면 호출자의 모델). 빼면 부모의 것
     // P96: 다른 종류(codex 등)는 판 레일의 그 종류 호출자를 바탕으로 띄우고, 부모의 권한 모드를 그 하네스의 승인 인자로 옮긴다
     const other = claude ? null : otherKindPlan({ route, permissionMode: parent.permissionMode || 'manual', lists: this.launchersData() });
-    const model = other ? other.model : route.type === 'launcher' ? route.launcher.model || null : route.type === 'model' || route.type === 'gateway' ? route.model : claude && (parent.kind || 'claude') === 'claude' ? parent.model || null : null; // P185: 다른 종류 부모(codex)의 모델 이름을 Claude Code에 물려주지 않는다
+    const model = other ? other.model : route.sdk && o.model ? String(o.model) : route.type === 'launcher' ? route.launcher.model || null : route.type === 'model' || route.type === 'gateway' ? route.model : claude && (parent.kind || 'claude') === 'claude' ? parent.model || null : null; // P185: 다른 종류 부모(codex)의 모델 이름을 Claude Code에 물려주지 않는다
     if (model && !isModelName(model)) throw apiError('bad_request', `모델: ${model}`);
     const launcherEffort = route.type === 'launcher' && harnessOf(route.launcher.harness).fields.includes('effort') ? route.launcher.effort || null : null;
     const effort = claude ? (o.effort ? String(o.effort) : route.type === 'launcher' ? launcherEffort : parent.effort || null) : null; // P36: --effort, 빼면 물려받는다. P41: 호출자면 호출자의 것
@@ -784,7 +784,7 @@ export class Branch {
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
       const oe = effortPlan && effortPlan.applied ? { effort: otherEffort } : {}; // P208
       const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: joinArgs(other.args) }, permissionMode: parent.permissionMode, ...oe } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode, ...oe }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
-        : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined }
+        : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined, ...(route.sdk && o.model ? { model } : {}) }
         : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode }
         : { ...base, kind, model, effort, permissionMode: parent.permissionMode, ...(route.args ? { args: route.args } : {}) };
       out = await b.spawn(sp);
@@ -883,9 +883,9 @@ export class Branch {
       const h = harnessOf(l.harness);
       if (!h || h.id === 'shell' || h.id === 'command') throw apiError('bad_request', `하위 세션에는 에이전트를 실행하는 런처만 사용할 수 있습니다: ${l.name}(${h ? h.label : l.harness})`);
       if (o.kind && o.kind !== h.kind) throw apiError('bad_request', `런처 ${l.name}은 종류 ${h.kind}다(--kind ${o.kind}와 다르다)`);
-      if (o.model) throw apiError('bad_request', "--launcher와 --model은 함께 지정할 수 없습니다. 다른 모델을 사용하려면 atrium models에서 해당 모델의 실행 명령을 확인하세요.");
+      if (o.model && !h.sdk) throw apiError('bad_request', "--launcher와 --model은 함께 지정할 수 없습니다. 다른 모델을 사용하려면 atrium models에서 해당 모델의 실행 명령을 확인하세요.");
       const gw = h.id === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL ? l.env.ANTHROPIC_BASE_URL : null;
-      return { type: 'launcher', launcher: l, kind: h.kind, gateway: gw, resolved: null };
+      return { type: 'launcher', launcher: l, kind: h.kind, gateway: gw, resolved: null, ...(h.sdk ? { sdk: true } : {}) }; // P363: SDK 런처는 --model·--effort로 덮을 수 있다
     }
     if (o.model) {
       const cat = await this.catalog();

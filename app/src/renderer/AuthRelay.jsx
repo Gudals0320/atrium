@@ -61,3 +61,8 @@ export function ApiTag({ className = '' }) {
   const t = useT();
   return <span className={`mt-api-tag ${className}`} data-role="api-tag" title={t('authRelay.tagTitle')}>API</span>;
 }
+// P363: SDK 세션·SDK 런처 표시
+export function SdkTag({ className = '' }) {
+  const t = useT();
+  return <span className={`mt-api-tag mt-sdk-tag ${className}`} data-role="sdk-tag" title={t('sdkSession.tagTitle')}>{t('sdkSession.tag')}</span>;
+}

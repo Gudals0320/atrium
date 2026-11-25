@@ -20,7 +20,7 @@ test('P122 새 판: 런처와 레일 즐겨찾기는 Claude Code·Codex 둘', ()
     const ls = new Launchers({ store });
     assert.equal(ls.migrated.oldBoard, false);
     const l = ls.list();
-    assert.deepEqual(l.launchers.map((x) => x.id), ['claude', 'codex', 'claude-api'], 'P359: API 런처를 끝에 더한다(레일에는 없다)');
+    assert.deepEqual(l.launchers.map((x) => x.id), ['claude', 'codex', 'claude-sdk'], 'P363: SDK 런처를 끝에 더한다(레일에는 없다)');
     assert.deepEqual(l.favorites, ['claude', 'codex']);
     assert.equal(ls.find('shell'), null, '셸 런처는 처음에 없다');
     assert.ok(l.harnesses.some((h) => h.id === 'shell'), '셸 하네스는 런처 틀에서 고를 수 있다');
@@ -43,8 +43,8 @@ test('P122 옛 판: 이미 있는 런처 목록(셸 포함)은 바꾸지 않는�
     const a = new Launchers({ store });
     assert.equal(a.migrated, null);
     const got = store.getMeta(META_KEY);
-    assert.deepEqual({ ...got, items: got.items.filter((x) => x.id !== 'claude-api') }, saved, 'P359: 있던 런처는 그대로, API 런처만 끝에 더한다');
-    assert.equal(got.items[got.items.length - 1].id, 'claude-api');
+    assert.deepEqual({ ...got, items: got.items.filter((x) => x.id !== 'claude-sdk') }, saved, 'P363: 있던 런처는 그대로, SDK 런처만 끝에 더한다');
+    assert.equal(got.items[got.items.length - 1].id, 'claude-sdk');
     assert.deepEqual(a.list().favorites, ['claude', 'codex', 'shell']);
     store.close();
     // 옛 키(v1)만 있는 판(P72~P114): 옮겨도 셸이 남는다

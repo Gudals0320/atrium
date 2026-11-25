@@ -38,7 +38,8 @@ import { ResourceMonitor, childProcesses, tableReader } from './resources.mjs';
 import { ResourceGuard, transitOf } from './resource-guard.mjs'; // P341: 폭주 감시·우선순위 낮추기
 import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
-import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금 런처)
+import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금). P363: SDK 세션이 쓴다
+import { SdkHost, isSdk, SDK_IDLE_MS, SDK_BILLING } from './sdk-session.mjs'; // P363: SDK 세션 종류(claude -p stream-json)
 import { probeCodex, probeClaude, probeBalance, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
@@ -48,7 +49,7 @@ import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
 import { canvasHandlers, slotFor, placeSpawn, markPinned, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
-import { PERMISSION_MODES as MODES, touchesRemoteRules, resolveBotSettings } from './settings.mjs';
+import { PERMISSION_MODES as MODES, touchesRemoteRules, resolveBotSettings, EFFORTS } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
 import { ensureShimExe } from './shim-exe.mjs'; // P208: atrium.exe 꾸러미
 import { attachBranch, childShims, childBundle, approvalArgsOf } from './branch.mjs'; // P8: 가지 펼치기(하위 세션 명령, 상한, 나무 자리, ARCH 4절 K)
@@ -212,6 +213,8 @@ export class Backend {
       // P1~P3에서 만든 세션의 runtime에는 종류가 없다(모두 판이 띄운 Claude Code)
       rt.kind ??= row.kind; rt.hooked ??= row.origin === 'board' && row.kind === 'claude';
       delete rt.boardExit; // P119: 닫는 도중 백엔드가 꺼졌으면 그 닫기는 끝났다(남은 질문은 사람에게 보인다)
+      // P363: SDK 세션의 프로세스는 백엔드와 함께 끝났다. 늘 받을 수 있는 쉼으로 두고(다음 글에서 --resume) 끊긴 턴은 오류로 보인다
+      if (row.billing === SDK_BILLING) { if (rt.term.status === 'working') rt.lastError = { type: 'sdk_exit', message: 'board restarted during the turn', at: Date.now() }; rt.term.present = true; rt.term.status = 'idle'; rt.term.launchPending = false; rt.phase = 'running'; rt.exit = null; }
       this.sessions.set(row.sessionId, { ...row, rt, lastState: null });
     }
     // P22: 그룹과 묶음 실행을 뺐다. 옛 판의 그룹·묶음 항목·그룹 대상 루프를 지우고 무엇을 지웠는지 판 이벤트로 남긴다. 노드는 그 자리에 둔다
@@ -255,7 +258,9 @@ export class Backend {
     this.api.handlers['relay.status'] = (p = {}) => ({ ...this.authRelay.status(), recent: this.authRelay.recent(Math.min(Math.max(Number(p && p.limit) || 10, 1), 100)) });
     this.api.handlers['relay.setKey'] = pcOnly((p) => this.authRelay.setKey(p.key));
     this.api.handlers['relay.removeKey'] = pcOnly(() => this.authRelay.removeKey());
-    this.api.handlers['relay.stop'] = pcOnly(async () => { await this.authRelay.stop(); return this.authRelay.status(); }); // 다음 API 런처 세션을 띄울 때 다시 켠다
+    this.api.handlers['relay.stop'] = pcOnly(async () => { await this.authRelay.stop(); return this.authRelay.status(); }); // 다음 SDK 세션 프로세스를 띄울 때 다시 켠다
+    // P363: SDK 세션 프로세스(claude -p). 쉬면 idleMs 뒤 끝내고 다음 글에서 --resume
+    this.sdk = new SdkHost(this, { idleMs: cfg.sdkIdleMs ?? SDK_IDLE_MS, command: cfg.sdkCommandArgv || null });
     this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
     // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄, decisions.mjs autoTurn). 단위 시험 판에서는 끈다(진짜 claude를 부르지 않게)
     // P338: 할 일 정리 봇이 런처를 골랐으면 하네스·모델·노력은 그 런처(settings.mjs resolveBotSettings)
@@ -302,6 +307,7 @@ export class Backend {
       // P79: 제출 확인이 늦을 때 화면의 입력 칸을 본다(Claude Code. P106: Codex도 보되 Enter만 하고 다시 보내지 않는다. P270: dsh는 Claude Code처럼. 다른 종류와 셸은 손대지 않는다)
       inspect: async (sid, text) => {
         const s = this.sessions.get(sid); const k = s && (s.kind || 'claude');
+        if (isSdk(s)) return { box: 'empty', seen: false, noResend: true }; // P363: SDK 세션은 입력 칸이 없다(stdin 한 줄이 곧 제출). 다시 보내지 않는다
         if (!s || !s.paneId || (k !== 'claude' && k !== 'codex' && k !== 'dsh' && k !== 'hermes')) return null; // P298: hermes도 화면의 입력 칸
         const scr = await this.adapter.readScreen(s.paneId, { source: 'visible' });
         const r = promptOnScreen(scr, text, k);
@@ -458,6 +464,7 @@ export class Backend {
     stopMigration(this);
     this.resources.stop();
     if (this.usage) this.usage.stop(); // P211
+    if (this.sdk) await this.sdk.stopAll().catch(() => {}); // P363: SDK 세션 프로세스도 판과 함께 끝난다(다음 글에서 --resume)
     if (this.authRelay) await this.authRelay.stop().catch(() => {}); // P359: 판과 함께 끈다
     this.queue.stop();
     if (this.features) this.features.stop();
@@ -493,14 +500,8 @@ export class Backend {
     this.api.broadcast('relay.notice', { kind: n.kind, code: n.code ?? null, at: Date.now() });
   }
   // P359: 중계기 포트가 바뀌었다(옛 포트가 막힘). 열린 API 세션의 설정 파일 주소를 새 주소로 고친다(이미 도는 claude는 다시 띄울 때 읽는다)
-  relayMoved(urlOf) {
-    let n = 0;
-    for (const s of this.sessions.values()) {
-      if (s.billing !== 'api' || !s.settingsPath) continue;
-      try { const j = JSON.parse(fs.readFileSync(s.settingsPath, 'utf8')); if (j.env && j.env.ANTHROPIC_BASE_URL) { j.env.ANTHROPIC_BASE_URL = urlOf(s.sessionId); fs.writeFileSync(s.settingsPath, JSON.stringify(j, null, 2)); n++; } } catch {}
-    }
-    this.log(`auth relay moved: rewrote ${n} API session settings`);
-  }
+  // P363: SDK 세션은 프로세스를 띄울 때마다 그때의 중계기 주소를 env로 받으므로 고칠 파일이 없다(도는 프로세스는 끝난 뒤 새 주소로 다시 뜬다)
+  relayMoved() { this.log('auth relay moved: SDK sessions pick up the new address on their next start'); }
 
   // 터미널 서버(hc)가 없으면 띄우고(깨끗한 환경, 고정 빌드가 없으면 받는다) 버전을 확인한다(ARCH 1절).
   // 받거나 띄우지 못하면 던지지 않고 그 상태로 둔다(보드는 연다. 세션 시작만 막는다, P122)
@@ -614,7 +615,7 @@ export class Backend {
     // P240: 턴은 끝났고 뒤 일만 돈다(bgOnlyOf). 전달은 쉬는 세션처럼 보낸다. 판의 상태(working)와 뒤 일 표시는 그대로
     const bg = state === 'working' ? (this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !s.rt.sleep ? backgroundList(s.rt.bg, null) : null) : null;
     const bgOnly = state === 'working' && bgOnlyOf(s.rt, ds, bg, { kind: s.kind || 'claude', hooked: this.hooked(s) });
-    return { state, agentPresent: s.rt.term.present, termConnected: this.adapter.connected, lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s), bgOnly, orch: s.orch || null }; // P296: orch(대기열만) // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
+    return { state, agentPresent: s.rt.term.present, termConnected: isSdk(s) ? true : this.adapter.connected, /* P363: SDK 세션은 터미널이 없다 */ lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s), bgOnly, orch: s.orch || null }; // P296: orch(대기열만) // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
   }
 
   summary(s) {
@@ -641,7 +642,8 @@ export class Backend {
       // P4
       kind: s.kind || 'claude', origin: s.origin || 'board', parentSessionId: this.workParentOf(s.sessionId), lineageParentSessionId: s.parentSessionId || null, hooked: this.hooked(s), agentName: s.agentName, // P159: 보이는 부모는 일 부모, 계보(띄운 세션)는 사실로 따로
       flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
-      billing: s.billing || null, // P359: 'api'면 판 중계기를 거쳐 API 키로 과금(카드·맵·휴대폰의 API 표시)
+      billing: s.billing || null, // P363: 'sdk'면 판이 claude -p로 돌리고 판 중계기를 거쳐 API 키(월 API 크레딧)로 과금(카드·맵·휴대폰의 SDK 표시)
+      sdk: isSdk(s) ? this.sdk.view(s) : null, // P363: 프로세스가 도는가 { alive, pid, startedAt, resume }
       // P92: 도는 Claude Code 뒤 일. P164: Stop hook 목록과 claude 아래 도구 명령 프로세스를 합친 것 { n, kinds, items: [{ kind, label }], at, via } | null(세션 맵 표시)
       background: this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !rt.sleep ? backgroundList(rt.bg, null) : null,
 
@@ -1561,6 +1563,7 @@ export class Backend {
   // 그 패널에 같은 종류의 에이전트가 있을 때 패널 ID로 보낸다
   async sendPrompt(sid, text) {
     const s = this.sessions.get(sid);
+    if (isSdk(s)) return this.sdk.send(s, text); // P363: SDK 세션은 프로세스 stdin(없으면 띄운다, 이어 갈 대화가 있으면 --resume)
     // P264: Codex에 여러 줄이거나 긴 글은 판이 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(hc terminal.send의 Enter가 붙여 넣은 글의 줄바꿈이 됐다).
     //   P271(이슈 #19): 짧은 한 줄도 같다(codexPasteWanted). Enter 뒤 입력 칸에 남으면 어댑터가 Enter를 다시 친다
     // P298: Hermes TUI도 판이 붙여 넣고 입력 칸에 다 보인 뒤 Enter를 친다(Hermes는 7501이 없어 hc terminal.send의 턴 시작 기다림이 맞지 않다)
@@ -1678,6 +1681,8 @@ export class Backend {
   }
   // B3: 새 세션 시작. P5: 시작 폴더의 리포지토리 워크스페이스에 생긴다(G1). 종류 shell은 에이전트 없는 일반 셸(G2)
   async spawn(p) {
+    const sdkPlan = p.launcher || p.launcherDef ? spawnPlanOf(this, p) : null;
+    if (sdkPlan && sdkPlan.sdk) return this.spawnSdk(p, sdkPlan); // P363: SDK 세션은 터미널 없이
     this.requireTerminal();
     const cwd = path.resolve(String(p.cwd || ''));
     if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.cwd}`), 'noFolder', { path: p.cwd });
@@ -1743,9 +1748,6 @@ export class Backend {
       if (shell && p.prompt) throw keyed(apiError('not_agent', "셸에는 첫 요청을 자동 전송하지 않습니다. 명령 입력줄은 에이전트에게만 메시지를 보냅니다. 셸 명령은 터미널에 직접 입력하세요."), 'shellNoPrompt');
       // P25·P33: env에 게이트웨이 주소(ANTHROPIC_BASE_URL)를 둔 claude 런처는 그 주소가 닿아야 띄운다. P255: 모델 연결은 걷어 냈다
       if (claude && plan.gateway && plan.gateway.url) await checkGateway({ ...plan.gateway, name: plan.launcher || '' });
-      // P359: API 런처(env에 중계기 자리표시)는 중계기가 떠 있어야 띄운다. 키가 없거나 못 띄우면 세션을 만들지 않고 까닭을 보인다
-      const viaRelay = claude && !!(plan.gateway && plan.gateway.relay);
-      if (viaRelay) await this.authRelay.ensure();
       // G1: 시작 폴더의 워크스페이스
       const ws = await workspaceOf(cwd);
       // P183: 사람이 띄우며 준 첫 요청(창의 새 세션 대화상자, 사람의 atrium spawn --prompt)은 사람의 deliver다(session.send와 같은 규칙).
@@ -1759,7 +1761,7 @@ export class Backend {
       if (claude) {
         hookToken = crypto.randomBytes(24).toString('hex');
         const extra = this.branch.settingsExtra(sessionId);
-        if (env) extra.env = { ...(viaRelay ? await this.authRelay.fillEnv(env, sessionId) : env), ...(extra.env || {}) }; // P33: 호출자의 환경 변수. 판의 값이 이긴다. P359: 중계기 자리표시는 이 세션의 주소로(기록에는 자리표시만)
+        if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수. 판의 값이 이긴다
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
         const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.pluginFor(orch ? { sessionId, name, kind, orch } : null, orchScope) }; // P296
@@ -1774,7 +1776,7 @@ export class Backend {
       if (shell) rt.phase = 'running';
       let s;
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
-        s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan, orch, ...(viaRelay ? { billing: 'api' } : {}) }; // P296: orch. P359: billing(API 키 과금)
+        s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan, orch }; // P296: orch
         this.store.insertSession({ ...s, runtime: rt });
         this.sessions.set(sessionId, s);
         if (p.branch) this.branch.noteChild(sessionId, p.branch); // P8: atrium child로 만든 하위 세션
@@ -1815,6 +1817,48 @@ export class Backend {
       if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } }); // P182: 출처(사람이 띄우며 준 첫 요청)
       this.log(`spawned ${name} ${kind} ${sessionId} pane=${hw.paneId} ws=${ws.key} shellReady=${shellReady} trust=${JSON.stringify(trust)}`);
       return { ...out, argv: st.argv };
+    } finally { pending.delete(name); }
+  }
+  // P363: SDK 세션 띄우기. 터미널 패널 없이 세션을 판에 올리고, 프로세스(claude -p)는 첫 글을 보낼 때 뜬다(SdkHost.send).
+  //   키가 없거나 중계기를 못 띄우면 세션을 만들지 않고 까닭을 던진다. 권한은 bypassPermissions, 설정 파일(hook·판 env)은 판이 띄운 claude와 같다
+  async spawnSdk(p, plan) {
+    const cwd = path.resolve(String(p.cwd || ''));
+    if (!p.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${p.cwd}`), 'noFolder', { path: p.cwd });
+    const pending = this.spawningNames || (this.spawningNames = new Set());
+    const taken = takenNames(this.sessions.values(), pending);
+    let name = p.name;
+    if (!name) { let i = 1; while (taken.has(`s${i}`)) i++; name = `s${i}`; }
+    if (!NAME_RE.test(name) || name === 'all') throw apiError('bad_request', `이름에는 영문, 숫자, -, _만 사용할 수 있습니다 (all 제외): ${name}`);
+    if (taken.has(name)) throw keyed(apiError('name_taken', `이미 사용 중인 이름입니다: ${name}`), 'nameTaken', { name });
+    if (p.effort && !EFFORTS.includes(String(p.effort))) throw apiError('bad_request', `추론 수준: ${p.effort}`);
+    pending.add(name);
+    try {
+      await this.authRelay.ensure(); // 키가 없으면 auth_relay_no_key(세션을 만들지 않는다)
+      const ws = await workspaceOf(cwd);
+      const firstPrompt = p.prompt ? await this.humanFirstPrompt(p) : null;
+      const sessionId = crypto.randomUUID();
+      const hookToken = crypto.randomBytes(24).toString('hex');
+      const settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...this.branch.settingsExtra(sessionId) });
+      const model = p.model || plan.model || null, effort = p.effort || plan.effort || null;
+      const extraArgs = plan.extraArgs || [];
+      this.ensureWorkspace(ws, `spawn ${name}`);
+      const rt = newRuntime({ kind: 'claude', hooked: true });
+      rt.phase = 'running'; rt.term.present = true; rt.term.status = 'idle'; rt.term.launchPending = false;
+      const s = { sessionId, name, cwd, paneId: null, termWorkspaceId: null, agentName: name, model, effort, permissionMode: 'bypassPermissions', settingsPath, hookToken, resumeArgv: null, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind: 'claude', origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor: plan.flavor || null, extraArgs, startCommand: '', harnessPlan: null, orch: null, billing: SDK_BILLING, sdkWorktree: p.worktree || null };
+      this.store.insertSession({ ...s, runtime: rt });
+      this.sessions.set(sessionId, s);
+      if (p.branch) this.branch.noteChild(sessionId, p.branch);
+      if (this.briefNotices) try { this.briefNotices.stamp(s, 'start'); } catch {}
+      const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : '';
+      const place = placeSpawn(this, s, { branch: p.branch || null, worktree: p.worktree || null, area });
+      settleRegions(this, 'spawn');
+      this.store.addEvent(sessionId, 'spawn', { name, kind: 'claude', sdk: true, cwd: slash(cwd), workspace: ws.key, ...(plan.launcher ? { launcher: plan.launcher } : {}), model, effort, ...(extraArgs.length ? { extraArgs } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
+      this.broadcastSession(s, { cause: 'spawn' });
+      this.probeGit(s, cwd);
+      if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } });
+      this.log(`spawned ${name} sdk ${sessionId} ws=${ws.key} model=${model || '-'}`);
+      return { sessionId, name, kind: 'claude', sdk: true, billing: SDK_BILLING, flavor: plan.flavor || null, paneId: null, termWorkspaceId: null, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, resumeArgv: null, argv: null };
     } finally { pending.delete(name); }
   }
   // 사람이 띄우며 준 첫 요청 → 넣을 글 | null
@@ -1882,6 +1926,7 @@ export class Backend {
   // D2: 판이 띄운 세션만 끈다. /exit로 정상 종료하고 작업 공간을 닫는다.
   async kill(p) {
     const s = this.resolve(p.session);
+    if (isSdk(s)) return this.killSdk(s, p); // P363
     const shared = await this.adapter.workspacePanes(s.termWorkspaceId).then((ps) => ps.filter((x) => x.paneId !== s.paneId)).catch(() => []);
     const kindName = s.kind || 'claude';
     const closeText = shared.length ? `패널 ${s.paneId}만 닫습니다 (같은 작업 공간의 다른 터미널 창 ${shared.length}개는 유지합니다).` : "터미널 창을 닫습니다.";
@@ -1943,6 +1988,26 @@ export class Backend {
       else if (p.after === 'delete') after = await this.recall.forgetClosed(s.sessionId);
       return { closed: true, name: s.name, exit, steps, ...(after ? { after } : {}) };
     } finally { this.killing.delete(s.sessionId); endBoardExit(this, s); }
+  }
+
+  // P363: SDK 세션 닫기. 프로세스를 끊고(지금 턴도 끝난다) 판에서 닫는다. 터미널은 없다
+  async killSdk(s, p) {
+    if (!p.confirm) return confirmResult(`${s.name} SDK 세션을 닫습니다. 도는 claude -p 프로세스가 있으면 끊습니다. 보관하면 보관함에 남습니다.`, m('kill', { name: s.name, kind: 'claude', close: '', del: m('killDeleteClaude') }));
+    if (p.after && !['archive', 'delete'].includes(p.after)) throw apiError('bad_request', `after에는 archive 또는 delete를 지정하세요: ${p.after}`);
+    const stopped = await this.sdk.stop(s, 'kill');
+    s.rt.exit = { kind: 'normal', reason: 'closed', at: Date.now(), requested: true };
+    this.closeSession(s, 'killed');
+    let after = null;
+    if (p.after === 'archive') { this.recall.markArchive({ session: s.sessionId }, true, 'close'); after = { archived: true }; }
+    else if (p.after === 'delete') after = await this.recall.forgetClosed(s.sessionId);
+    return { closed: true, name: s.name, exit: s.rt.exit, steps: [stopped ? 'sdk process stopped' : 'sdk: no process'], ...(after ? { after } : {}) };
+  }
+  // P363: SDK 세션 멈추기(지금 턴 끊기). 판의 멈추기 단추·atrium이 부른다
+  async stopSdkTurn(p) {
+    const s = this.resolve(p.session);
+    if (!isSdk(s)) throw apiError('bad_request', 'SDK 세션이 아닙니다');
+    const stopped = await this.sdk.stop(s, 'interrupt');
+    return { stopped, state: deriveState(s.rt).state };
   }
 
   askView(s, ask) { return ask; }
@@ -2396,6 +2461,7 @@ export class Backend {
       // P106: active면 아직 끝나지 않은 전달 모두(창이 다시 열려도 막힌 전달을 보이고 취소할 수 있게)
       'delivery.list': (p) => p.active ? this.queue.list(p.session ? this.resolve(p.session).sessionId : undefined).map((d) => ({ ...(this.store.getDelivery(d.deliveryId) || {}), status: d.status, reason: d.reason, attempts: d.attempts || 0, seq: d.seq ?? d.createdAt, editing: !!d.editing, steerWhy: d.steerWhy || null, name: this.nameOf(d.sessionId) })) : this.store.deliveries({ sessionId: p.session ? this.resolve(p.session).sessionId : undefined, limit: p.limit || 20 }).map((d) => ({ ...d, name: this.nameOf(d.sessionId) })),
       'session.kill': (p) => this.kill(p),
+      'session.sdkStop': (p) => this.stopSdkTurn(p), // P363: SDK 세션 멈추기(프로세스 끊기)
       'session.answer': (p) => this.answer(p),
       'session.keys': (p, c) => this.sendKeysTo(p, c), // P104: 휴대폰 키 줄(원격 기기도 부른다)
       'session.markSeen': (p) => { const s = this.resolve(p.session); s.seenAt = Date.now(); this.store.updateSession(s.sessionId, { seenAt: s.seenAt }); this.touch(s); this.broadcastSession(s); return { seenAt: s.seenAt }; },

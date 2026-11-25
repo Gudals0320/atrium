@@ -359,7 +359,9 @@ export class Sleeper {
   // P170: 판이 띄우고 하네스 이어 가기가 되는 세션(codex, opencode, pi)
   harnessOk(s) { return typeof this.b.harnessResumable === 'function' ? !!this.b.harnessResumable(s) : harnessResumable(s); }
   // 잠재울 수 있는 종류인가(깨어 있는 패널의 판정과 상관없이): 판이 띄운 Claude Code, 이어 가기가 되는 하네스
-  sleepKind(s) { return (s.kind || 'claude') === 'claude' ? this.b.hooked(s) : this.harnessOk(s); }
+  sleepKind(s) { if (s && s.billing === 'sdk') return false; // P363: SDK 세션은 판이 잠재우지 않는다(쉬면 프로세스가 스스로 끝나고 다음 글에서 --resume)
+    return this._sleepKind(s); }
+  _sleepKind(s) { return (s.kind || 'claude') === 'claude' ? this.b.hooked(s) : this.harnessOk(s); }
   // 이어 갈 대화. Claude Code는 대화 기록, 하네스는 하네스 세션 ID
   convFor(s) {
     if ((s.kind || 'claude') === 'claude') return convoOf(s, this.b.cfg.claudeProjects);
@@ -762,6 +764,7 @@ export class Sleeper {
 
   // scope(P111): repo(리포 규칙·손·모두) | session(세션 규칙, 혼자)
   sleep(s, { by, mode = by === 'hand' ? 'hand' : 'bulk', scope = 'repo' }) {
+    if (s && s.billing === 'sdk' && this.b.sdk) return this.b.sdk.stop(s, 'sleep').then(() => ({ memMB: 0, sdk: true })); // P363: SDK 세션은 프로세스만 끝낸다(잠듦 상태가 아니다)
     if (this.going.has(s.sessionId)) return this.going.get(s.sessionId);
     const job = this._sleep(s, by, mode, scope).finally(() => this.going.delete(s.sessionId));
     this.going.set(s.sessionId, job);

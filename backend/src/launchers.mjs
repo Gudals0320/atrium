@@ -19,7 +19,8 @@ import { psLine, psEnvPrefix } from './launch.mjs'; // P97. P115: psEnvPrefix는
 import { adapterOf, reservedArg, wrapperInfo } from './harness.mjs'; // P115: 하네스 어댑터 표. P309: 감싼 호출자(omh)
 import { HERMES_EFFORTS, hermesEffortOf, hermesReasoningOf, reasoningIn, withoutReasoning, AGY_TIER_RE, agyModelArg } from './harness.mjs'; // P299: Hermes 노력 수준
 import { OMO_EFFORTS, omoEffortOf, thinkingIn } from './harness.mjs'; // P329: omo 생각 수준(--thinking)
-import { RELAY_PLACEHOLDER } from './auth-relay-core.mjs'; // P359: API 런처 표식
+import { RELAY_PLACEHOLDER } from './auth-relay-core.mjs'; // P359: 옛 API 런처 표식(P363: 쓸 수 없음으로 옮긴다)
+import { SDK_HARNESS, SDK_LAUNCHER_ID } from './sdk-session.mjs'; // P363: SDK 세션 종류
 import { V2_KEY, migrateLaunchers, legacyInitialLaunchers } from './launcher-migrate.mjs'; // P115: 옮기기(옛 이름은 그 파일에만)
 // P330: 하네스 계약 표(harness-contract.mjs, 근거 harness-contract.md). 칸 값 → 인자, 추가 인자와 칸의 겹침, 하네스 런처로 바꾸기, 점검
 import { CODEX_EFFORTS, PI_THINKING, CONTRACTS, contractOf, effortArgsFor, hasEffortArg, approvalArgsFor, hasApprovalArgs, argOverlaps, moveArgsToFields, harnessOfCommand, contractHint, runCheck, modelArgsFor } from './harness-contract.mjs';
@@ -29,10 +30,17 @@ export { LEGACY_KEYS } from './launcher-migrate.mjs';
 export const META_KEY = V2_KEY; // P115: 연결 참조가 든 목록. 옛 키(launchers)는 옛 코드가 쓴다
 export const LEGACY_META_KEY = 'launchers';
 export const AGY_BYPASS_META = 'launchers.agyBypass'; // P205: AGY 승인 방식 옮김 표시(한 번만)
-export const API_LAUNCHER_META = 'launchers.apiRelay'; // P359: API 런처를 한 번 더했다는 표시(사람이 지우면 다시 더하지 않는다)
+// P359의 대화형 API 런처 "Claude Code (API)"(claude-api). P363: 대화형 Claude Code는 요금제 월 API 크레딧을 쓰지 못해(구매 크레딧만) 걷었다.
+//   손대지 않은 기본 런처는 지우고, 사람이 고친 런처·{{authRelay}}를 둔 사용자 런처는 쓸 수 없음(unusable: 'authRelay')으로 남겨 까닭을 보인다(조용히 구독으로 돌리지 않는다)
+export const API_LAUNCHER_META = 'launchers.apiRelay';
 export const API_LAUNCHER_ID = 'claude-api';
-// P359: 런처 "Claude Code (API)": 구독 한도가 바닥날 때 새 워커만 API 키 과금으로. env의 자리표시를 판이 그 세션의 중계기 주소로 바꾼다. 워커 기본 모델은 sonnet(단가)
 export const apiLauncher = () => ({ id: API_LAUNCHER_ID, name: 'Claude Code (API)', harness: 'claude', icon: '', model: 'sonnet', effort: '', permissionMode: 'manual', args: '', env: { ANTHROPIC_BASE_URL: RELAY_PLACEHOLDER }, command: '' });
+export const RELAY_GONE_META = 'launchers.relayGone'; // P363: 옮김 표시(한 번만)
+export const SDK_LAUNCHER_META = 'launchers.sdk'; // P363: SDK 런처를 한 번 더했다는 표시(사람이 지우면 다시 더하지 않는다)
+// P363: 런처 "Claude Code SDK": 판이 claude -p(stream-json)로 돌리고 판 중계기를 거쳐 API 키(요금제 월 API 크레딧)로 과금. 워커 기본 모델은 sonnet
+export const sdkLauncher = () => ({ id: SDK_LAUNCHER_ID, name: 'Claude Code SDK', harness: SDK_HARNESS, icon: '', model: 'sonnet', effort: '', permissionMode: '', args: '', env: {}, command: '' });
+// P363: 대화형 claude 런처 env에 중계기 자리표시가 있는가(옛 API 런처 꼴)
+export const relayLauncher = (l) => !!l && l.harness === 'claude' && !!l.env && Object.values(l.env).some((v) => String(v).includes(RELAY_PLACEHOLDER));
 export const VERSION = 2;
 export const COMMAND_MAX = 400;
 export const NAME_MAX = 40;
@@ -52,6 +60,8 @@ export const RESERVED_CLAUDE_ARGS = new Set(['--settings', '--session-id', '--re
 // 하네스 정의. fields는 설정 탭이 보일 칸, models는 알려진 모델(직접 입력도 받는다), kind는 판이 기록하는 에이전트 종류
 export const HARNESSES = {
   claude: { id: 'claude', kind: 'claude', label: 'Claude Code', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args', 'env'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'] },
+  // P363: SDK 세션(claude -p stream-json, 판 중계기를 거쳐 API 키 과금). 권한은 늘 bypassPermissions, env·실행 명령 칸 없음. 모델 이름 풀기에는 넣지 않는다(sdk)
+  [SDK_HARNESS]: { id: SDK_HARNESS, kind: 'claude', label: 'Claude Code SDK', fields: ['model', 'effort', 'args'], models: ['haiku', 'sonnet', 'opus', 'claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'], sdk: true },
   // P330: 노력 수준(-c model_reasoning_effort="<값>")·승인 방식(harness-contract.mjs CODEX_APPROVAL) 칸
   codex: { id: 'codex', kind: 'codex', label: 'Codex', fields: ['startCommand', 'model', 'effort', 'permissionMode', 'args'], models: ['gpt-6-astra'], efforts: ['', ...CODEX_EFFORTS], warnUnlisted: true }, // P72: models는 Codex 캐시를 읽지 못할 때의 목록. 목록에 없는 이름은 경고만 한다
   // P115: opencode·pi는 하네스 어댑터(harness.mjs)가 env·안내문·이어 가기를 맞춘다. 모델은 opencode가 "<제공자>/<모델>", pi가 --model 값
@@ -221,7 +231,7 @@ export function normalizeLauncher(input, { others = [] } = {}) {
   if (has('permissionMode') && !PERMISSION_MODES.includes(permissionMode)) throw err('bad_request', `승인 방식: ${permissionMode}`, 'permissionMode', { mode: permissionMode });
   const args = has('args') ? String(input.args ?? '').trim() : '';
   if (args.length > ARGS_MAX || CTRL_RE.test(args)) throw err('bad_request', `추가 인자: 한 줄, ${ARGS_MAX}자까지`, 'args', { max: ARGS_MAX });
-  if (h.id === 'claude') { const bad = splitArgs(args).find((a) => RESERVED_CLAUDE_ARGS.has(a.split('=')[0])); if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); }
+  if (h.id === 'claude' || h.sdk) { const bad = splitArgs(args).find((a) => RESERVED_CLAUDE_ARGS.has(a.split('=')[0]) || (h.sdk && ['--input-format', '--output-format', '--verbose'].includes(a.split('=')[0]))); if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); }
   else { const bad = reservedArg(h.kind, splitArgs(args)); if (bad) throw err('bad_request', `보드가 정하는 인자: ${bad}`, 'argsReserved', { arg: bad }); } // P115: 하네스 어댑터가 정하는 인자
   let command = '';
   if (has('command')) {
@@ -254,7 +264,7 @@ export { psEnvPrefix };
 // P359: 값이 중계기 자리표시({{authRelay}})면 판 중계기를 거치는 API 런처다({ relay: true }, 판이 띄울 때 중계기를 띄우고 주소를 채운다)
 export function gatewayOf(l) {
   const base = l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL;
-  if (base && String(base).includes(RELAY_PLACEHOLDER)) return { relay: true };
+  if (base && String(base).includes(RELAY_PLACEHOLDER)) return null; // P363: 옛 API 런처(resolveLauncher가 쓸 수 없음으로 거절한다)
   return base ? { url: base, health: false } : null;
 }
 
@@ -304,6 +314,13 @@ export function resolveLauncher(l, over = {}) {
   const h = harnessOf(l.harness);
   const pick = (k) => (over[k] !== undefined && over[k] !== null && over[k] !== '' ? over[k] : l[k]);
   const base = { kind: h.kind, flavor: flavorOf(l), launcher: l.name, launcherId: l.id || null, ...orchFieldsOf(l) }; // P296: 자체 오케스트레이션 칸(spawn이 세션에 남긴다)
+  // P363: 옛 대화형 API 런처({{authRelay}})는 띄우지 않고 까닭을 보인다(조용히 구독으로 돌리지 않는다)
+  if (l.unusable === 'authRelay' || relayLauncher(l)) throw Object.assign(new Error(`런처 ${l.name}는 대화형 API 과금 런처라 더 쓸 수 없습니다. 대화형 Claude Code는 요금제 월 API 크레딧을 쓰지 못합니다. 런처 "Claude Code SDK"를 쓰세요.`), { code: 'launcher_unusable', key: 'sdkSession.err.relayGone', vars: { name: l.name } });
+  if (h.sdk) {
+    const model = String(pick('model') || '').trim();
+    if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
+    return { ...base, sdk: true, model: model || null, effort: pick('effort') || null, permissionMode: 'bypassPermissions', extraArgs: splitArgs(pick('args')), env: {}, gateway: null, command: '', startCommand: '' };
+  }
   if (h.id === 'claude') {
     const model = String(pick('model') || '').trim();
     if (!MODEL_RE.test(model)) throw err('bad_request', `모델: ${model}`, 'model', { model: model.slice(0, 40) });
@@ -402,6 +419,12 @@ export function harnessOptionArgs(kind, { effort = '', permissionMode = '', star
 export function previewLauncher(l) {
   const h = harnessOf(l.harness);
   const envNames = Object.keys(l.env || {});
+  if (h.sdk) { // P363: 판이 백엔드 자식으로 돌리는 claude -p(터미널 없음)
+    const a = ['claude', '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions'];
+    if (l.model) a.push('--model', l.model);
+    if (l.effort) a.push('--effort', l.effort);
+    return { line: [a.join(' '), joinArgs(splitArgs(l.args))].filter(Boolean).join(' '), env: [], board: true, sdk: true };
+  }
   if (h.id === 'claude') {
     const s = startWords(l.startCommand); // P97: 실행 명령(비면 claude)
     const a = [...(s.length ? s : ['claude']), '--permission-mode', l.permissionMode || 'manual'];
@@ -509,20 +532,44 @@ export class Launchers {
     this.store = store; this.broadcast = broadcast; this.gateway = gateway || {}; this.codexModels = codexModels; this.agyModels = agyModels; this.piModels = piModels; this.omoModels = omoModels; this.log = log; // P329: omoModels // P192: agyModels
     this.migrated = this.ensure();
     this.agyBypassMoved = this.migrateAgyBypass();
-    this.apiLauncherAdded = this.addApiLauncher();
+    this.relayGone = this.dropRelayLaunchers();
+    this.sdkLauncherAdded = this.addSdkLauncher();
   }
-  // P359: 한 번만, 목록 끝에 API 런처를 더한다(왼쪽 레일 즐겨찾기에는 넣지 않는다). 사용자 런처는 바꾸지 않는다. 지우면 다시 더하지 않는다
-  addApiLauncher() {
-    if (this.store.getMeta(API_LAUNCHER_META)) return false;
+  // P363: 한 번만. 손대지 않은 기본 API 런처(claude-api)는 지우고, 고친 것·{{authRelay}}를 둔 사용자 런처는 쓸 수 없음으로 표시한다(레일에서도 뺀다)
+  dropRelayLaunchers() {
+    if (this.store.getMeta(RELAY_GONE_META)) return null;
+    const d = this.store.getMeta(META_KEY);
+    const out = { removed: [], marked: [] };
+    if (d && Array.isArray(d.items)) {
+      const def = apiLauncher();
+      const same = (l) => l.id === API_LAUNCHER_ID && ['harness', 'model', 'effort', 'permissionMode', 'args', 'command'].every((k) => (l[k] || '') === (def[k] || '')) && JSON.stringify(l.env || {}) === JSON.stringify(def.env);
+      const items = [];
+      for (const l of d.items) {
+        if (same(l)) { out.removed.push(l.name); continue; }
+        if (relayLauncher(l)) { out.marked.push(l.name); items.push({ ...l, unusable: 'authRelay' }); continue; }
+        items.push(l);
+      }
+      if (out.removed.length || out.marked.length) {
+        const gone = new Set(d.items.filter((l) => same(l) || relayLauncher(l)).map((l) => l.id));
+        this.store.setMeta(META_KEY, { ...d, items, favorites: (d.favorites || []).filter((id) => !gone.has(id)) });
+        this.store.addEvent(null, 'launchers_relay_gone', out);
+      }
+    }
+    this.store.setMeta(RELAY_GONE_META, { at: Date.now(), ...out });
+    return out;
+  }
+  // P363: 한 번만, 목록 끝에 SDK 런처를 더한다(레일 즐겨찾기에는 넣지 않는다). 지우면 다시 더하지 않는다
+  addSdkLauncher() {
+    if (this.store.getMeta(SDK_LAUNCHER_META)) return false;
     const d = this.store.getMeta(META_KEY);
     let added = false;
-    if (d && Array.isArray(d.items) && !d.items.some((l) => l.id === API_LAUNCHER_ID)) {
-      const l = apiLauncher();
+    if (d && Array.isArray(d.items) && !d.items.some((l) => l.id === SDK_LAUNCHER_ID)) {
+      const l = sdkLauncher();
       l.name = uniqueName(l.name, d.items);
       this.store.setMeta(META_KEY, { ...d, items: [...d.items, l] });
       added = true;
     }
-    this.store.setMeta(API_LAUNCHER_META, { at: Date.now(), added });
+    this.store.setMeta(SDK_LAUNCHER_META, { at: Date.now(), added });
     return added;
   }
   // P205: 한 번만, AGY 호출자 가운데 승인 방식이 manual(또는 빈 값)인 것을 권한 생략으로 옮긴다(P203: AGY 샌드박스가 판 명령을 막는다).

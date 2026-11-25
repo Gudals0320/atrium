@@ -59,6 +59,15 @@ export class UsageTap {
   result() { return { ...this.u, ...(this.errType ? { errType: this.errType } : {}) }; }
 }
 
+// P363: User-Agent의 entrypoint 부분만(예: "claude-cli/2.1.332 (external, sdk-cli)" → sdk-cli, 대화형은 cli). 값·토큰은 남기지 않는다.
+//   SDK 세션이 대화형이 아니라 SDK로 잡히는지 요청 기록에서 본다. 모르면 null
+export function entrypointOf(ua) {
+  const m = /\(([^)]{1,120})\)/.exec(String(ua || ''));
+  if (!m) return null;
+  const last = m[1].split(',').map((x) => x.trim()).filter(Boolean).pop() || '';
+  return /^[a-z][a-z0-9-]{0,23}$/.test(last) ? last : null;
+}
+
 // 키 모양 확인(값은 돌려주지 않는다). 보이는 ASCII, 20~400자
 export const KEY_RE = /^[\x21-\x7e]{20,400}$/;
 export const keyOk = (k) => typeof k === 'string' && KEY_RE.test(k.trim());

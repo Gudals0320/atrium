@@ -836,6 +836,8 @@ export class Recall {
   // 판 세션 하나를 새 작업 공간에 띄운다. 행이 있으면(닫힌 세션) 그 행을 다시 쓰고, 없으면(판 밖 대화) 만든다
   async bring(spec) {
     const b = this.b, cfg = this.cfg;
+    // P363: SDK 세션(claude -p)을 다시 여는 길은 아직 없다(다음 조각). 터미널 claude로 조용히 바꾸지 않고 까닭을 보인다
+    if (spec.reuseRow && spec.reuseRow.billing === 'sdk') throw keyed(apiError('sdk_reopen', 'SDK 세션은 아직 다시 열 수 없습니다. 같은 폴더에서 런처 "Claude Code SDK"로 새 세션을 띄우세요.'), 'sdkSession.err.reopen');
     b.requireTerminal();
     const cwd = path.resolve(String(spec.cwd || ''));
     if (!spec.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${spec.cwd}`), 'noFolder', { path: spec.cwd });
@@ -847,14 +849,14 @@ export class Recall {
     const ws = await workspaceOf(cwd);
     const permissionMode = spec.permissionMode || 'manual';
     let hookToken = '', settingsPath = '', resumeArgv = null, args = [], trust = { needsTrust: null, reason: `${kind}: 예상하지 않음` };
-    let viaRelay = false; // P359: API 런처로 띄운 세션(env에 중계기 자리표시)은 다시 열 때도 중계기를 거친다
     if (claude) {
       hookToken = crypto.randomBytes(24).toString('hex');
       const extra = b.branch ? b.branch.settingsExtra(id) : {}; // P8: 다시 연 세션도 하위 세션 명령을 쓴다
       // P33: 띄울 때의 호출자 환경 변수. P255: 옛 연결 세션은 연결 주소 없이 호출자 env만(하네스 기본 로그인)
       const env = spec.env || {};
-      viaRelay = usesRelay(env);
-      if (Object.keys(env).length) extra.env = { ...(viaRelay ? await b.authRelay.fillEnv(env, id) : env), ...(extra.env || {}) };
+      // P363: 옛 대화형 API 런처로 띄운 세션은 다시 열지 않고 까닭을 보인다(대화형 Claude Code는 요금제 월 API 크레딧을 쓰지 못한다. 조용히 구독으로 돌리지 않는다)
+      if (usesRelay(env)) throw keyed(apiError('launcher_unusable', '대화형 API 과금 런처로 띄운 세션이라 다시 열 수 없습니다. 런처 "Claude Code SDK"로 새 세션을 띄우세요.'), 'sdkSession.err.relayGone', { name: spec.name || '' });
+      if (Object.keys(env).length) extra.env = { ...env, ...(extra.env || {}) };
       settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, ...extra });
       trust = predictTrust(cwd, cfg.claudeJson);
       const launch = { sessionId: id, settingsPath, permissionMode, model: spec.model || null, effort: spec.effort || null, extraArgs: spec.extraArgs || [], ...b.plugin };
@@ -874,7 +876,7 @@ export class Recall {
     let s;
     const hw = await b.withNewPane(() => b.adapter.createWorkspace({ cwd, label: name }), (r) => {
       const now = Date.now();
-      s = { sessionId: id, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, ...(viaRelay ? { billing: 'api' } : {}), kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: spec.flavor || null, extraArgs: claude ? spec.extraArgs || [] : [], startCommand: shell ? '' : spec.startCommand || '', harnessPlan }; // P97: 실행 명령(P115: 모든 에이전트 하네스). P25: flavor는 다시 열어도 남는다
+      s = { sessionId: id, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: spec.flavor || null, extraArgs: claude ? spec.extraArgs || [] : [], startCommand: shell ? '' : spec.startCommand || '', harnessPlan }; // P97: 실행 명령(P115: 모든 에이전트 하네스). P25: flavor는 다시 열어도 남는다
       if (spec.reuseRow) {
         this.store.reopenRow(id, { name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: s.agentName, settingsPath, hookToken, resumeArgv, resumeVerified: false, runtime: rt, kind, origin: 'board', workspaceKey: ws.key, permissionMode, model: s.model, effort: s.effort, touchedAt: now, parentSessionId: null, startCommand: s.startCommand || null, harnessPlan });
         if (spec.reuseRow.name !== name) this.store.addEvent(id, 'renamed', { from: spec.reuseRow.name, to: name, why: 'name taken on reopen' });

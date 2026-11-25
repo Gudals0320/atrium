@@ -55,7 +55,7 @@ export function rowOf(s) {
   if (s.waking) r.waking = true;
   if (s.hooked === false) r.hooked = false; // 스티어링할 수 없다(lib/steer.js steerBlock)
   if (s.flavor) r.flavor = s.flavor;
-  if (s.billing === 'api') r.billing = 'api'; // P359: API 키 과금 세션(카드의 API 표시)
+  if (s.billing === 'api' || s.billing === 'sdk') r.billing = s.billing; // P359: API 키 과금 세션. P363: SDK 세션(카드의 SDK 표시)
   if (s.model) r.model = String(s.model).replace(/^claude-/, '').slice(0, 40);
   if (s.effort) r.effort = String(s.effort).slice(0, 12); // P356: 카드의 모델·노력 수준(판 세션 맵과 같은 글)
   if (s.waitingSince) r.waitingSince = s.waitingSince;
@@ -207,7 +207,7 @@ export function phoneHandlers(b) {
         lastAnswer: !brief && rt.lastAnswer ? clip(String(rt.lastAnswer), ANSWER_MAX) : null, lastAnswerAt: rt.lastAnswerAt || null,
         lastPrompt: !brief && rt.lastPrompt ? clip(promptTask(rt.lastPrompt), PROMPT_MAX) : null, promptAt: (rt.turn && rt.turn.startedAt) || null,
         ask: a ? { ...askOf(a), summary: a.summary ? clip(String(a.summary), 600) : null, plan: a.plan ? clip(String(a.plan), PROMPT_MAX) : null, questions: Array.isArray(a.questions) ? a.questions.slice(0, 4).map((x) => ({ question: clip(String(x.question || ''), 300), options: (x.options || []).slice(0, 6).map((o) => clip(String(o.label || o), 80)) })) : null } : null,
-        tail: brief ? null : await tailOf(b, s, lines), deliveries, ...(brief ? { brief: true } : {}),
+        tail: brief || s.billing === 'sdk' ? null : await tailOf(b, s, lines), /* P363: SDK 세션은 터미널 화면이 없다 */ deliveries, ...(brief ? { brief: true } : {}),
       };
     },
     // 세션 화면을 떠났다

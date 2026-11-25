@@ -5,6 +5,12 @@ export const RELAY_PLACEHOLDER = '{{authRelay}}';
 export const isApiLauncher = (l) => !!(l && l.harness === 'claude' && l.env && String(l.env.ANTHROPIC_BASE_URL || '').includes(RELAY_PLACEHOLDER));
 // 세션 요약의 billing
 export const isApiSession = (s) => !!(s && s.billing === 'api');
+// P363: SDK 세션(claude -p, 판 중계기). 런처 하네스 claude-sdk. 옛 대화형 API 런처는 쓸 수 없음(unusable)으로 남는다
+export const isSdkSession = (s) => !!(s && s.billing === 'sdk');
+export const isSdkLauncher = (l) => !!(l && l.harness === 'claude-sdk');
+export const isUnusableLauncher = (l) => !!(l && (l.unusable === 'authRelay' || isApiLauncher(l)));
+// P363: 판 노드 입력칸에서 Enter로 보낼 글(끝 공백만 뗀다, 빈 글은 null)
+export const sdkDraft = (v) => { const s = String(v || '').replace(/\s+$/, ''); return s.trim() ? s : null; };
 // 상태 줄: [열쇠, 값] 목록(창 사전 authRelay.*)
 export function relayLine(st) {
   if (!st) return { key: 'authRelay.statusUnknown', vars: {} };

@@ -607,7 +607,7 @@ export function Canvas() {
     // P76: 전체 보기가 연 세션은 전체 보기가 터미널을 붙인다(한 창에서 한 패널을 두 번 붙이지 않는다)
     const full = fullId();
     for (const id of held.current.keys()) if (id === full) held.current.delete(id);
-    const list = [...st.nodes].filter(([id]) => st.sessions.has(id) && st.sessions.get(id).state !== 'sleeping' && id !== full).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h, ws: st.sessions.get(id).workspaceKey || null }));
+    const list = [...st.nodes].filter(([id]) => st.sessions.has(id) && st.sessions.get(id).state !== 'sleeping' && st.sessions.get(id).billing !== 'sdk' && id !== full).map(([id, r]) => ({ id, x: r.x, y: r.y, w: r.w, h: r.h, ws: st.sessions.get(id).workspaceKey || null }));
     // 이슈 #1-16: 상한보다 많이 보여도 고른 노드와 초점 노드는 터미널을 먼저 받는다
     // P121: 고른 워크스페이스(viewWs)의 노드, 초점·고른 노드, 아주 가까이 확대한 노드만 터미널을 받는다(lib/faces.js termAllowed)
     const screen = { width: el.clientWidth, height: el.clientHeight };
