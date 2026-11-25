@@ -3295,3 +3295,44 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-cr-admin { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .mt-cr-admin .mt-apikey-note { flex-basis: 100%; }
 .mt-dc-name.board { cursor: default; }
+/* P367: SDK 세션 노드 얼굴. 머리 줄(지금 하는 일·백그라운드 일·토큰과 금액), 접힌 도구 호출 줄(묶음, 펼침), 마크다운 답, 거절된 호출·과금 오류. 움직임 없음 */
+.mt-sdk-status { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 6px 10px 5px; border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08)); min-width: 0; }
+.mt-sdk-status-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mt-sdk-now { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; font-size: 12.5px; }
+.mt-sdk-now-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #7fb6ff; }
+.mt-sdk-now.k-thinking .mt-sdk-now-dot, .mt-sdk-now.k-writing .mt-sdk-now-dot { background: #e8c35a; }
+.mt-sdk-now.k-bg .mt-sdk-now-dot { background: var(--dim, #8a8f98); }
+.mt-sdk-now-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.mt-sdk-now.k-thinking .mt-sdk-now-text, .mt-sdk-now.k-writing .mt-sdk-now-text { font-family: inherit; }
+.mt-sdk-now-age { flex: none; color: var(--dim); font-size: .9em; font-variant-numeric: tabular-nums; }
+.mt-sdk-now.k-idle { font-size: 12px; }
+.mt-sdk-bg { flex: none; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line, rgba(255, 255, 255, 0.16)); color: var(--dim-2, #b8bcc4); white-space: nowrap; }
+.mt-sdk-usage { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 11px; line-height: 1.4; }
+.mt-sdk-u-turn { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.mt-sdk-u b, .mt-sdk-u-cost { font-weight: 600; color: var(--chrome-text, inherit); font-variant-numeric: tabular-nums; }
+.mt-sdk-u-total { margin-left: auto; white-space: nowrap; }
+.mt-sdk-log.mt-chat { gap: .35em; }
+.mt-sdk-log .mt-msg.user { max-height: 6.4em; }
+.mt-sdk-log .mt-msg.assistant.mt-sdk-answer { max-height: none; white-space: normal; max-width: 100%; user-select: text; cursor: text; }
+.mt-sdk-md > :first-child { margin-top: 0; } .mt-sdk-md > :last-child { margin-bottom: 0; }
+.mt-sdk-md pre { max-height: 16em; overflow: auto; }
+.mt-sdk-md table { font-size: .92em; }
+.mt-sdk-tools { align-self: stretch; flex-shrink: 0; min-width: 0; }
+.mt-sdk-call-line { display: flex; align-items: baseline; gap: 6px; width: 100%; min-width: 0; padding: 1px 4px; border: 0; border-radius: 4px; background: none; color: var(--dim-2, #b8bcc4); font: inherit; font-family: var(--font-mono); font-size: 11.5px; text-align: left; cursor: pointer; }
+.mt-sdk-call-line:hover { background: rgba(255, 255, 255, 0.05); }
+.mt-sdk-call-line b { flex: none; color: var(--chrome-text, inherit); font-weight: 600; }
+.mt-sdk-caret { flex: none; width: .9em; color: var(--dim); }
+.mt-sdk-gist { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-sdk-call-err { flex: none; color: #ff9a9a; }
+.mt-sdk-tools-list { margin-left: 1.1em; padding-left: 6px; border-left: 1px solid var(--line, rgba(255, 255, 255, 0.1)); }
+.mt-sdk-call-detail { margin: 2px 0 4px 1.3em; font-size: 11px; }
+.mt-sdk-call-detail pre { margin: 1px 0 4px; padding: 4px 6px; max-height: 12em; overflow: auto; white-space: pre-wrap; word-break: break-word; border-radius: 4px; background: rgba(0, 0, 0, 0.25); }
+.mt-sdk-call-detail pre.err { color: #ff9a9a; }
+.mt-sdk-k { color: var(--dim); font-size: 10.5px; }
+.mt-sdk-bgdone { align-self: flex-start; font-size: 11.5px; color: var(--dim-2, #b8bcc4); padding: 1px 8px; border-left: 2px solid #7fd99a; }
+.mt-sdk-denied { flex: none; margin: 4px 8px 0; padding: 5px 8px; border-radius: 6px; background: rgba(232, 195, 90, 0.12); color: #e8c35a; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-sdk-err b, .mt-sdk-denied b { font-weight: 700; }
+.mt-sdk-err.billing { background: rgba(255, 70, 70, 0.2); color: #ffb0b0; border: 1px solid rgba(255, 90, 90, 0.6); font-size: 12.5px; }
+.mt-sdk-face.middle .mt-sdk-status { padding: 4px 8px; }
+.mt-far .mt-sdk-now.far { flex: none; font-size: .92em; }
+.mt-frameface .mt-sdk-now.frame { flex: none; max-width: 92%; margin-top: .2em; font-size: .6em; }

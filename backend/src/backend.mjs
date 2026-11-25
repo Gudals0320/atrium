@@ -40,7 +40,8 @@ import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금). P363: SDK 세션이 쓴다
 import { CreditBook } from './credit-book.mjs'; // P361: API 크레딧 장부
-import { SdkHost, isSdk, SDK_IDLE_MS, SDK_BILLING } from './sdk-session.mjs'; // P363: SDK 세션 종류(claude -p stream-json)
+import { SdkHost, isSdk, SDK_IDLE_MS, SDK_BILLING, sdkHookGuard } from './sdk-session.mjs';
+import { bgView as sdkBgView, faceView as sdkFaceView, clearBg as sdkClearBg } from './sdk-face.mjs'; // P367: SDK 세션 백그라운드 일·얼굴 // P363: SDK 세션 종류(claude -p stream-json)
 import { forkMark, reviveHandlers } from './revive.mjs'; // P360: 되살리기·갈라 열기
 import { probeCodex, probeClaude, probeBalance, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
@@ -216,7 +217,7 @@ export class Backend {
       rt.kind ??= row.kind; rt.hooked ??= row.origin === 'board' && row.kind === 'claude';
       delete rt.boardExit; // P119: 닫는 도중 백엔드가 꺼졌으면 그 닫기는 끝났다(남은 질문은 사람에게 보인다)
       // P363: SDK 세션의 프로세스는 백엔드와 함께 끝났다. 늘 받을 수 있는 쉼으로 두고(다음 글에서 --resume) 끊긴 턴은 오류로 보인다
-      if (row.billing === SDK_BILLING) { if (rt.term.status === 'working') rt.lastError = { type: 'sdk_exit', message: 'board restarted during the turn', at: Date.now() }; rt.term.present = true; rt.term.status = 'idle'; rt.term.launchPending = false; rt.phase = 'running'; rt.exit = null; }
+      if (row.billing === SDK_BILLING) { if (rt.term.status === 'working') rt.lastError = { type: 'sdk_exit', message: 'board restarted during the turn', at: Date.now() }; rt.term.present = true; rt.term.status = 'idle'; rt.term.launchPending = false; rt.phase = 'running'; rt.exit = null; rt.pendingAsk = null; rt.askQueue = null; rt.bg = null; rt.sdkNow = null; sdkClearBg(rt); } // P367: 승인 화면이 없어 남은 질문은 풀 수 없다. 백그라운드 일도 프로세스와 함께 끝났다
       this.sessions.set(row.sessionId, { ...row, rt, lastState: null });
     }
     // P22: 그룹과 묶음 실행을 뺐다. 옛 판의 그룹·묶음 항목·그룹 대상 루프를 지우고 무엇을 지웠는지 판 이벤트로 남긴다. 노드는 그 자리에 둔다
@@ -630,7 +631,7 @@ export class Backend {
     const gated = this.branch && this.branch.holds(sid); // P36: 신뢰 관문을 지나 claude -w로 뜰 때까지 보내지 않는다
     const state = sleeping ? 'sleeping' : gated ? 'starting' : s.waking && st !== 'sleeping' ? 'starting' : s._readyInput && st === 'ready' ? 'starting' : st; // P299: 준비된 뒤 넣을 글(Hermes /reasoning)을 넣는 동안은 보내지 않는다
     // P240: 턴은 끝났고 뒤 일만 돈다(bgOnlyOf). 전달은 쉬는 세션처럼 보낸다. 판의 상태(working)와 뒤 일 표시는 그대로
-    const bg = state === 'working' ? (this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !s.rt.sleep ? backgroundList(s.rt.bg, null) : null) : null;
+    const bg = state === 'working' ? (isSdk(s) ? sdkBgView(s.rt) : this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !s.rt.sleep ? backgroundList(s.rt.bg, null) : null) : null;
     const bgOnly = state === 'working' && bgOnlyOf(s.rt, ds, bg, { kind: s.kind || 'claude', hooked: this.hooked(s) });
     return { state, agentPresent: s.rt.term.present, termConnected: isSdk(s) ? true : this.adapter.connected, /* P363: SDK 세션은 터미널이 없다 */ lastUserInputAt: s.lastUserInputAt, closed: false, kind: s.kind || 'claude', hooked: this.hooked(s), bgOnly, orch: s.orch || null }; // P296: orch(대기열만) // P90: kind·hooked는 바로 넣기(canTypeNow)가 본다
   }
@@ -661,9 +662,10 @@ export class Backend {
       flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
       billing: s.billing || null, // P363: 'sdk'면 판이 claude -p로 돌리고 판 중계기를 거쳐 API 키(월 API 크레딧)로 과금(카드·맵·휴대폰의 SDK 표시)
       sdk: isSdk(s) ? this.sdk.view(s) : null, // P363: 프로세스가 도는가 { alive, pid, startedAt, resume }
+      sdkFace: isSdk(s) ? sdkFaceView(rt) : null, // P367: 지금 하는 일, 백그라운드 일, 턴·누계 토큰과 금액(추정), 거절된 도구 호출
       forkFrom: rt.forkFrom ? { sessionId: rt.forkFrom.sessionId || null, name: rt.forkFrom.name || null, convId: rt.forkFrom.convId || null } : null, // P360: 갈라 온 대화(창의 옅은 "갈라 옴" 계보 선)
       // P92: 도는 Claude Code 뒤 일. P164: Stop hook 목록과 claude 아래 도구 명령 프로세스를 합친 것 { n, kinds, items: [{ kind, label }], at, via } | null(세션 맵 표시)
-      background: this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !rt.sleep ? backgroundList(rt.bg, null) : null,
+      background: isSdk(s) ? sdkBgView(rt) /* P367: 패널 없는 SDK 세션도 stream·hook으로 안다 */ : this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !rt.sleep ? backgroundList(rt.bg, null) : null,
 
       answerSource: rt.answerSource || (rt.lastAnswer ? 'hook' : null), cwdNow: rt.cwd || s.cwd,
       git: s.git ? { isRepo: s.git.isRepo, root: s.git.root, commonDir: s.git.commonDir, mainRoot: s.git.mainRoot, isWorktree: s.git.isWorktree, branch: s.git.branch, cwd: s.git.cwd, changedFiles: s.git.changedFiles } : null,
@@ -701,7 +703,7 @@ export class Backend {
     return [...this.sessions.values()].map((s) => ({
       sessionId: s.sessionId, parentSessionId: this.workParentOf(s.sessionId, idx), name: shownName(s), kind: s.kind || 'claude', state: deriveState(s.rt).state, workspaceKey: s.workspaceKey || null,
       delivering: this.queue ? this.queue.pending(s.sessionId) : 0, loops: this.features && this.features.loops ? this.features.loops.activeCount(s.sessionId) : 0,
-      bg: s.rt.bg ? s.rt.bg.tasks.length : null,
+      bg: isSdk(s) && sdkBgView(s.rt) ? sdkBgView(s.rt).n : s.rt.bg ? s.rt.bg.tasks.length : null, // P367: SDK 세션은 stream·hook·띄운 도구 결과 합
     }));
   }
 
@@ -964,6 +966,7 @@ export class Backend {
     if (!authOk) { this.store.addEvent(s.sessionId, 'hook_rejected', { ev }); this.log(`hook rejected ${s.name} ${ev}`); return; }
     s.hookCount = (s.hookCount || 0) + 1;
     applyHook(s.rt, body);
+    if (isSdk(s) && sdkHookGuard(s.rt, ev, body)) this.store.addEvent(s.sessionId, 'sdk_ask_dropped', { ev, tool: body.tool_name || null }); // P367: SDK 세션은 권한·질문 hook으로 응답 필요가 되지 않는다(승인 화면 없음, stream이 상태를 정한다)
     if (ev === 'Stop') s.rt.answerSource = 'hook';
     // F4: Claude Code는 워크트리로 들어가면 hook의 cwd가 바뀐다
     if (body.cwd && body.cwd !== s.rt.cwd) { s.rt.cwd = body.cwd; this.probeGit(s, body.cwd); }

@@ -14,6 +14,7 @@ import { applyTermStatus } from './state.mjs';
 import { cleanEnv } from './proc-env.mjs';
 import { transcriptPathFor } from './launch.mjs';
 import { clip } from './text.mjs';
+import { readFaceEvent, applyBgEvent, applyNow, sdkBackground, clearBg, toolGist, turnUsage, addTurnUsage } from './sdk-face.mjs'; // P367
 
 export const SDK_HARNESS = 'claude-sdk'; // 런처 하네스 ID(launchers.mjs HARNESSES)
 export const SDK_BILLING = 'sdk'; // 세션 billing: 판 중계기를 거쳐 API 키(월 API 크레딧)로 도는 claude -p
@@ -61,14 +62,16 @@ export function readStreamEvent(j) {
   if (j.type === 'assistant' && j.message) {
     const c = Array.isArray(j.message.content) ? j.message.content : [];
     const text = c.filter((x) => x && x.type === 'text').map((x) => x.text).join('\n');
-    return { kind: 'assistant', text, tools: c.filter((x) => x && x.type === 'tool_use').map((x) => x.name), error: j.error || null };
+    const uses = c.filter((x) => x && x.type === 'tool_use').map((x) => ({ id: x.id || null, name: x.name, gist: toolGist(x.name, x.input) })); // P367: 지금 하는 일 줄
+    return { kind: 'assistant', text, tools: uses.map((u) => u.name), uses, model: j.message.model || null, sub: !!j.parent_tool_use_id, error: j.error || null };
   }
   if (j.type === 'result') {
     const text = typeof j.result === 'string' ? j.result : '';
     const bad = !!j.is_error || (j.subtype && j.subtype !== 'success');
-    return { kind: 'result', ok: !bad, text, turns: j.num_turns ?? null, error: bad ? errorOf(text || (Array.isArray(j.errors) ? j.errors.join(' ') : '') || j.subtype || 'error') : null };
+    const denied = Array.isArray(j.permission_denials) ? j.permission_denials.slice(0, 5).map((d) => ({ tool: d.tool_name || null, gist: toolGist(d.tool_name, d.tool_input) })) : []; // P367: 거절된 도구 호출(-p에는 승인 화면이 없다)
+    return { kind: 'result', ok: !bad, text, turns: j.num_turns ?? null, error: bad ? errorOf(text || (Array.isArray(j.errors) ? j.errors.join(' ') : '') || j.subtype || 'error') : null, raw: j, denied };
   }
-  return { kind: 'other', type: j.type || null };
+  return readFaceEvent(j) || { kind: 'other', type: j.type || null }; // P367: 백그라운드 일·생각 중·도구 결과
 }
 // 오류 글 → rt.lastError 모양
 export function errorOf(text, type = null) {
@@ -79,22 +82,52 @@ export function errorOf(text, type = null) {
 // 세션 하나의 rt를 stream 사건으로 움직인다(순수에 가깝다: rt만 바꾼다) → 바뀐 것 { turnEnded?, cwd? }
 export function applyStreamEvent(rt, ev, now = Date.now()) {
   if (!ev) return {};
-  if (ev.kind === 'init') { rt.term.present = true; return ev.cwd ? { cwd: ev.cwd } : {}; }
+  if (ev.kind === 'init') {
+    rt.term.present = true;
+    if (ev.model) rt.sdkModel = ev.model;
+    // P367: init은 턴마다 온다. 판이 넣은 글 없이 도는 턴(백그라운드 일이 끝나 Claude Code가 스스로 도는 턴)도 일하는 중으로 본다
+    const auto = rt.term.status !== 'working';
+    if (auto) { rt.lastError = null; applyTermStatus(rt, 'working', now); rt.turn = { startedAt: now, endedAt: null }; }
+    if (auto || !rt.sdkNow) applyNow(rt, { kind: 'turnStart' }, now);
+    return { ...(ev.cwd ? { cwd: ev.cwd } : {}), ...(auto ? { autoTurn: true } : {}) };
+  }
   if (ev.kind === 'assistant') {
     rt.lastActivityAt = now;
+    if (!ev.sub) applyNow(rt, ev, now);
     if (ev.error || (isBillingText(ev.text) && !ev.tools.length)) rt.sdkErr = errorOf(ev.text || ev.error, isBillingText(ev.text) || ev.error === 'billing_error' ? 'billing_error' : null);
     return {};
   }
   if (ev.kind === 'result') {
     const err = ev.error || rt.sdkErr || null;
     rt.sdkErr = null;
+    applyNow(rt, ev, now);
+    if (ev.raw) addTurnUsage(rt, turnUsage(ev.raw, rt.sdkModel || null), now); // P367: 턴 토큰·금액(추정)과 세션 누계
+    if (ev.denied && ev.denied.length) rt.sdkDenied = { items: ev.denied, at: now };
     if (ev.text && !err) { rt.lastAnswer = ev.text; rt.lastAnswerAt = now; }
     if (err) { rt.lastError = { ...err, at: now }; rt.lastAnswerAt = now; if (ev.text) rt.lastAnswer = ev.text; }
     if (!rt.turn.endedAt) rt.turn.endedAt = now;
     applyTermStatus(rt, 'idle', now);
     return { turnEnded: true };
   }
+  // P367: 백그라운드 일과 지금 하는 일
+  if (ev.kind === 'bg' || ev.kind === 'task' || ev.kind === 'taskDone' || ev.kind === 'toolResults') {
+    const before = sdkBackground(rt, now).length;
+    applyBgEvent(rt, ev, now);
+    if (ev.kind === 'toolResults') applyNow(rt, ev, now);
+    return { bgChanged: before !== sdkBackground(rt, now).length || ev.kind === 'bg', face: ev.kind === 'toolResults' };
+  }
+  if (ev.kind === 'thinking') { const was = rt.sdkNow && rt.sdkNow.kind; applyNow(rt, ev, now); return { face: was !== 'thinking' }; }
   return {};
+}
+
+// P367: SDK 세션에는 승인 화면이 없다(-p는 권한 요청을 거절된 도구 호출로 돌려주고 일을 이어 간다). 권한·질문 hook이 응답 필요(waiting)를 만들지 않게
+//   기다리는 질문을 지우고, 권한 요청은 거절된 도구 호출로 남긴다(얼굴의 한 줄). 상태는 stream이 정한다(result까지 일하는 중)
+export function sdkHookGuard(rt, ev, body = {}, now = Date.now()) {
+  if (ev === 'PermissionRequest' && body.tool_name) rt.sdkDenied = { items: [{ tool: body.tool_name, gist: toolGist(body.tool_name, body.tool_input) }], at: now };
+  if (ev === 'UserPromptSubmit' && rt.sdkDenied && now - rt.sdkDenied.at > 1000) rt.sdkDenied = null;
+  const had = !!(rt.pendingAsk || (rt.askQueue && rt.askQueue.length));
+  rt.pendingAsk = null; rt.askQueue = null;
+  return had;
 }
 
 // 프로세스 나무 끄기(Windows는 taskkill /T, 그 밖은 kill)
@@ -150,10 +183,16 @@ export class SdkHost {
   onLine(s, p, line) {
     let j; try { j = JSON.parse(line); } catch { return; }
     const ev = readStreamEvent(j);
-    if (!ev || ev.kind === 'other') return;
+    if (!ev || ev.kind === 'other' || ev.kind === 'taskProgress') return;
     const live = this.b.sessions.get(s.sessionId);
     if (!live) return;
     const r = applyStreamEvent(live.rt, ev);
+    if (ev.kind === 'bg' || ev.kind === 'task' || ev.kind === 'taskDone' || ev.kind === 'toolResults' || ev.kind === 'thinking') {
+      if (r.bgChanged) this.b.store.addEvent(s.sessionId, 'sdk_bg', { n: sdkBackground(live.rt).length, via: ev.kind });
+      if (r.bgChanged || r.face) this.b.broadcastSession(live, { cause: `sdk:${ev.kind}` });
+      return;
+    }
+    if (ev.kind === 'init' && r.autoTurn) { clearTimeout(p.idle); this.b.store.addEvent(s.sessionId, 'sdk_auto_turn', { bg: sdkBackground(live.rt).length }); }
     if (ev.kind === 'init' && r.cwd && r.cwd !== live.rt.cwd) { live.rt.cwd = r.cwd; if (this.b.probeGit) this.b.probeGit(live, r.cwd); }
     if (ev.kind === 'init' && ev.apiKeySource) live.rt.sdkKeySource = ev.apiKeySource;
     if (ev.kind === 'result') {
@@ -168,7 +207,7 @@ export class SdkHost {
     clearTimeout(p.idle);
     p.idle = setTimeout(() => {
       if (this.procs.get(s.sessionId) !== p) return;
-      const bg = s.rt.bg && Array.isArray(s.rt.bg.tasks) && s.rt.bg.tasks.length;
+      const bg = sdkBackground(s.rt).length; // P367: stream 목록·hook 목록·끝남을 못 본 띄운 일
       if (s.rt.term.status === 'working' || bg) return this.armIdle(s, p);
       this.stop(s, 'idle').catch(() => {});
     }, this.idleMs);
@@ -180,6 +219,7 @@ export class SdkHost {
     clearTimeout(p.idle);
     if (this.procs.get(s.sessionId) === p) this.procs.delete(s.sessionId);
     const live = this.b.sessions.get(s.sessionId);
+    if (live) { clearBg(live.rt); live.rt.bg = null; live.rt.sdkNow = null; } // P367: 프로세스와 함께 백그라운드 일도 끝났다
     this.b.store.addEvent(s.sessionId, 'sdk_exit', { code: code ?? null, why: p.stopping || null, ms: Date.now() - p.startedAt });
     this.b.log(`sdk exit ${s.name} code=${code} why=${p.stopping || 'self'}`);
     if (!live) return;
@@ -197,7 +237,7 @@ export class SdkHost {
     if (!p || !this.alive(s.sessionId)) p = await this.start(s);
     clearTimeout(p.idle);
     p.child.stdin.write(userLine(text));
-    if (s.rt.term.status !== 'working') { s.rt.lastError = null; applyTermStatus(s.rt, 'working'); }
+    if (s.rt.term.status !== 'working') { s.rt.lastError = null; applyTermStatus(s.rt, 'working'); applyNow(s.rt, { kind: 'turnStart' }); }
     this.b.broadcastSession(s, { cause: 'sdk:send' });
     return { ok: true, pid: p.child.pid || null };
   }
