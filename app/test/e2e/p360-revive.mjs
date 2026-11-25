@@ -330,8 +330,34 @@ async function canvasshot() {
     await sleep(2500);
     const edge = await page.$$eval('.mt-edge.fork', (els) => els.length).catch(() => 0);
     const line = await page.$$eval('[data-role="fork-line"]', (els) => els.map((e) => e.textContent)).catch(() => []);
+    const I = ids();
+    const geo = await page.evaluate(({ lead, w1, fork }) => {
+      const r = (id) => { const e = document.querySelector(`.react-flow__node[data-id="${id}"]`); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
+      const p = document.querySelector('.mt-edge.fork'); const d = p ? p.getAttribute('d') : null;
+      const g = p ? p.closest('g.react-flow__edge') : null;
+      const pt = p ? (() => { const a = p.getPointAtLength(0), z = p.getPointAtLength(p.getTotalLength()); const m = p.getScreenCTM(); const f = (q) => ({ x: Math.round(q.x * m.a + m.e), y: Math.round(q.y * m.d + m.f) }); return { start: f(a), end: f(z) }; })() : null;
+      return { lead: r(lead), w1: r(w1), fork: r(fork), d, pt, edgeId: g ? g.getAttribute('data-id') || g.getAttribute('data-testid') : null };
+    }, { lead: I.lead, w1: I.w1, fork: I.fork }).catch((e) => ({ err: String(e).slice(0, 200) }));
+    log('선 좌표: ' + JSON.stringify(geo));
+    const inside = (p, r) => p && r && p.x >= r.x - 12 && p.x <= r.x + r.w + 12 && p.y >= r.y - 12 && p.y <= r.y + r.h + 12;
+    check('계보 선은 lead에서 시작해 lead-fork에 닿는다', geo.pt && inside(geo.pt.start, geo.lead) && inside(geo.pt.end, geo.fork), geo);
     check('전체 보기: 원래 노드와 갈라 연 노드 사이 "갈라 옴" 선', edge >= 1, { edge, line });
+    const ends = await page.$$eval('[data-role="fork-end"]', (els) => els.length).catch(() => 0);
+    check('계보 선 양 끝 점', ends === 2, { ends });
     await page.screenshot({ path: path.join(OUT, '5-fork-line-overview.png') });
+    // 사이드바: 닫힌 세션만 있는 묶음은 머리줄 하나("닫힌 세션 n"가 두 번 나오지 않는다), 보관함 복원 단추의 제목
+    if (!(await page.$('[data-role="sidebar"]'))) await page.keyboard.press('Control+Shift+E');
+    await page.waitForSelector('[data-role="sidebar"]', { timeout: 10000 }).catch(() => {});
+    await sleep(1200);
+    const extra = await page.$('[data-role="sidebar-rows"] [data-sb="extra"]');
+    if (extra && !(await page.$('[data-role="sidebar-rows"] [data-sb="closed"]'))) { await extra.click(); await sleep(800); }
+    const toggle = await page.$('[data-role="archive-box"] button');
+    if (toggle && !(await page.$('[data-role="archive-box"].open'))) { await toggle.click(); await sleep(1500); }
+    const side = await page.evaluate(() => ({ secs: [...document.querySelectorAll('[data-role="sidebar-rows"] .mt-sb2-row.sec')].map((e) => e.textContent), extra: [...document.querySelectorAll('[data-role="sidebar-rows"] [data-sb="extra"]')].map((e) => e.textContent), restore: [...document.querySelectorAll('[data-role="archive-box"] [data-action="restore"]')].map((b) => b.title) }));
+    check('사이드바: 닫힌 세션 묶음 이름은 한 번(같은 글의 아래 머리줄 없음)', side.extra.length >= 1 && side.secs.length === 0, side);
+    check('보관함 복원 단추 제목: 시작하지 않고 닫힌 목록으로', side.restore.length >= 1 && side.restore.every((x) => /시작하지 않고 닫힌 세션 목록/.test(x)), side.restore);
+    const sb = await page.$('[data-role="sidebar"]');
+    if (sb) await sb.screenshot({ path: path.join(OUT, '6-sidebar-after-fixes.png') });
   } finally { await closeApp(app); }
 }
 

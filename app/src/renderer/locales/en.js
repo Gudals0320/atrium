@@ -3391,7 +3391,7 @@ export default {
     doneArchived: 'Took @{name} out of the archive and reopened it (same conversation).',
     reopenTitle: 'Open this closed session on the board again and continue the same conversation (name, place and links come back)',
     reopenArchivedTitle: 'Take it out of the archive and continue the same conversation on the board in one step',
-    restoreTitle: 'Only take it out of the archive (back to the closed list, not started)',
+    restoreTitle: 'Restore: move the session back to the closed list without starting it (use Reopen to start it)',
     forkSdk: 'Fork to SDK (API credits)',
     forkShort: 'Fork to SDK',
     forkHint: 'A new SDK session continues this conversation, billed to API credits. This session stays as it is.',

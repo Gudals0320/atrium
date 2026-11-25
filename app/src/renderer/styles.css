@@ -3245,3 +3245,4 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-edge-label.fork { cursor: default; color: var(--dim); background: var(--canvas); border-style: dashed; box-shadow: none; font-size: 11px; padding: 1px 6px; }
 .mt-btn.dim-off { color: var(--dim); border-style: dashed; cursor: not-allowed; }
 .mt-btn.dim-off:hover { background: transparent; }
+.mt-edge-end.fork { fill: var(--dim); stroke: none; opacity: 0.75; }

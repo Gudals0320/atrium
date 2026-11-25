@@ -3395,7 +3395,7 @@ export default {
     doneArchived: '@{name} 세션을 보관함에서 꺼내 다시 열고 기존 대화를 이어갑니다.',
     reopenTitle: '닫힌 세션을 보드에 다시 열고 기존 대화를 이어갑니다(이름·위치·연결을 되찾음).',
     reopenArchivedTitle: '보관함에서 꺼내고 보드에서 기존 대화를 이어 여는 것을 한 번에 합니다.',
-    restoreTitle: '보관함에서 꺼내기만 합니다(닫힌 세션 목록으로 돌아가고 시작하지 않음).',
+    restoreTitle: '복원: 세션을 시작하지 않고 닫힌 세션 목록으로 되돌립니다(시작하려면 다시 열기).',
     forkSdk: 'SDK로 갈라 열기(API 크레딧)',
     forkShort: 'SDK로 갈라 열기',
     forkHint: '이 대화를 이어받는 새 SDK 세션을 엽니다. API 크레딧으로 과금되고 이 세션은 그대로입니다.',

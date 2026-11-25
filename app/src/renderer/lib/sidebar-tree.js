@@ -145,7 +145,7 @@ export function buildRows(opts) {
       if (xOpen) {
         for (const [kindKey, list, type] of [['closed', rest.closed, 'closed'], ['convos', rest.convos, 'convo']]) {
           if (!list.length) continue;
-          push({ id: `h:${w.key}|${kindKey}`, type: 'sec', depth: depth + 1, key: w.key, sec: kindKey, n: list.length });
+          if (nClosed && nConvos) push({ id: `h:${w.key}|${kindKey}`, type: 'sec', depth: depth + 1, key: w.key, sec: kindKey, n: list.length }); // P360: 한 종류뿐이면 펼침 줄이 이미 그 이름과 수를 말한다(같은 글을 두 번 보이지 않는다)
           const n = (textOn ? Math.max(50, SECTION_STEP) : SECTION_STEP) + (more[`${w.key}|${kindKey}`] || 0);
           for (const x of list.slice(0, n)) push({ id: `${type === 'closed' ? 'c' : 'v'}:${x.sessionId || x.convId}`, type, depth: depth + 1, x, ws: w.key });
           if (list.length > n) push({ id: `m:${w.key}|${kindKey}`, type: 'more', depth: depth + 1, key: `${w.key}|${kindKey}`, n: list.length - n });

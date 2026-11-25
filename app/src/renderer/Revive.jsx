@@ -79,6 +79,9 @@ export function ForkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositio
   const hidden = !data || fit.compact || linkLabelHidden(data, { x: lx, y: ly });
   return <>
     <BaseEdge id={id} path={path} className="mt-edge fork" interactionWidth={0} />
+    {/* 양 끝 점: 선이 다른 노드 밑을 지나도 어디서 시작해 어디에 닿는지 보이게(원래 세션 → 갈라 연 세션) */}
+    <circle className="mt-edge-end fork" data-role="fork-end" data-end="source" cx={sourceX} cy={sourceY} r={3.5} />
+    <circle className="mt-edge-end fork" data-role="fork-end" data-end="target" cx={targetX} cy={targetY} r={3.5} />
     {!hidden && <EdgeLabelRenderer>
       <div className="mt-edge-label fork nodrag nopan" data-role="fork-line" data-edge={id} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, pointerEvents: 'none', '--fitw': `${fit.maxWidth}px` }}>{tt('revive.forkLine')}</div>
     </EdgeLabelRenderer>}
