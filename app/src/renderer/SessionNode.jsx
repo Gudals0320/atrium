@@ -25,7 +25,7 @@ import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { TerminalView } from './TerminalView.jsx';
 import { boardPlan } from './crash-watch.js'; // P86
 import { ChatView } from './ChatView.jsx';
-import { SdkFace } from './SdkView.jsx'; // P363: SDK 세션(터미널 없음)의 가까이 얼굴
+import { SdkFace, SdkMiddle, SdkNow } from './SdkView.jsx'; // P363: SDK 세션(터미널 없음)의 가까이 얼굴. P367: 중간 얼굴·지금 하는 일 한 줄
 import { SdkTag } from './AuthRelay.jsx';
 import { ForkSdkRow } from './Revive.jsx'; // P360: SDK로 갈라 열기
 import { SdkCost } from './SdkCost.jsx'; // P361·P366: SDK 세션 금액(추정)
@@ -235,6 +235,7 @@ function FarFace({ s, w, h, open = false }) {
       <div className="mt-far-name" style={{ fontSize: px(14, 0.2, 1 / 13) }}><span className="mt-far-nm">@{s.name}</span> <StatePill s={s} />{!narrow && <>{s.flavor ? <span className="mt-badge kind">{kindOf(s.flavor).label}</span> : s.kind && s.kind !== 'claude' ?<span className="mt-badge kind">{s.kind === 'shell' ? t('node.shell') : s.kind}</span> : null}{s.unseen && !(s.state === 'ready' || s.state === 'shell_idle') && <span className="mt-badge review">{t('node.review')}</span>}<BranchBadge s={s} /></>}</div>
       {waiting && <div className="mt-far-ask" data-role="far-ask" style={{ fontSize: px(15, 0.21, 1 / 14) }}>{askLine(s) || t('node.waitingForYou')}</div>}
       {s.kind === 'shell' && <div className="mt-far-line" data-role="shell-line">{shellLine(s)}</div>}
+      {s.billing === 'sdk' && <SdkNow s={s} className="far" />}{/* P367: 요약 단계에는 지금 하는 일 한 줄만 */}
       {s.elsewhere && <div className="mt-far-line warn">↪ {t('node.workingIn', { name: s.elsewhere.name })}</div>}
       {s.state === 'exited' && <div className="mt-far-line">{EXIT_LABEL[s.exit && s.exit.kind] || t('state.exited')}</div>}
       {s.state === 'exited' && s.exit && s.exit.error && <div className="mt-far-line warn" data-role="far-exit-error" title={s.exit.error}>{s.exit.error}</div>/* P337: 끝 화면의 오류 문장 */}
@@ -295,6 +296,7 @@ function FrameFace({ s, tier, w, h }) {
           {mark === 'sleep' ? <Icon name="moon" /> : <svg viewBox="0 0 24 24">{MARK_PATH[mark]}</svg>}
         </span>}
       </div>
+      {s.billing === 'sdk' && <SdkNow s={s} className="frame" />}{/* P367: 틀 단계에도 지금 하는 일 한 줄만 */}
     </div>
   );
 }
@@ -611,7 +613,7 @@ function SessionNodeInner({ id, selected }) {
               xterm·WebGL을 새로 만들고 셸 기록을 다시 쓰던 것(한 번에 100ms 넘는 끊김)을 없앤다. 감싸개는 display: contents라 자리와 크기는 그대로다 */}
           {!asleep && s.billing === 'sdk' && face === 'close' && <SdkFace s={s} />}{/* P363: 터미널 대신 대화 보기와 입력칸 */}
           {!asleep && s.billing !== 'sdk' && (attached ? <div className={`mt-term-slot${face === 'close' ? '' : ' hold'}`} data-role="term-slot" data-hold={face === 'close' ? undefined : '1'}><TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /></div> : face === 'close' ? (NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />) : null)}
-          {!asleep && face === 'middle' && <ChatView s={s} />}
+          {!asleep && face === 'middle' && (s.billing === 'sdk' ? <SdkMiddle s={s} /> : <ChatView s={s} />)}{/* P367: SDK 세션은 머리 줄(지금 하는 일·토큰)과 묶은 대화 */}
           {!asleep && face === 'far' && <FarFace s={s} w={n.w} h={n.h} open={brief && dist === 'term'} />}
           {face === 'icon' && <FrameFace s={s} tier={tier} w={n.w} h={n.h} />}
         </NodeBoundary>

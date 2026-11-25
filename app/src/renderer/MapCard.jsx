@@ -11,6 +11,7 @@ import { roleText, modelText, ageText } from './lib/mission-model.js';
 import { useRowFit } from './lib/row-fit.js'; // P307
 import { onLightStart } from './lib/work-light.js';
 import { costRender } from './lib/cost-slot.js'; // P361: SDK 세션이 쓴 금액(추정, PC 창만 SdkCost.jsx가 채운다)
+import { nowShort } from './lib/sdk-face.js'; // P367: SDK 세션의 지금 하는 일 한 줄
 
 const clip = (s, n) => { const x = String(s || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
 export const BgIcon = () => <svg className="mt-bg-ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="2.5" width="8" height="8" rx="1.5" /><path d="M10.5 13.5h-6a2 2 0 0 1-2-2v-6" /></svg>;
@@ -53,7 +54,8 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const ask = n.ask || (live && live.ask && (live.ask.summary || live.ask.kind)) || null;
   const err = live && live.error ? (live.error.message || String(live.error)) : n.error || null;
   let taskKind, task;
-  if (tier === 'work') { taskKind = 'now'; task = cmd ? `$ ${cmd}` : lp; }
+  const sdkNow = tier === 'work' && live && live.billing === 'sdk' ? nowShort(live, t, now) : null; // P367: SDK 세션은 지금 하는 일 한 줄(도구·생각 중, 경과)
+  if (tier === 'work') { taskKind = 'now'; task = cmd ? `$ ${cmd}` : sdkNow || lp; }
   else if (tier === 'turn') { taskKind = 'ask'; task = ask || lp; }
   else if (tier === 'alert') { taskKind = 'fail'; task = lp || ask; }
   else if (tier === 'review') { taskKind = 'did'; task = lp; }
@@ -69,7 +71,7 @@ export function cardFacts(n, live, m, tier, t, now, { parentName = null, parentW
   const orch = orchTag({ orch: (live && live.orch) || n.orch || null }, t); // P296: 자체 오케스트레이션 표
   const progress = sessionProgress({ orch: (live && live.orch) || null, subs: (live && live.subs) || null }); // P322: 보통 세션의 서브에이전트 // P300: 안 진행(깨어 있는 세션의 요약에만 있다)
   const prog = progress ? progressChip(progress, t) : null;
-  return { orch, progress, prog, kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, api: !!((live && live.billing === 'api') || n.billing === 'api'), /* P359: API 키 과금 */ sdk: !!((live && live.billing === 'sdk') || n.billing === 'sdk'), /* P363: SDK 세션 */ bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
+  return { orch, progress, prog, kind, k, shell, state, stateText, age, model, role, taskKind, task: task ? clip(task, 200) : null, sdkNow: !!sdkNow, err: tier === 'alert' && err ? clip(err, 200) : null, more, relAll, harness: k.label, api: !!((live && live.billing === 'api') || n.billing === 'api'), /* P359: API 키 과금 */ sdk: !!((live && live.billing === 'sdk') || n.billing === 'sdk'), /* P363: SDK 세션 */ bg, bgText: bg ? bgText(bg, t) : null, bgKinds: bg ? bgKindsText(bg, t) : null };
 }
 
 // 카드 하나. 멀리 타일(이름·상태)과 보통 사실을 둘 다 그리고 단계 클래스(.lv-far 등)로 갈아 끼운다
@@ -102,7 +104,7 @@ export const Card = memo(function Card({ id, b, f, tier, lead, tagged, onTag, on
         {!b.thin && <span className="mt-ta-full">
           <span className="c1" ref={rowRef}>{lead ? <span className="mt-sm-lead">{t('mmLine.lead')}</span> : null}{b.merger ? <span className="mt-sm-lead mt-sm-merger" data-role="ta-merger-tag">{t('merger.tag')}</span> : null}<span className="cname" data-role="ta-name" ref={nameRef}>{n.name}</span>{lite ? null : <DecisionMark sessionId={n.sessionId} className="mt-dc-mark map" rideOnly={todo} />}{lite ? null : <ManagerChip sessionId={n.sessionId} map />}<span className="cst" data-role="ta-state">{done ? (f.age ? <span className="cago">{f.age}</span> : null) : <><i />{f.stateText}{f.age ? <span className="cago"> · {f.age}</span> : null}</>}</span><BgBadge f={f} role="ta-bg" /><RecordChip sessionId={n.sessionId} where="map" />{f.orch ? <span className={`mt-orch-tag map${f.orch.busy ? ' busy' : ''}`} data-role="ta-orch" data-busy={f.orch.busy ? '1' : '0'}>{f.orch.text}</span> : null}</span>
           <span className="c2" data-role="ta-meta">{f.role ? <span className="crole">{f.role}</span> : null}{f.role ? <span className="dotsep">/</span> : null}<span className="hb">{f.k.mark}</span><span>{f.harness}</span>{f.api ? <span className="mt-api-tag map" data-role="ta-api" title={t('authRelay.tagTitle')}>API</span> : null}{f.sdk ? <span className="mt-api-tag mt-sdk-tag map" data-role="ta-sdk" title={t('sdkSession.tagTitle')}>{t('sdkSession.tag')}</span> : null}{f.sdk ? costRender(n.sessionId) : null}{f.model ? <><span className="dotsep">/</span><span className={f.prog ? 'cmodel' : undefined}>{f.model}</span></> : null}{f.prog ? <span className={`mt-prog-chip map${f.prog.finished ? ' finished' : ''}${f.prog.failed ? ' failed' : ''}${f.prog.running ? ' running' : ''}`} data-role="ta-progress" data-done={f.progress.done} data-total={f.progress.total} data-finished={f.prog.finished ? '1' : '0'}>{f.prog.text}</span> : null}</span>
-          <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.task || t('mmMap3.noTask')}</span>
+          <span className={`c3${f.err ? ' one' : ''}`} data-role="ta-task">{f.task ? <b>{t(`mmTerr.kind.${f.taskKind}`)}</b> : null}{f.sdkNow ? <span data-role="ta-sdk-now">{f.task}</span> : f.task || t('mmMap3.noTask')}</span>
           {f.err ? <span className="cerr" data-role="ta-err">{f.err}</span> : null}
           {f.more ? <span className="c4" data-role="ta-more">{f.more}</span> : null}
         </span>}
