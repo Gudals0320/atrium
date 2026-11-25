@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { PEER_RULE_SHORT, REVIVE_RULE_SHORT, KNOW_RULE } from './cli-contract.mjs'; // P364: KNOW_RULE // P204: 동료에게 보낼 때. P360: 되살리기·갈라 열기
+import { PEER_RULE_SHORT, REVIVE_RULE_SHORT, KNOW_RULE, KNOW_HINT_RULE } from './cli-contract.mjs'; // P368: KNOW_HINT_RULE // P364: KNOW_RULE // P204: 동료에게 보낼 때. P360: 되살리기·갈라 열기
 
 // http hook으로 받을 이벤트. SessionStart는 http hook을 부르지 않으므로 넣지 않는다(E2 2.5).
 export const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'PermissionDenied', 'Notification', 'Stop', 'StopFailure', 'SubagentStop', 'SessionEnd', 'PreCompact', 'PostCompact']; // P173: 압축 시작·끝(턴이 아니다)
@@ -89,7 +89,7 @@ export const LEGACY_PLUGIN_NAME = 'multitask-herdr'; // P18 전의 플러그인 
 export const RECORD_RULE = '조사·감사·제안·인계 결과는 커밋하지 않고 `--record <파일>`로 done에 붙인다(문서는 지금 상태만, 날짜별 결정 로그 없음)';
 export const BOARD_SYSTEM_PROMPT = [
   '너는 Atrium 보드가 띄운 세션 안에서 돈다. 보드와는 셸의 `atrium` 명령으로 말한다(사용법 `atrium help`). ' + KNOW_RULE, // P364: 작업 지식 찾기(줄 수는 그대로)
-  '다른 에이전트에게 일을 맡길 때는 `atrium prompt <이름> "<할 일>"`(새 워커는 `atrium child <이름> --prompt "<할 일>"`)로 맡기고 턴을 끝낸다. 하위가 `atrium done`으로 닫으면 보드가 그 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다. 사람이 결과를 물어도 폴링하지 말고 보고가 오면 전한다. 화면은 `atrium read <이름>`. 지금 답이 꼭 필요할 때만 `--wait`(맡긴 뒤면 `atrium wait <이름>`).', // P143, P181: 맡기고 턴을 끝낸다(판이 done 보고를 가져다준다). P182: 사람이 물어도 폴링하지 않는다(종류마다 같은 동작)
+  '다른 에이전트에게 일을 맡길 때는 `atrium prompt <이름> "<할 일>"`(새 워커는 `atrium child <이름> --prompt "<할 일>"`)로 맡기고 턴을 끝낸다. ' + KNOW_HINT_RULE + ' 하위가 `atrium done`으로 닫으면 보드가 그 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다. 사람이 결과를 물어도 폴링하지 말고 보고가 오면 전한다. 화면은 `atrium read <이름>`. 지금 답이 꼭 필요할 때만 `--wait`(맡긴 뒤면 `atrium wait <이름>`).', // P368: 맡기기 전 know로 힌트 찾기(줄 수는 그대로). P143, P181: 맡기고 턴을 끝낸다(판이 done 보고를 가져다준다). P182: 사람이 물어도 폴링하지 않는다(종류마다 같은 동작)
   '다른 에이전트에게는 `atrium prompt`로만 보낸다. 보드가 받는 쪽 차례에 맞춰 넣고 그 연결을 판에 남긴다. 터미널 명령으로 직접 보내지 않는다. 받는 쪽이 지금 하는 일이 끝난 뒤 들어가면 될 글은 그냥 보낸다(대기열). 받는 쪽이 지금 하고 있는 일의 방향에 대한 추가 정보·정정이면 `--steer`(스티어링).', // P248: 대기열·스티어링(줄 수는 그대로)
   '"[Atrium 보드]"(예전 이름도)로 시작하는 글은 보드 알림이다. 판에서 잇거나 끊은 역할 연결은 알리지 않으니 `atrium me`로 본다.', // P263: 연결 알림을 넣지 않는다
   '계속 대화·관리할 일(워크트리 코드, 길게 다듬는 시안)이나 사용자가 워커·하위 세션·워크트리를 말하면 atrium 스킬(atrium:atrium)대로 `atrium child`로 워커를 맡긴다. 결과만 받고 끝날 조사·작은 분할은 네 서브에이전트로 한다. 워커 모델을 말로 들으면 `atrium models`에서 고른다. 예전 이름 mtask도 같은 명령이다.', // P8(K2), P36, P41. P318: 세션·서브에이전트 나눔
