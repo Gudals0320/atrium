@@ -101,6 +101,7 @@ import { shownName, findSession, takenNames, nameOwner, renameSession } from './
 import { PhoneFeed, phoneHandlers, phoneRoute } from './phone.mjs'; // P353: 휴대폰 전용 간소 페이지(요약 줄, 차이 받기, 휴대폰 이벤트) // P66: 판의 이름(표시 이름)과 에이전트 주소
 import { preToolUseDecision } from './atrium-allow.mjs'; // P308: 따옴표 꼴 atrium 명령 허용
 import { TodoTidy } from './todo-tidy.mjs'; // P316: 할 일 정리
+import { KnowService, knowHandlers } from './know.mjs'; // P364: 작업 지식 찾기(atrium know)
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 // HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
 export async function closeHttp(server, forceMs = 1000) {
@@ -238,6 +239,7 @@ export class Backend {
     // P9: 이미 겹친 영역은 뜰 때 편다(영역째 오른쪽·아래로 밀어 상대 자리를 지킨다, H1)
     syncWsGroups(this, 'start'); // P91: 폴더가 안팎인 워크스페이스를 한 묶음으로(영역 겹침 풀기가 묶음을 한 덩어리로 본다)
     settleRegions(this, 'start');
+    this.know = new KnowService(this); // P364: 작업 지식 찾기(색인은 데이터 폴더 know/, worker thread)
     // P211: 구독 사용량(판의 상태 줄 명령이 알린 Claude·AGY 값, Codex rollout). 상태 줄 명령 파일은 판 데이터 폴더 plugin/에 둔다.
     //   하위 세션 명령(설정 파일의 statusLine)보다 먼저 만든다
     this.usage = new UsageBook({
@@ -480,6 +482,7 @@ export class Backend {
     stopMigration(this);
     this.resources.stop();
     if (this.usage) this.usage.stop(); // P211
+    if (this.know) await this.know.close().catch(() => {}); // P364
     if (this.credits) this.credits.stop(); // P361
     if (this.sdk) await this.sdk.stopAll().catch(() => {}); // P363: SDK 세션 프로세스도 판과 함께 끝난다(다음 글에서 --resume)
     if (this.authRelay) await this.authRelay.stop().catch(() => {}); // P359: 판과 함께 끈다
@@ -2472,6 +2475,7 @@ export class Backend {
       'session.send': (p) => this.send(p),
       ...phoneHandlers(this), // P353: phone.subscribe·phone.session·phone.history·phone.close·phone.spawnInfo
       ...docHandlers(this), // P257: docs.status·docs.enable·docs.disable
+      ...knowHandlers(this), // P364: know.query·know.open·know.unit·know.build·know.usage
       ...botsHandlers(this), // P338: 설정 › 봇 탭(읽기 전용 요약, 저장소별 merge.json)
       ...mergerHandlers(this), // P267: 합치기 merger(창 쪽 계약: merger.status, merger.asks, merger.answer)
       'records.read': (p) => this.branch.units.readRecords(p || {}), // P334: 일 기록 보기(카드의 기록 단추)

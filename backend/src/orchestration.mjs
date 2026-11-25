@@ -1,3 +1,4 @@
+import { KNOW_RULE_PLAIN } from './cli-contract.mjs'; // P364: 작업 지식 찾기 한 줄
 // P296: 자체 오케스트레이션 하네스(안에서 DAG·팀·하위 에이전트를 스스로 돌리는 무거운 하네스)를 판이 받친다. 순수 함수와 표.
 // - 두 축이 세션의 실제 권한을 정한다.
 //   (a) 오케스트레이션 성질은 런처의 것이다(종류가 아니다: 무거운 플러그인이 보통 claude 위에 얹힐 수 있다). 런처 칸 orchestrates,
@@ -29,11 +30,12 @@ export const ORCH_NO_SPAWN = Object.freeze(['child', 'child-kill', 'relate', 'ch
 // 하위 오케스트레이션 세션이 쓰는 동사(help는 CLI가 답한다). prompt는 부모에게만.
 // P346: docs(점검 결과와 init·on·off)는 없다. 문서를 시작·켜고 끄는 것은 지휘 세션의 일이다(free 범위 오케스트레이션 세션은 docs를 모두 쓰고,
 //   보통 세션의 워커는 doc-watch.mjs mayWrite가 not_lead로 거절한다)
-export const ORCH_SUB_VERBS = Object.freeze(['help', 'prompt', 'done', 'item', 'me', 'usage']);
+// P364: know(작업 지식 찾기)는 읽기만이라 하위 오케스트레이션 세션도 쓴다
+export const ORCH_SUB_VERBS = Object.freeze(['help', 'prompt', 'done', 'item', 'me', 'usage', 'know']);
 // P346: 지휘 세션만 쓰는 낱말(동사 → 낱말). 판이 막고(doc-watch.mjs mayWrite) help가 보인다
 export const LEAD_ONLY_SUBS = Object.freeze({ docs: Object.freeze(['init', 'on', 'off']) });
 // atrium 동사 → /branch 요청 이름(cli-contract의 동사와 atrium-child.mjs의 길)
-export const VERB_OP = Object.freeze({ child: 'child', children: 'children', 'child-kill': 'kill', 'child-wait': 'wait', wake: 'wake', models: 'models', me: 'me', prompt: 'prompt', wait: 'turn', read: 'read', relate: 'relate', done: 'done', guide: 'guide', item: 'item', items: 'items', log: 'log', news: 'news', ask: 'ask', todo: 'todo', docs: 'docs', usage: 'usage', plan: 'plan', revive: 'revive', fork: 'fork' }); // P360: revive·fork // P304: plan(하위 오케스트레이션 세션의 허용 동사에는 없다)
+export const VERB_OP = Object.freeze({ child: 'child', children: 'children', 'child-kill': 'kill', 'child-wait': 'wait', wake: 'wake', models: 'models', me: 'me', prompt: 'prompt', wait: 'turn', read: 'read', relate: 'relate', done: 'done', guide: 'guide', item: 'item', items: 'items', log: 'log', news: 'news', ask: 'ask', todo: 'todo', docs: 'docs', usage: 'usage', plan: 'plan', revive: 'revive', fork: 'fork', know: 'know' }); // P364: know // P360: revive·fork // P304: plan(하위 오케스트레이션 세션의 허용 동사에는 없다)
 export const OP_VERB = Object.freeze(Object.fromEntries(Object.entries(VERB_OP).map(([v, o]) => [o, v])));
 // 권한과 상관없이 늘 받는 요청: perm(CLI의 help가 허용 동사를 묻는다), usage-report(판의 상태 줄 명령)
 export const ALWAYS_OPS = Object.freeze(['perm', 'usage-report']);
@@ -122,7 +124,7 @@ export function refusalText(r, { parentName = null, allowed = [] } = {}) {
 export function orchPromptLines(scope) {
   // P297 실시험: 보통 안내문의 "다른 에이전트에게는 atrium prompt로만" 줄이 하네스 안 위임(delegate_task)을 막았다. 그래서 하네스 안 오케스트레이션을 분명히 허락한다
   const head = '너는 Atrium 보드가 띄운 세션 안에서 돈다. 이 세션은 자체 오케스트레이션 하네스다: 일은 평소처럼 하네스 안에서 나눠 돌린다(하위 에이전트, 위임, DAG, 팀 모두 하네스의 방식대로 쓴다). atrium 명령은 보드와 말할 때만 쓴다(보드의 다른 세션에게 보내기, 맡은 일 보고 atrium done). 보드는 하위 세션을 만들어 주지 않는다(atrium child 없음). 하위로 내려가는 작업은 네가 하네스 안에서 서브에이전트를 만들어 나눠 맡긴다. 보드에서 하위 세션을 만들 필요가 없다.'; // P309: 사용자 요청 문장
-  const tail = '[Atrium 보드]로 시작하는 글은 보드 알림이다. 지금 쓸 수 있는 atrium 명령은 `atrium help`가 보인다(관계가 바뀌면 달라진다). 보드에 없는 명령은 보드가 거절한다.';
+  const tail = '[Atrium 보드]로 시작하는 글은 보드 알림이다. 지금 쓸 수 있는 atrium 명령은 `atrium help`가 보인다(관계가 바뀌면 달라진다). 보드에 없는 명령은 보드가 거절한다. ' + KNOW_RULE_PLAIN; // P364: 읽기만이라 어느 범위든
   if (scope === 'sub') return [head,
     '너는 보드에서 부모 세션의 하위다. 보드와는 셸의 atrium 명령으로 부모하고만 말한다: 맡은 일 보기 `atrium item`, 부모에게 묻거나 넘기기 `atrium prompt <부모 이름> <따옴표로 묶은 글>`(부모 이름은 `atrium me`), 끝나면 `atrium done ok|failed <따옴표로 묶은 보고>`로 닫는다. 읽기 전용 `atrium me`·`atrium usage`. 사람에게 물을 것도 부모에게 묻는다.',
     tail];

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { codexHomeOf } from './codex-models.mjs';
-import { REVIVE_RULE_SHORT } from './cli-contract.mjs'; // P360
+import { REVIVE_RULE_SHORT, KNOW_RULE_PLAIN } from './cli-contract.mjs'; // P360. P364: KNOW_RULE_PLAIN
 import { dshLaunchFiles } from './dsh.mjs';
 
 // 하네스와 상관없는 안내문(한 줄). 줄바꿈·큰따옴표 없이: Codex는 -c 값으로 받고, 판은 이것을 패널에 한 줄로 친다
@@ -19,6 +19,7 @@ export const HARNESS_PROMPT = [
   '일을 맡길 때는 `atrium prompt <이름> <따옴표로 묶은 할 일>`로 맡기고 턴을 끝낸다. 하위가 `atrium done`으로 닫으면 보드가 그 보고를 가져다주고 보고 없이 멈추면 알린다. 화면은 `atrium read <이름>`(이름은 보드의 세션 이름). 다른 에이전트에게는 이 명령으로만 보낸다. 맡은 일은 끝나면 `atrium done ok|failed <보고>`로 닫고 쉰다. 조사·감사·제안·인계 결과는 커밋하지 않고 `--record <파일>`로 done에 붙인다(문서는 지금 상태만, 날짜별 결정 로그 없음). 사람이 결과를 물어도 폴링하지 말고 보고가 오면 전한다(--wait·`atrium wait`는 꼭 필요할 때만).', // P143, P181: 맡기고 턴을 끝낸다
   '계속 대화할 하위 일은 `atrium child`, 결과만 받을 일은 하네스 서브에이전트, 연결 기록은 `atrium me`, 모델은 `atrium models`.', // P318: 세션·서브에이전트 나눔
   '[Atrium 보드]로 시작하는 글은 보드 알림이다. 잇거나 끊은 역할 연결은 알리지 않는다(`atrium me`).', // P263: 연결 알림을 넣지 않는다
+  KNOW_RULE_PLAIN, // P364: 작업 지식 찾기(줄바꿈·큰따옴표 없음)
   REVIVE_RULE_SHORT, // P360: 되살리기·갈라 열기(사람이 시킬 때만, 줄바꿈·큰따옴표 없음)
   '사람에게 답을 받아야 하는 질문(결정)으로 턴을 끝낼 때는 글로 묻고 그 질문을 `atrium ask <따옴표로 묶은 질문>`로 남긴다(보기가 있으면 `--option <보기>`. 권한·하네스 질문은 아니다. 하위 워커는 부모에게 묻는다. 사람에게 넘기는 일·명령·확인·미룬 일은 `atrium todo`로. 기다리지 않는 질문·확인은 `--no-wait`).', // P284: 결정 카드(줄바꿈·큰따옴표 없이). P286: 턴을 끝낼 때마다로 더 분명하게. P292: 사용자 몫(atrium todo) 몇 낱말. P295: --no-wait 몇 낱말
 ].join(' ');

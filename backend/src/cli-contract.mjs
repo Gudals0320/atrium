@@ -43,7 +43,9 @@
 //   에이전트가 저장소에 파일과 설정을 쓰는 새 약속이라 올렸다
 // 11(P360): revive 동사(닫힘·보관·사람이 끝냄·잠듦·판 밖 대화를 같은 세션 ID로 되살림, 관계 되찾기)와 fork 동사(Claude Code 대화를 이어받는 새 세션,
 //   --launcher claude-sdk면 API 크레딧)를 더했다. 에이전트가 사람의 말로 세션을 되살리고 과금이 다른 세션을 띄우는 새 약속이라 올렸다
-export const CONTRACT_VERSION = 11;
+// 12(P364): know 동사(작업 지식 찾기: 이 리포의 지우지 않은 원문을 전문 검색해 위치와 짧은 발췌, open·unit·build, --usage)를 더했다.
+//   막혔을 때 판이 아니라 에이전트가 스스로 묻는 새 약속(안내문 한 줄)이라 올렸다. 자체 오케스트레이션 하위 세션도 쓴다(읽기만)
+export const CONTRACT_VERSION = 12;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
 export const ASK_QUESTION_MAX = 300;
 export const ASK_OPTION_MAX = 80;
@@ -101,6 +103,8 @@ export const VERBS = [
   // P360: 되살리기·갈라 열기(사람이 세션 이름이나 ID를 말하며 시킬 때만)
   { name: 'revive', args: ['<이름|세션 ID|대화 ID>', '[--json]'], does: '닫힌·보관된·사람이 끝낸·잠든 세션을 같은 세션 ID(같은 대화)로 다시 띄운다(잠듦은 깨우기, 보관은 꺼내며 연다, 판 밖 Claude Code 대화 ID면 판으로 연다. 다른 곳에서 쓰는 대화는 거절). 이름·자리·계보 부모·닫힐 때 뗀 역할 선을 되찾고 못 되찾은 것을 적는다. 이름이 겹치면 -2. 살아 있는 세션은 거절하고 그 이름을 돌려준다. 사람이 세션 이름이나 ID를 말하며 되살리라고 할 때만', out: ['name', 'sessionId', 'from', 'state', 'billing', 'relations', 'lines'] },
   { name: 'fork', args: ['<이름|세션 ID|대화 ID>', '[--launcher 런처]', '[--name 새 이름]', '[--model 모델]', '[--effort 수준]', '[--peer]', '[--json]'], does: 'Claude Code 세션(살아 있든 닫혔든)의 대화를 이어받는 새 세션을 원래 세션 곁에 띄운다(원래 세션은 그대로). 기본 런처는 원래 세션의 것, --launcher claude-sdk면 SDK 세션(API 크레딧 과금, 키가 없으면 거절). 모델·노력은 원래 세션의 지금 값이 기본. 관계는 기본 독립(--peer면 너의 동료). 응답에 과금과 대화 크기(첫 턴에 대화 전체를 캐시에 새로 쓴다). 사람이 갈라 열라고 할 때만', out: ['name', 'sessionId', 'from', 'billing', 'sdk', 'model', 'effort', 'relation', 'size', 'lines'] },
+  // P364: 작업 지식 찾기(읽기만)
+  { name: 'know', args: ['"<물음>"', '[-k N]', '[--kind doc|log|record|review|code|db]', '[--before <시각|커밋>]', '| open <포인터> [--context n]', '| unit <PNNN>', '| build [--full]', '| --usage [--since <날짜|7d>]', '[--json]'], does: '작업 지식 찾기: 이 워크스페이스(리포)의 지우지 않은 원문(문서, docs/log·experiments·.atrium/records 기록, 코드 주석, 판의 일 spec·done 보고·결정·할 일 카드)을 전문 검색(trigram BM25)해 상위 N개(기본 5)의 위치(경로:줄-줄 또는 db:<표>/<행>)·날짜·단위 번호·종류와 짧은 발췌를 돌려준다. 첫 줄은 돌려준 글자 수. 막히거나 예전에 비슷한 일이 있었을 것 같으면 먼저 찾고, 필요하면 그 파일을 직접 연다. open <포인터>는 원문(--context n줄 더), unit <PNNN>은 그 단위의 작업 파일·기록·검토·판 일·코드 주석·커밋을 순위와 상관없이. --kind로 종류를, --before <시각|커밋>으로 그 뒤에 생긴 원천을 뺀다. 걷어낸 기능의 것이면 걷어냄, 대체된 결정이면 대체됨 → 지금: <문장>(<포인터>) 표시와 status 칸(둘 다 저장소의 .atrium/know.json 선언대로). build [--full]은 색인 다시 짓기, --usage [--since]는 사용 집계. 읽기만', out: ['total_chars', 'mode', 'results', 'pointer', 'kind', 'date', 'unit', 'flags', 'status', 'excerpt', 'text', 'usage'] },
 ];
 // 종료 코드: 0 성공, 1 보드가 거절하거나 실패(이유는 stderr와 --json의 error), 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(일은 계속된다. 다시 atrium wait)
 export const EXIT = { ok: 0, refused: 1, usage: 2, timeout: 3 };
@@ -111,6 +115,9 @@ export const WAIT_STATUS = ['done', 'idle', 'waiting', 'timeout', 'failed', 'unc
 // P156: 띄울 때 관계를 고르는 안내(짧은 help, --long, 스킬, 판의 짧은 안내가 같은 뜻을 말한다)
 // P360: 되살리기·갈라 열기는 사람이 시킬 때만(스킬·판 안내문·help가 같은 뜻)
 export const REVIVE_RULE = '사람이 세션 이름이나 ID를 말하며 되살리거나 SDK(API 크레딧)로 갈라 열라고 하면 `atrium revive <이름|ID>`·`atrium fork <이름|ID> --launcher claude-sdk`를 쓴다(사람이 시킬 때만).';
+// P364: 막혔을 때 스스로 찾기(판 안내문·help·스킬이 같은 뜻. 하네스 안내문은 큰따옴표 없는 꼴)
+export const KNOW_RULE = '막히거나 예전에 비슷한 일이 있었을 것 같으면 `atrium know "<물음>"`로 먼저 찾는다(위치와 짧은 발췌, 필요하면 그 파일을 직접 연다).';
+export const KNOW_RULE_PLAIN = '막히거나 예전에 비슷한 일이 있었을 것 같으면 `atrium know <따옴표로 묶은 물음>`로 먼저 찾는다(위치와 짧은 발췌, 필요하면 그 파일을 직접 연다).';
 export const REVIVE_RULE_SHORT = '사람이 세션 이름·ID로 되살리거나 SDK로 갈라 열라고 할 때만 `atrium revive`·`atrium fork`.'; // 판·하네스 안내문의 짧은 꼴
 export const RELATION_HELP = [
   '띄울 때 관계를 고른다: 사용자가 협력·동료·같이·파트너·나란히를 말하면 --peer(동료: 같은 위계, 사람에게 직접 답해도 된다). 워커·하위·맡겨·나눠·병렬을 말하면 기본(하위 워커: 끝나면 atrium done으로 너에게 보고, child-kill로 함께 꺼진다). 그 밖에는 첫 지시와 역할 이름으로 판단한다(같은 수준의 다른 일을 맡은 상대면 동료, 네 일의 한 조각이면 하위). 나중에 바꾸기: atrium relate <이름> sub|peer|none|auto.',
@@ -137,6 +144,7 @@ export function shortHelp(perm = null) {
       : '이름은 보드의 세션 이름이다(@ 없이도 된다). 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).',
     ...(orch ? [] : RELATION_HELP),
     ...(orch ? [] : [REVIVE_RULE]), // P360
+    KNOW_RULE, // P364
     '종료 코드: 0 성공, 1 보드가 거절·실패, 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(다시 atrium wait). 기계용 계약: atrium help --json. 자세한 설명: atrium help --long',
   ].join('\n');
 }
