@@ -1878,7 +1878,7 @@ export class Backend {
       this.probeGit(s, cwd);
       if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } });
       this.log(`spawned ${name} sdk ${sessionId} ws=${ws.key} model=${model || '-'}`);
-      return { sessionId, name, kind: 'claude', sdk: true, billing: SDK_BILLING, flavor: plan.flavor || null, paneId: null, termWorkspaceId: null, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, resumeArgv: null, argv: null, ...(creditWarning ? { creditWarning: { ...creditWarning, text: `API 크레딧 장부로는 월·프로모션 크레딧이 바닥이고 구매 잔액이 $${creditWarning.vars.purchased}입니다. 이 세션은 미납으로 쌓일 수 있습니다.` } } : {}) };
+      return { sessionId, name, kind: 'claude', sdk: true, billing: SDK_BILLING, flavor: plan.flavor || null, paneId: null, termWorkspaceId: null, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, resumeArgv: null, argv: null, ...(creditWarning ? { creditWarning: { ...creditWarning, text: `API 크레딧 장부로는 월·프로모션 크레딧이 바닥이고 구매 잔액이 ${creditWarning.vars.purchased}입니다. 이 세션은 미납으로 쌓일 수 있습니다.` } } : {}) };
     } finally { pending.delete(name); }
   }
   // 사람이 띄우며 준 첫 요청 → 넣을 글 | null

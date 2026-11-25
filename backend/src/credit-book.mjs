@@ -6,7 +6,7 @@
 // - 알림: 남은 금액이 있는 지급이 만료 3일 안이면 지급마다 한 번 credits.alert를 보내고 할 일 "나중에" 카드(판 카드, 세션 없음)를 남긴다. 만료가 지나면 카드를 닫는다
 // 값(키)은 다루지 않는다. 창에는 usage.get·usage.updated의 apiCredits로 간다
 import crypto from 'node:crypto';
-import { parseBilling, creditView, planGuess, planOfName, hourFloor, hourCeil, monthStart, dayStart } from './api-credits.mjs';
+import { parseBilling, creditView, planGuess, planOfName, hourFloor, hourCeil, monthStart, dayStart, alertKey } from './api-credits.mjs';
 
 export const BOARD_CARD_SID = 'board'; // 판이 남기는 카드(세션 없음)의 세션 칸
 const OFFICIAL_EVERY_MS = 30 * 60000;
@@ -201,7 +201,7 @@ export class CreditBook {
     const now = this.now();
     let dirty = out.length > 0;
     for (const [k, a] of Object.entries(this.alerted)) {
-      const g = (v.grants || []).find((x) => `${x.id}|${x.expiresAt}` === k);
+      const g = (v.grants || []).find((x) => alertKey(x) === k);
       const over = !g || g.expired || g.left <= 0.005;
       if (over && a && a.cardId && !a.closed && dec && dec.store) {
         try { if (dec.store().endDecision(a.cardId, { state: 'closed', via: 'credit_over' })) dec.changed(); } catch {}
@@ -216,6 +216,7 @@ export class CreditBook {
   spawnWarning() {
     const v = this.view();
     if (!v.ledger || !v.exhausted) return null;
-    return { key: 'apiCredits.exhaustedWarn', vars: { purchased: v.totals && v.totals.purchased != null ? v.totals.purchased.toFixed(2) : '0.00' } };
+    const p = v.totals && v.totals.purchased != null ? v.totals.purchased : 0;
+    return { key: 'apiCredits.exhaustedWarn', vars: { purchased: `${p < 0 ? '-' : ''}$${Math.abs(p).toFixed(2)}` } };
   }
 }

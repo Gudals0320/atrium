@@ -3419,7 +3419,7 @@ export default {
     next: 'Next grant {day} · {amt} (expected)',
     nextTitle: 'From the plan and billing day in Settings. Paste the page again after it arrives to match.',
     exhausted: 'Monthly and promotional credits are used up and the purchased balance is zero or below. SDK sessions will add to the amount due.',
-    exhaustedWarn: 'By the API credit ledger, monthly and promotional credits are used up and the purchased balance is ${purchased}. This SDK session may add to the amount due.',
+    exhaustedWarn: 'By the API credit ledger, monthly and promotional credits are used up and the purchased balance is {purchased}. This SDK session may add to the amount due.',
     spendToday: 'Today {amt}',
     spendMonth: 'This month {amt}',
     pastedAgo: 'pasted {span} ago',

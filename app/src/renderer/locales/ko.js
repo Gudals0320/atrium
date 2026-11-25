@@ -3423,7 +3423,7 @@ export default {
     next: '다음 지급 {day} · {amt}(예상)',
     nextTitle: '설정의 요금제와 결제일로 셈합니다. 받은 뒤 페이지를 다시 붙여 넣으면 맞춰집니다.',
     exhausted: '월·프로모션 크레딧이 바닥이고 구매 잔액이 0 이하입니다. SDK 세션은 미납으로 쌓입니다.',
-    exhaustedWarn: 'API 크레딧 장부로는 월·프로모션 크레딧이 바닥이고 구매 잔액이 ${purchased}입니다. 이 SDK 세션은 미납으로 쌓일 수 있습니다.',
+    exhaustedWarn: 'API 크레딧 장부로는 월·프로모션 크레딧이 바닥이고 구매 잔액이 {purchased}입니다. 이 SDK 세션은 미납으로 쌓일 수 있습니다.',
     spendToday: '오늘 {amt}',
     spendMonth: '이번 달 {amt}',
     pastedAgo: '{span} 전에 붙여 넣음',

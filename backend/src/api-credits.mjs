@@ -332,7 +332,8 @@ export function creditView({ ledger, relayRecs = [], official = null, now = Date
   const exhausted = planLeft + promoLeft <= EPS && (!purchased || purchased.balance <= EPS);
   return { ...base, ledger: true, pastedAt, source: ledger.source || 'paste', autoReload: ledger.autoReload ?? null, grants, totals: { plan: planLeft, promo: promoLeft, purchased: purchased ? purchased.balance : null, usable }, purchased, unplaced: round2(al.unplaced), nextGrant, plan: ledger.plan || null, expiring, exhausted };
 }
-export const alertKey = (g) => `${g.id}|${g.expiresAt}`;
+// 알림 열쇠: 이름과 만료 시각(같은 페이지를 다시 붙여 넣어 지급 id가 바뀌어도 다시 알리지 않는다)
+export const alertKey = (g) => `${g.name}|${g.expiresAt}`;
 
 // 휴대폰·작은 화면용 줄인 값
 export function slimView(v) {

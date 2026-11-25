@@ -192,6 +192,9 @@ test('만료 알림: 지급마다 한 번, 판 "나중에" 카드, 만료 뒤 �
   assert.match(card.question, /^API credit \(Ultra\) \$127\.11이 11\/27 \d{2}:00에 만료$/);
   book.checkAlerts(); book.checkAlerts();
   assert.equal(fb.cards.length, 1, '다시 알리지 않는다');
+  book.saveParsed(book.preview(KO_PAGE));
+  assert.equal(fb.cards.length, 1, '같은 페이지를 다시 붙여 넣어도(지급 id가 바뀌어도) 다시 알리지 않는다');
+  assert.equal(fb.cards[0].state, 'open');
   // 판이 다시 뜸(같은 기록)
   const book2 = new CreditBook(fb.b, { relay, now: () => now });
   book2.checkAlerts();
