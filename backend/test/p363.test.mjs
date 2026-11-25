@@ -15,6 +15,9 @@ import { Launchers, META_KEY, apiLauncher, resolveLauncher, RELAY_GONE_META } fr
 import { DEFAULTS } from '../src/settings.mjs';
 import { buildCatalog, resolveModel } from '../src/models.mjs';
 import { entrypointOf } from '../src/auth-relay-core.mjs';
+import { execFileSync } from 'node:child_process';
+import { workCwd, mergeVerdict } from '../src/merger.mjs';
+import { branchProbe } from '../src/git.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'p363-'));
 const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'p363-fake-claude.mjs');
@@ -194,4 +197,33 @@ test('SDK 세션: 키가 없으면 세션을 만들지 않고 까닭을 준다',
     await assert.rejects(() => b.spawn({ cwd: dir, launcher: SDK_LAUNCHER_ID }), (e) => e.code === 'auth_relay_no_key' && e.key === 'authRelay.err.noKey');
     assert.equal(b.sessions.size, 0);
   } finally { b.store.close(); }
+});
+
+test('SDK 워크트리 세션의 done ok도 merger로: 판이 git을 아직 못 읽었어도 rt.cwd(워크트리)로 판정하고, 커밋이 있으면 route', async () => {
+  const dir = tmp();
+  const g = (cwd, ...a) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...a], { encoding: 'utf8' });
+  try {
+    const root = path.join(dir, 'repo'); fs.mkdirSync(root);
+    g(root, 'init', '-q', '-b', 'main'); fs.writeFileSync(path.join(root, 'a.txt'), 'a\n'); g(root, 'add', '-A'); g(root, 'commit', '-q', '-m', 'init');
+    const wt = path.join(dir, 'wt'); g(root, 'worktree', 'add', '-q', '-b', 'worktree-w1', wt);
+    // 패널 없는 SDK 세션: 띄운 폴더는 저장소 뿌리, hook·init이 알린 지금 폴더는 워크트리. 판이 다시 떠 s.git이 없다
+    const s = { billing: 'sdk', cwd: root, paneId: null, git: null, rt: { cwd: wt } };
+    assert.equal(workCwd(s), wt, 's.git이 없으면 rt.cwd');
+    const common = (await branchProbe(root, 'main')).commonDir;
+    let v = mergeVerdict({ mode: 'on', probe: await branchProbe(workCwd(s), 'main'), repoCommonDir: common, target: 'main' });
+    assert.equal(v.why, 'no_commits', '커밋이 없으면 부모에게(이번 개발용 판의 w1)');
+    fs.writeFileSync(path.join(wt, 'b.txt'), 'b\n'); g(wt, 'add', '-A'); g(wt, 'commit', '-q', '-m', 'work');
+    v = mergeVerdict({ mode: 'on', probe: await branchProbe(workCwd(s), 'main'), repoCommonDir: common, target: 'main' });
+    assert.deepEqual([v.route, v.why], [true, 'ok'], '커밋이 있으면 merger');
+    assert.equal(mergeVerdict({ mode: 'ask', probe: await branchProbe(workCwd(s), 'main'), repoCommonDir: common, target: 'main' }).why, 'ask', 'ask 판은 묻는 카드');
+    // 예전 꼴(s.git 없이 띄운 폴더)이었다면 저장소 뿌리라 not_worktree였다
+    assert.equal(mergeVerdict({ mode: 'on', probe: await branchProbe(root, 'main'), repoCommonDir: common, target: 'main' }).why, 'not_worktree');
+  } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} }
+});
+
+test('pollCwd: 터미널이 끊겨도 패널 없는 SDK 세션의 git은 지금 폴더(rt.cwd)로 다시 본다', async () => {
+  const probed = [];
+  const fake = { adapter: { connected: false }, sessions: new Map([['a', { sessionId: 'a', billing: 'sdk', cwd: 'C:/r', paneId: null, closedAt: null, rt: { cwd: 'C:/wt', exit: null } }], ['b', { sessionId: 'b', cwd: 'C:/x', paneId: 'p1', rt: { cwd: null, exit: null } }]]), probeGit: (s, cwd) => probed.push([s.sessionId, cwd]), hooked: () => true };
+  await Backend.prototype.pollCwd.call(fake);
+  assert.deepEqual(probed, [['a', 'C:/wt']], 'SDK 세션만(터미널 세션은 터미널이 붙어야)');
 });

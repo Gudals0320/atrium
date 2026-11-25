@@ -43,7 +43,8 @@ const same = (a, b) => !!a && !!b && slash(path.resolve(a)).toLowerCase() === sl
 export const mergeKey = (ws, target) => ws + '|' + target;
 export const short = (h) => (h ? String(h).slice(0, 9) : '?');
 // 세션이 지금 일하는 폴더: 판의 git 조사가 본 폴더(hook의 cwd·터미널의 foreground_cwd, claude -w면 워크트리) → 없으면 띄운 폴더
-export const workCwd = (s) => (s && s.git && s.git.cwd) || (s && s.cwd) || null;
+// P363: 판이 다시 떠 git을 아직 못 읽었으면 hook·stream이 알린 지금 폴더(rt.cwd, 판 기록에 남는다)를 쓴다(패널 없는 SDK 워크트리 세션이 저장소 뿌리로 판정돼 병합을 놓치지 않게)
+export const workCwd = (s) => (s && s.git && s.git.cwd) || (s && s.rt && s.rt.cwd) || (s && s.cwd) || null;
 
 export function readMergerGuide(file = MERGER_GUIDE_FILE) { try { return fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''); } catch (e) { return '(merger 안내 파일을 읽지 못했다: ' + e.message + ')'; } }
 

@@ -2410,6 +2410,8 @@ export class Backend {
   }
   // hook이 없는 세션은 터미널이 아는 패널 폴더(foreground_cwd)를, 모든 세션은 브랜치가 바뀌었는지를 주기적으로 본다
   async pollCwd() {
+    // P363: 패널 없는 SDK 세션도 지금 폴더(hook·init이 알린 rt.cwd, 워크트리일 수 있다)의 git을 주기적으로 본다(터미널과 상관없다)
+    for (const s of [...this.sessions.values()]) if (isSdk(s) && !s.closedAt && !s.rt.exit) this.probeGit(s, s.rt.cwd || s.cwd);
     if (!this.adapter.connected) return;
     for (const s of [...this.sessions.values()]) {
       if (!s.paneId || s.rt.exit) continue;
