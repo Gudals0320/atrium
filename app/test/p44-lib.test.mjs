@@ -72,7 +72,7 @@ test('P44 사이드바: 닫힌 세션과 판 밖 대화는 워크스페이스마
   const more = buildRows({ ...base, extra: { a: true }, more: { 'a|closed': 5 } }).rows;
   assert.equal(more.filter((r) => r.type === 'closed').length, 8);
   const find = buildRows({ ...base, filter: 'parser' }).rows;
-  assert.deepEqual(types(find), ['ws', 'extra', 'sec', 'convo'], '글로 거르면 닫힘·대화도 펼쳐 찾는다');
+  assert.deepEqual(types(find), ['ws', 'extra', 'convo'], '글로 거르면 닫힘·대화도 펼쳐 찾는다(P360: 한 종류뿐이면 절 머리줄 없음)');
   // 상태 칩은 판 세션만
   assert.deepEqual(types(buildRows({ ...base, states: new Set(['idle']) }).rows), ['ws', 'session']);
 });

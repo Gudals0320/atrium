@@ -41,7 +41,9 @@
 // P304: plan 동사(리포별 목표·마일스톤 레인: 레인마다 관리자, 관리자 아닌 쓰기는 막지 않고 표시)와 me의 plans 칸을 더했다(더하기만이라 9 그대로)
 // 10(P346): docs 동사에 init·on·off 낱말(문서 시작, 점검 켜기·끄기, 지휘 세션만 = 워커는 not_lead로 거절)과 응답의 action·created·skipped·next 칸을 더했다.
 //   에이전트가 저장소에 파일과 설정을 쓰는 새 약속이라 올렸다
-export const CONTRACT_VERSION = 10;
+// 11(P360): revive 동사(닫힘·보관·사람이 끝냄·잠듦·판 밖 대화를 같은 세션 ID로 되살림, 관계 되찾기)와 fork 동사(Claude Code 대화를 이어받는 새 세션,
+//   --launcher claude-sdk면 API 크레딧)를 더했다. 에이전트가 사람의 말로 세션을 되살리고 과금이 다른 세션을 띄우는 새 약속이라 올렸다
+export const CONTRACT_VERSION = 11;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
 export const ASK_QUESTION_MAX = 300;
 export const ASK_OPTION_MAX = 80;
@@ -96,6 +98,9 @@ export const VERBS = [
   { name: 'todo', args: ['"<할 일 한 줄>"', '[--cmd "<명령>"]…', '[--check]', '[--later "<YYYY-MM-DD[ HH:MM] 또는 조건>"]', '[--why "<맥락 한 줄>"]', '[--tell]', '[--no-wait | --wait]', '| --done <번호>', '| --reopen <번호>', '| --list', '[--json]'], does: `사람이 해야 할 일(터미널에 칠 명령, 해 줄 행동, 검증, 나중으로 미룬 일)을 대화에 쓰고 이것으로 보드의 "할 일 목록"에도 남긴다. 카드 종류는 결정·실행·확인·나중에. 기본은 실행(사람이 "했음"을 누르면 기록만, --tell이면 "[실행] <할 일> → 했음" 글이 온다). --cmd는 사람이 복사할 명령(${TODO_CMDS_MAX}개, 각 ${TODO_CMD_MAX}자). --check는 확인(사람이 "됐다/안 됐다: 메모"로 답하면 "[확인] <할 일> → 됐다: 메모" 글이 온다). --later는 나중에(날짜·시각이면 그때까지 숨겼다가 띄우고, 조건 글이면 사람이 꺼낼 때까지 "나중"에 둔다). 확인 결과와 --tell의 했음은 기본으로 너에게 다음 글이 갈 때 그 앞에 실려 온다(기다리며 멈출 거면 --wait). 열린 카드는 결정 카드와 합쳐 ${ASK_OPEN_MAX}장, 나중에는 따로 ${TODO_LATER_MAX}장까지. 사람과 직접 일하는 세션만 쓰고 하위 워커는 부모에게 atrium prompt로 넘긴다. --done <번호>는 끝난(쓸모없어진) 카드를 닫고, --reopen <번호>는 끝난 카드를 다시 열고, --list는 너의 열린 것과 나중 것`, out: ['id', 'kind', 'open', 'max', 'card', 'cards', 'closed', 'state'] },
   // P304: 리포별 목표·마일스톤 레인(워크스페이스 안에 여럿, 레인마다 관리자 세션)
   { name: 'plan', args: ['[show | list | new | goal | metric | ms | focus | item | check | owner | status | import | export | log]', '…', '[--plan <이름|번호>]', '[--json]'], does: '이 리포(워크스페이스)의 목표·마일스톤 레인. 레인마다 이름·목표·측정값·마일스톤(M1…)·focus·상태와 관리자 세션(만든 세션, owner로 넘김)이 있다. new로 만들고 list로 보고, 나머지는 --plan <이름|번호>로 레인을 고른다(빼면 네가 관리하는 레인이 하나일 때 그것). 관리자는 자기 레인을 지금 상태로 유지한다. 고치라는 지시가 없으면 남의 레인은 읽기만 한다(보드는 막지 않고 관리자 아님으로 남긴다). 마일스톤의 끝 기준에 드는 사람 몫은 item … --who user(사람의 할 일 목록에 뜬다), 일회성으로 사람에게 넘기는 것은 todo. 하위 낱말과 예: atrium help plan', out: ['ok', 'rev', 'changed', 'manager', 'plan', 'lanes', 'doc', 'summary', 'otherChanges', 'counts', 'rows'] },
+  // P360: 되살리기·갈라 열기(사람이 세션 이름이나 ID를 말하며 시킬 때만)
+  { name: 'revive', args: ['<이름|세션 ID|대화 ID>', '[--json]'], does: '닫힌·보관된·사람이 끝낸·잠든 세션을 같은 세션 ID(같은 대화)로 다시 띄운다(잠듦은 깨우기, 보관은 꺼내며 연다, 판 밖 Claude Code 대화 ID면 판으로 연다. 다른 곳에서 쓰는 대화는 거절). 이름·자리·계보 부모·닫힐 때 뗀 역할 선을 되찾고 못 되찾은 것을 적는다. 이름이 겹치면 -2. 살아 있는 세션은 거절하고 그 이름을 돌려준다. 사람이 세션 이름이나 ID를 말하며 되살리라고 할 때만', out: ['name', 'sessionId', 'from', 'state', 'billing', 'relations', 'lines'] },
+  { name: 'fork', args: ['<이름|세션 ID|대화 ID>', '[--launcher 런처]', '[--name 새 이름]', '[--model 모델]', '[--effort 수준]', '[--peer]', '[--json]'], does: 'Claude Code 세션(살아 있든 닫혔든)의 대화를 이어받는 새 세션을 원래 세션 곁에 띄운다(원래 세션은 그대로). 기본 런처는 원래 세션의 것, --launcher claude-sdk면 SDK 세션(API 크레딧 과금, 키가 없으면 거절). 모델·노력은 원래 세션의 지금 값이 기본. 관계는 기본 독립(--peer면 너의 동료). 응답에 과금과 대화 크기(첫 턴에 대화 전체를 캐시에 새로 쓴다). 사람이 갈라 열라고 할 때만', out: ['name', 'sessionId', 'from', 'billing', 'sdk', 'model', 'effort', 'relation', 'size', 'lines'] },
 ];
 // 종료 코드: 0 성공, 1 보드가 거절하거나 실패(이유는 stderr와 --json의 error), 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(일은 계속된다. 다시 atrium wait)
 export const EXIT = { ok: 0, refused: 1, usage: 2, timeout: 3 };
@@ -104,6 +109,9 @@ export const VERB_NAMES = VERBS.map((v) => v.name).filter((n) => n !== 'help');
 export const WAIT_STATUS = ['done', 'idle', 'waiting', 'timeout', 'failed', 'unconfirmed', 'closed', 'exited', 'sleeping', 'error'];
 
 // P156: 띄울 때 관계를 고르는 안내(짧은 help, --long, 스킬, 판의 짧은 안내가 같은 뜻을 말한다)
+// P360: 되살리기·갈라 열기는 사람이 시킬 때만(스킬·판 안내문·help가 같은 뜻)
+export const REVIVE_RULE = '사람이 세션 이름이나 ID를 말하며 되살리거나 SDK(API 크레딧)로 갈라 열라고 하면 `atrium revive <이름|ID>`·`atrium fork <이름|ID> --launcher claude-sdk`를 쓴다(사람이 시킬 때만).';
+export const REVIVE_RULE_SHORT = '사람이 세션 이름·ID로 되살리거나 SDK로 갈라 열라고 할 때만 `atrium revive`·`atrium fork`.'; // 판·하네스 안내문의 짧은 꼴
 export const RELATION_HELP = [
   '띄울 때 관계를 고른다: 사용자가 협력·동료·같이·파트너·나란히를 말하면 --peer(동료: 같은 위계, 사람에게 직접 답해도 된다). 워커·하위·맡겨·나눠·병렬을 말하면 기본(하위 워커: 끝나면 atrium done으로 너에게 보고, child-kill로 함께 꺼진다). 그 밖에는 첫 지시와 역할 이름으로 판단한다(같은 수준의 다른 일을 맡은 상대면 동료, 네 일의 한 조각이면 하위). 나중에 바꾸기: atrium relate <이름> sub|peer|none|auto.',
   PEER_RULE, // P204
@@ -128,6 +136,7 @@ export function shortHelp(perm = null) {
     orch ? '이름은 보드의 세션 이름이다(@ 없이도 된다). atrium은 보드와 말할 때만 쓴다. 하네스 안의 하위 에이전트·위임·팀은 하네스의 방식대로 쓴다(보드를 거치지 않는다).' // P296·P297: 하네스 안 위임을 막지 않게
       : '이름은 보드의 세션 이름이다(@ 없이도 된다). 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).',
     ...(orch ? [] : RELATION_HELP),
+    ...(orch ? [] : [REVIVE_RULE]), // P360
     '종료 코드: 0 성공, 1 보드가 거절·실패, 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(다시 atrium wait). 기계용 계약: atrium help --json. 자세한 설명: atrium help --long',
   ].join('\n');
 }

@@ -224,6 +224,6 @@ test('P143 안내 글: --now는 계약과 CLI 사용법에 그대로, 안내 글
   assert.ok(VERBS.find((v) => v.name === 'prompt').args.includes('[--wait | --steer]')); // P248: --steer(= --now)
   const long = fs.readFileSync(path.join(HERE, '..', 'bin', 'atrium-child.mjs'), 'utf8').match(/const HELP = `([\s\S]*?)`;/)[1];
   assert.match(long, /--now는 받는 쪽이 일하는 중인 Claude Code면/);
-  assert.ok(BOARD_SYSTEM_PROMPT.length < 1720, /* P334: 일 기록 한 마디 */ `판 시스템 글 ${BOARD_SYSTEM_PROMPT.length}자`);
+  assert.ok(BOARD_SYSTEM_PROMPT.length < 1790, /* P360: 되살리기·갈라 열기 한 마디. P334: 일 기록 한 마디 */ `판 시스템 글 ${BOARD_SYSTEM_PROMPT.length}자`);
   assert.ok(!/[\r\n"]/.test(HARNESS_PROMPT), '하네스 안내문은 한 줄, 큰따옴표 없이');
 });

@@ -31,6 +31,7 @@ import { Icon } from './lib/icons.jsx';
 import { RenameInput, useRenaming } from './Rename.jsx'; // P66: 세션 줄 메뉴의 이름 바꾸기
 import { addressOf, renamed } from './lib/session-name.js';
 import { canReopen } from './lib/user-close.js'; // P125: 끝난 세션 다시 열기
+import { reviveOf, ForkSdkButton } from './Revive.jsx'; // P360: 다시 열기(보관함 포함)와 SDK로 갈라 열기
 import { MergerTag } from './Merger.jsx'; // P268: merger 세션 꼬리표
 
 const KEY = 'mt.sidebar';
@@ -150,6 +151,11 @@ export function reopenClosed(c) {
     toast(r.resume ? t('sidebar.reopenedResume', { name: r.name }) : t('sidebar.reopened', { name: r.name }));
     goWhenOpen(r.sessionId);
   });
+}
+// P360: 보관함 줄의 다시 열기(꺼내기와 다시 열기를 한 번에). 판 밖 대화는 판으로 열기
+export function reviveArchived(c) {
+  if (!c.sessionId) return openConvo(c);
+  return run(c.sessionId, async () => { await reviveOf(c.sessionId); if (side.archiveOpen) refreshArchive(); });
 }
 // P125: 끝난 판 세션(사람이 닫음 등)을 같은 자리에서 같은 대화로 다시 연다(session.reopen). 닫힌 세션도 같은 API가 recall.reopen으로 넘긴다
 export function reopenSession(s) {
@@ -391,9 +397,11 @@ function ClosedRow({ r, now, busy, cur }) {
     <div className={`mt-sb2-row item closed${why ? ' bound' : ''}${cur ? ' cur' : ''}`} style={pad(r, NAME)} data-sb="closed" data-row={r.id} data-session={c.sessionId} data-name={c.name} title={`@${c.name} · ${t('sidebar.closedTag')} · ${reason}${c.lastPrompt ? `\n${c.lastPrompt}` : ''}${why ? `\n${why}` : ''}`} onClick={() => setCursor(r.id)}>
       <b className="mt-sb2-name">{c.name}</b>{shownKind(c) !== 'claude' && <span className="mt-sb2-kind">{kindText(shownKind(c))}</span>}
       <span className="mt-sb2-time">{ago(c.closedAt, now)}</span>
+      {!why && <span role="button" tabIndex={-1} className={`mt-sb2-reopen${busy ? ' busy' : ''}`} data-action="reopen-closed" title={t('revive.reopenTitle')} onClick={(e) => { e.stopPropagation(); setCursor(r.id); if (!busy) reopenClosed(c); }}>{busy ? t('sidebar.opening') : t('userClose.reopen')}</span>}{/* P360: 늘 보인다 */}
       <span className="mt-sb2-acts">
         {why ? <span className="mt-sb-bound" data-bound={c.binding.where}>{why}</span>
           : <button className="mt-btn small" data-action="reopen" disabled={busy} title={t('sidebar.openOnBoard')} onClick={(e) => { e.stopPropagation(); reopenClosed(c); }}>{busy ? t('sidebar.opening') : t('userClose.reopen')}</button>}
+        {!why && <ForkSdkButton c={c} run={run} />}{/* P360 */}
         <button className="mt-btn small ghost" data-action="archive" title={t('sidebar.archiveClosedTitle')} onClick={(e) => { e.stopPropagation(); archiveItem(c); }}>{t('common.archive')}</button>
       </span>
     </div>
@@ -607,7 +615,11 @@ function ArchivedRow({ c, now, busy }) {
     <div className={`mt-sb-row archived ${convo ? 'convo' : 'closed'}`} data-sb="archived" data-kind={convo ? 'convo' : 'session'} data-convo={c.convId || ''} data-session={c.sessionId || ''} data-name={c.name || ''} title={convo ? `${c.title || ''}\n${t('sidebar.convoId', { id: c.convId })}${c.cwd ? `\n${c.cwd}` : ''}` : `@${c.name}`}>
       <span className="mt-sb-line"><span className="mt-sb-tag arch">{convo ? t('sidebar.convoTag') : t('sidebar.closedTag')}</span><b className="mt-sb-title">{convo ? c.title || c.firstPrompt || c.convId.slice(0, 8) : `@${c.name}`}</b><span className="mt-sb-time">{ago(convo ? c.lastAt : c.lastActivityAt || c.closedAt, now)}</span></span>
       <span className="mt-sb-sub">{auto ? t('archive.whyAuto') : t('archive.whyHand')}{convo ? [c.folder, c.branch && `⎇ ${c.branch}`].filter(Boolean).map((x) => ` · ${x}`).join('') : c.reasonLabel ? ` · ${tOr(`closeReason.${c.reason}`, c.reasonLabel)}` : ''}{c.lastPrompt && c.lastPrompt !== c.title ? ` · ${c.lastPrompt}` : ''}</span>
-      <span className="mt-sb-acts"><button className="mt-btn small" data-action="restore" disabled={busy} onClick={() => restoreItem(c)}>{busy ? '…' : t('archive.restore')}</button></span>
+      <span className="mt-sb-acts">
+        {!(c.binding && c.binding.bound) && <button className="mt-btn small" data-action="reopen-archived" disabled={busy} title={convo ? t('sidebar.openOnBoard') : t('revive.reopenArchivedTitle')} onClick={() => reviveArchived(c)}>{busy ? '…' : t('userClose.reopen')}</button>}{/* P360: 꺼내며 다시 열기 */}
+        {!convo && <ForkSdkButton c={c} run={run} />}
+        <button className="mt-btn small ghost" data-action="restore" disabled={busy} title={t('revive.restoreTitle')} onClick={() => restoreItem(c)}>{busy ? '…' : t('archive.restore')}</button>
+      </span>
     </div>
   );
 }

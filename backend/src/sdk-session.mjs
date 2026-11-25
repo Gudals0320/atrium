@@ -22,10 +22,12 @@ export const SDK_IDLE_MS = 60000; // 턴이 끝나고 이만큼 쉬면 프로세
 export const isSdk = (s) => !!s && s.billing === SDK_BILLING;
 
 // 띄울 인자. resume이면 --resume <ID>, 아니면 --session-id <ID>(+ 처음만 --worktree). 권한은 늘 bypassPermissions(권한 질문 화면이 없다)
-export function buildSdkArgs({ sessionId, resume = false, worktree = null, settingsPath, model = null, effort = null, pluginDir = null, systemPromptFile = null, extraArgs = [] }) {
+// P360: forkFrom(대화 ID)이고 아직 이 세션의 대화가 없으면 그 대화를 갈라 연다(--resume <원래> --fork-session --session-id <새 ID>)
+export function buildSdkArgs({ sessionId, resume = false, forkFrom = null, worktree = null, settingsPath, model = null, effort = null, pluginDir = null, systemPromptFile = null, extraArgs = [] }) {
   const a = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
-  a.push(resume ? '--resume' : '--session-id', sessionId);
-  if (worktree && !resume) a.push('--worktree', worktree);
+  if (!resume && forkFrom) a.push('--resume', forkFrom, '--fork-session', '--session-id', sessionId);
+  else a.push(resume ? '--resume' : '--session-id', sessionId);
+  if (worktree && !resume && !forkFrom) a.push('--worktree', worktree);
   a.push('--no-chrome', '--permission-mode', 'bypassPermissions', '--settings', settingsPath);
   if (model) a.push('--model', model);
   if (effort) a.push('--effort', effort);
@@ -119,9 +121,10 @@ export class SdkHost {
   // 띄울 계획(명령·인자·폴더) → 시험이 본다
   planOf(s, { relayUrl }) {
     const resume = !!s.sdkStarted || this.hasTranscript(s);
-    const cwd = resume && s.rt.cwd && fs.existsSync(s.rt.cwd) ? s.rt.cwd : s.cwd;
+    const cwd = resume && s.rt.cwd && fs.existsSync(s.rt.cwd) ? s.rt.cwd : s.cwd; // P360: 갈라 열기는 원래 대화 기록이 있는 폴더(띄울 때 s.cwd로 정함)
     const plug = this.b.pluginFor ? this.b.pluginFor(s.orch ? s : null) : this.b.plugin || {};
-    const args = buildSdkArgs({ sessionId: s.sessionId, resume, worktree: s.sdkWorktree || null, settingsPath: s.settingsPath, model: s.model, effort: s.effort, pluginDir: plug.pluginDir || null, systemPromptFile: plug.systemPromptFile || null, extraArgs: s.extraArgs || [] });
+    const forkFrom = !resume && s.rt && s.rt.forkFrom ? s.rt.forkFrom.convId || null : null; // P360: 갈라 연 세션의 첫 프로세스
+    const args = buildSdkArgs({ sessionId: s.sessionId, resume, forkFrom, worktree: s.sdkWorktree || null, settingsPath: s.settingsPath, model: s.model, effort: s.effort, pluginDir: plug.pluginDir || null, systemPromptFile: plug.systemPromptFile || null, extraArgs: s.extraArgs || [] });
     const head = this.command || [this.b.cfg.sdkCommand || this.b.cfg.claudeCommand || 'claude'];
     return { file: head[0], args: [...head.slice(1), ...args], cwd, resume, env: sdkEnv(process.env, { relayUrl }) };
   }

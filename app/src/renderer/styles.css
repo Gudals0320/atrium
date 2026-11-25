@@ -3239,6 +3239,13 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-sdk-proc { flex: 1 1 auto; font-size: 11px; }
 .mt-sdk-proc.on { color: #7fd99a; }
 .mt-ln-unusable { margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; color: #ff9a9a; border: 1px solid rgba(255, 90, 90, 0.45); }
+
+/* P360: 갈라 온 계보 선(원래 세션 → 갈라 연 세션). 옅은 점선과 작은 글. 키가 없을 때 흐린 갈라 열기 단추 */
+.mt-edge.fork { stroke: var(--dim); stroke-width: 1.5; stroke-dasharray: 3 5; opacity: 0.55; }
+.mt-edge-label.fork { cursor: default; color: var(--dim); background: var(--canvas); border-style: dashed; box-shadow: none; font-size: 11px; padding: 1px 6px; }
+.mt-btn.dim-off { color: var(--dim); border-style: dashed; cursor: not-allowed; }
+.mt-btn.dim-off:hover { background: transparent; }
+.mt-edge-end.fork { fill: var(--dim); stroke: none; opacity: 0.75; }
 /* ---------- P361: API 크레딧 장부(사용량 팝업 칸, 설정, SDK 금액) ---------- */
 .mt-credits { gap: 6px; }
 .mt-cr-basis { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--panel-3); color: var(--dim); white-space: nowrap; }

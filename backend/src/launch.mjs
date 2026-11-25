@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { PEER_RULE_SHORT } from './cli-contract.mjs'; // P204: 동료에게 보낼 때
+import { PEER_RULE_SHORT, REVIVE_RULE_SHORT } from './cli-contract.mjs'; // P204: 동료에게 보낼 때. P360: 되살리기·갈라 열기
 
 // http hook으로 받을 이벤트. SessionStart는 http hook을 부르지 않으므로 넣지 않는다(E2 2.5).
 export const HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'PermissionDenied', 'Notification', 'Stop', 'StopFailure', 'SubagentStop', 'SessionEnd', 'PreCompact', 'PostCompact']; // P173: 압축 시작·끝(턴이 아니다)
@@ -93,7 +93,7 @@ export const BOARD_SYSTEM_PROMPT = [
   '다른 에이전트에게는 `atrium prompt`로만 보낸다. 보드가 받는 쪽 차례에 맞춰 넣고 그 연결을 판에 남긴다. 터미널 명령으로 직접 보내지 않는다. 받는 쪽이 지금 하는 일이 끝난 뒤 들어가면 될 글은 그냥 보낸다(대기열). 받는 쪽이 지금 하고 있는 일의 방향에 대한 추가 정보·정정이면 `--steer`(스티어링).', // P248: 대기열·스티어링(줄 수는 그대로)
   '"[Atrium 보드]"(예전 이름도)로 시작하는 글은 보드 알림이다. 판에서 잇거나 끊은 역할 연결은 알리지 않으니 `atrium me`로 본다.', // P263: 연결 알림을 넣지 않는다
   '계속 대화·관리할 일(워크트리 코드, 길게 다듬는 시안)이나 사용자가 워커·하위 세션·워크트리를 말하면 atrium 스킬(atrium:atrium)대로 `atrium child`로 워커를 맡긴다. 결과만 받고 끝날 조사·작은 분할은 네 서브에이전트로 한다. 워커 모델을 말로 들으면 `atrium models`에서 고른다. 예전 이름 mtask도 같은 명령이다.', // P8(K2), P36, P41. P318: 세션·서브에이전트 나눔
-  '보드는 오래 쉬는 리포의 세션을 모두 잠재우고, 리포가 바빠도 오래 쉰 세션은 혼자 잠재운다(sleeping). 잠든 세션에 `atrium prompt`하면 보드가 깨운 뒤 넣는다. 미리 깨우려면 `atrium wake <이름>`으로 그 세션을(리포째 잠들었으면 그 리포를) 깨운다.', // P21·P24(D4), P111, P116
+  '보드는 오래 쉬는 리포의 세션을 모두 잠재우고, 리포가 바빠도 오래 쉰 세션은 혼자 잠재운다(sleeping). 잠든 세션에 `atrium prompt`하면 보드가 깨운 뒤 넣는다. 미리 깨우려면 `atrium wake <이름>`으로 그 세션을(리포째 잠들었으면 그 리포를) 깨운다. ' + REVIVE_RULE_SHORT, // P21·P24(D4), P111, P116. P360: 되살리기·갈라 열기(줄 수는 그대로)
   `세션을 띄울 때 관계를 고른다: 협력·동료·같이·파트너면 \`atrium child <이름> --peer\`(동료), 워커·하위·맡겨·나눠면 기본(하위 워커), 그 밖에는 첫 지시와 역할로 판단한다. 첫 요청 앞의 "[Atrium 보드] 관계:" 줄이 너의 관계와 보고 방식이다. 하위는 \`atrium done ok|failed "<보고>"\`로 닫고 쉰다. ${RECORD_RULE}. ${PEER_RULE_SHORT}. 바꾸기: \`atrium relate <이름> sub|peer|none|auto\`.`, // P156. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
   '관계와 역할 연결은 `atrium me`가 보드의 지금 기록이다. 헷갈리면 먼저 치고, 예전 알림과 다르면 이것을 믿는다. 매 턴 치지는 않는다.', // P81. P204: 동료 줄을 넣으려고 줄였다
   '사람에게 답을 받아야 하는 질문("이대로 마무리할까요?" 같은 결정)으로 턴을 끝낼 때는 글로 묻고 그 질문을 `atrium ask "<질문>"`로 남긴다(보기가 있으면 `--option "<보기>"`. 권한·하네스 질문은 아니다. 하위 워커는 부모에게 묻는다. 사람에게 넘기는 일·명령·확인·미룬 일은 `atrium todo`로. 기다리지 않는 질문·확인은 `--no-wait`).', // P284: 결정 카드(한 줄만 더했다). P286: 턴을 끝낼 때마다로 더 분명하게. P292: 사용자 몫(atrium todo) 몇 낱말. P295: --no-wait 몇 낱말
@@ -134,10 +134,12 @@ export function writeHarnessFiles({ dir, binDir, bin = {}, prompt, lib = null })
 export const tokenFileOf = (sessionsDir, sessionId) => path.join(sessionsDir, `${sessionId}.token`);
 export function writeTokenFile(sessionsDir, sessionId, token) { fs.mkdirSync(sessionsDir, { recursive: true }); const f = tokenFileOf(sessionsDir, sessionId); fs.writeFileSync(f, token); return f; }
 // P8(K1): worktree면 Claude Code가 자기 규칙으로 워크트리를 만든다(claude -w <이름>). 판은 워크트리를 만들지 않는다. 처음 띄울 때만 넣는다
-export function buildStartArgs({ sessionId, worktree = null, ...o }) { return ['--session-id', sessionId, ...(worktree ? ['--worktree', worktree] : []), ...commonArgs(o)]; }
+// P360: forkFrom(대화 ID)면 그 대화를 이어받아 갈라 연다(--resume <원래> --fork-session --session-id <새 ID>, 원래 대화는 그대로).
+//   Claude Code 2.1.332: --session-id를 --resume과 함께 주려면 --fork-session이 있어야 한다(없으면 인자 오류)
+export function buildStartArgs({ sessionId, worktree = null, forkFrom = null, ...o }) { return [...(forkFrom ? ['--resume', forkFrom, '--fork-session'] : []), '--session-id', sessionId, ...(worktree && !forkFrom ? ['--worktree', worktree] : []), ...commonArgs(o)]; }
 // B3 4번: 첫 요소는 명령 이름, 경로는 슬래시(E7 2.3)
 // P97: startCommand(호출자의 실행 명령, 예: 래퍼 명령 `mywrap claude`)가 있으면 그 낱말들로 시작한다. 판이 이어 갈 때 이 명령으로 시작한다
-export function buildResumeArgv({ claudeCommand = 'claude', startCommand = '', sessionId, ...o }) {
+export function buildResumeArgv({ claudeCommand = 'claude', startCommand = '', sessionId, forkFrom: _f = null, ...o }) {
   const head = String(startCommand || '').trim().split(/\s+/).filter(Boolean);
   return [...(head.length ? head : [claudeCommand]), '--resume', sessionId, ...commonArgs(o)];
 }
@@ -149,7 +151,7 @@ export const psLine = (words) => words.map(psQuote).join(' ');
 export const psEnvPrefix = (env) => Object.entries(env || {}).map(([k, v]) => `$env:${k}='${String(v).replace(/'/g, "''")}'; `).join('');
 export const psPathPrefix = (dirs = []) => (dirs.length ? `$env:PATH='${dirs.map((d) => String(d).replace(/'/g, "''")).join(';')};' + $env:PATH; ` : '');
 // C3 대책(P3): 판이 직접 이어 갈 때 agent.start에 넘기는 인자(명령 이름 없이)
-export function buildResumeArgs({ sessionId, ...o }) { return ['--resume', sessionId, ...commonArgs(o)]; }
+export function buildResumeArgs({ sessionId, forkFrom: _f = null, ...o }) { return ['--resume', sessionId, ...commonArgs(o)]; }
 
 // 돌고 있는 claude의 명령줄에 판의 설정 파일이 있는가(pane.process_info의 argv)
 export function argvHasSettings(argv, settingsPath) {

@@ -27,6 +27,7 @@ import { boardPlan } from './crash-watch.js'; // P86
 import { ChatView } from './ChatView.jsx';
 import { SdkFace } from './SdkView.jsx'; // P363: SDK 세션(터미널 없음)의 가까이 얼굴
 import { SdkTag } from './AuthRelay.jsx';
+import { ForkSdkRow } from './Revive.jsx'; // P360: SDK로 갈라 열기
 import { SdkCost } from './ApiCredits.jsx'; // P361
 import { NodeBoundary } from './ErrorBoundary.jsx';
 import { InterruptedBanner } from './SessionExtras.jsx';
@@ -332,6 +333,7 @@ function NodeMenu({ s, docked, onClose }) {
       <MergeMenuRows s={s} onClose={onClose} />{/* P321: 병합 맡기기, 동료 관계 */}
       {/* P21(D4)·P24: 잠든 노드는 그 리포를 깨운다. 잠재우기는 리포 단위라 영역 이름표 메뉴에 있다 */}
       {s.state === 'sleeping' && <div className="mt-menu-row"><button className="mt-btn small" data-action="wake" disabled={!!s.waking} onClick={() => { onClose(); wakeSession(s.sessionId); }}><Icon name="moon" />{t(sleptAlone(s) ? 'sessionSleep.menuWake' : 'sleep.menuWake')}</button><span className="dim">{t(sleptAlone(s) ? 'sessionSleep.menuWakeHint' : 'sleep.menuWakeHint')}</span></div>}
+      <ForkSdkRow s={s} onClose={onClose} />{/* P360: Claude Code 세션의 대화를 SDK(API 크레딧)로 갈라 연다 */}
       {s.kind !== 'shell' && <div className="mt-menu-row"><button className="mt-btn small" data-action="loop-new" onClick={() => { onClose(); openDialog({ kind: 'loop', target: { session: s.sessionId } }); }}>{t('node.loopNew')}</button><span className="dim">{t('node.loopNewHint')}</span></div>}
       {/* P68: 리드의 하위 세션(워커)을 워크트리가 달라도 한 덩어리로 */}
       {s.branch && s.branch.children >= 2 && <div className="mt-menu-row"><button className="mt-btn small" data-action="dock-workers" onClick={() => api.call('dock.workers', { lead: s.sessionId }).then((r) => { onClose(); toast(t('dockWorkers.done', { n: (r.workers || []).length })); }, (e) => toast(errText(e), 'error'))}>{t('dockWorkers.action')}</button><span className="dim">{t('dockWorkers.hint', { n: s.branch.children })}</span></div>}

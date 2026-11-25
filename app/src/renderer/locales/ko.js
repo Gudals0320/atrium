@@ -3388,6 +3388,31 @@ export default {
       reopen: 'SDK 세션은 아직 다시 열 수 없습니다. 같은 폴더에서 런처 "Claude Code SDK"로 새 세션을 띄우세요.',
     },
   },
+  // P360: 되살리기(다시 열기)와 갈라 열기(SDK, API 크레딧)
+  revive: {
+    done: '@{name} 세션을 다시 열고 기존 대화를 이어갑니다.',
+    doneFresh: '@{name} 세션을 새 대화로 다시 열었습니다(대화 기록을 찾지 못했습니다).',
+    doneArchived: '@{name} 세션을 보관함에서 꺼내 다시 열고 기존 대화를 이어갑니다.',
+    reopenTitle: '닫힌 세션을 보드에 다시 열고 기존 대화를 이어갑니다(이름·위치·연결을 되찾음).',
+    reopenArchivedTitle: '보관함에서 꺼내고 보드에서 기존 대화를 이어 여는 것을 한 번에 합니다.',
+    restoreTitle: '복원: 세션을 시작하지 않고 닫힌 세션 목록으로 되돌립니다(시작하려면 다시 열기).',
+    forkSdk: 'SDK로 갈라 열기(API 크레딧)',
+    forkShort: 'SDK로 갈라 열기',
+    forkHint: '이 대화를 이어받는 새 SDK 세션을 엽니다. API 크레딧으로 과금되고 이 세션은 그대로입니다.',
+    forkTitle: '이 대화를 이어받는 새 SDK 세션(claude -p, 요금제 월 API 크레딧 과금)을 곁에 엽니다. 원래 세션은 건드리지 않습니다. 첫 턴에 대화 전체를 캐시에 새로 씁니다.',
+    forking: '여는 중…',
+    forked: '@{from} 세션을 @{name}(SDK, API 크레딧)으로 갈라 열었습니다. 대화 크기는 약 {tokens} 토큰이고 첫 턴에 캐시에 새로 씁니다.',
+    forkFail: '갈라 열지 못했습니다: {error}',
+    noKey: 'API 키 없음: 설정 › 런처에서 넣으세요',
+    noKeyTitle: 'API 키가 없어 SDK 세션을 열 수 없습니다. 먼저 설정 › 런처에서 키를 넣으세요.',
+    forkLine: '갈라 옴',
+    err: {
+      alive: '@{name} 세션은 실행 중이라 되살릴 것이 없습니다.',
+      notClaude: '갈라 열기는 Claude Code 세션만 됩니다(@{name}는 아님).',
+      noTranscript: '@{name} 세션에 아직 대화가 없어 갈라 열 수 없습니다.',
+      launcher: '갈라 열기는 Claude Code 런처(대화형 또는 SDK)로만 됩니다: {launcher}',
+    },
+  },
   // P361: API 크레딧 장부(요금제 월 크레딧, 프로모션 크레딧, 구매 잔액)
   apiCredits: {
     head: 'API 크레딧',

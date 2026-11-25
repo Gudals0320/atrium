@@ -343,7 +343,7 @@ test('P295 안내: 판·하네스 안내문 한 줄에 --no-wait, 스킬 본문,
   }
   const sk = boardSkill();
   assert.match(sk, /--no-wait/); assert.match(sk, /실려 온다/);
-  assert.equal(CONTRACT_VERSION, 10); // P346: docs init·on·off로 10. // P296으로 9
+  assert.equal(CONTRACT_VERSION, 11); // P360: revive·fork로 11. // P346: docs init·on·off로 10. // P296으로 9
   assert.ok(VERBS.find((v) => v.name === 'ask').args.includes('[--no-wait | --wait]'));
   assert.ok(VERBS.find((v) => v.name === 'todo').args.includes('[--no-wait | --wait]'));
 });

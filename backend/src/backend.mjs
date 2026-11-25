@@ -41,6 +41,7 @@ import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.m
 import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금). P363: SDK 세션이 쓴다
 import { CreditBook } from './credit-book.mjs'; // P361: API 크레딧 장부
 import { SdkHost, isSdk, SDK_IDLE_MS, SDK_BILLING } from './sdk-session.mjs'; // P363: SDK 세션 종류(claude -p stream-json)
+import { forkMark, reviveHandlers } from './revive.mjs'; // P360: 되살리기·갈라 열기
 import { probeCodex, probeClaude, probeBalance, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
 import { workspaceNames, workspaceCounts, elsewhereOf, pathKey } from './workspaces.mjs';
@@ -660,6 +661,7 @@ export class Backend {
       flavor: s.flavor || null, // P25: 띄운 방법(런처의 아이콘). 창은 종류 대신 이것으로 로고와 이름을 보인다
       billing: s.billing || null, // P363: 'sdk'면 판이 claude -p로 돌리고 판 중계기를 거쳐 API 키(월 API 크레딧)로 과금(카드·맵·휴대폰의 SDK 표시)
       sdk: isSdk(s) ? this.sdk.view(s) : null, // P363: 프로세스가 도는가 { alive, pid, startedAt, resume }
+      forkFrom: rt.forkFrom ? { sessionId: rt.forkFrom.sessionId || null, name: rt.forkFrom.name || null, convId: rt.forkFrom.convId || null } : null, // P360: 갈라 온 대화(창의 옅은 "갈라 옴" 계보 선)
       // P92: 도는 Claude Code 뒤 일. P164: Stop hook 목록과 claude 아래 도구 명령 프로세스를 합친 것 { n, kinds, items: [{ kind, label }], at, via } | null(세션 맵 표시)
       background: this.sleeper ? this.sleeper.bgView(s) : (s.kind || 'claude') === 'claude' && s.paneId && !rt.sleep ? backgroundList(rt.bg, null) : null,
 
@@ -1192,7 +1194,7 @@ export class Backend {
     }
     const withPlugin = (s.resumeArgv || []).includes('--plugin-dir');
     if (launch && withPlugin && this.briefNotices) try { this.briefNotices.stamp(s, 'relaunch'); } catch (e) { this.log(`brief stamp failed ${s.name}: ${e.message}`); } // P317: 이어 가기·깨우기는 지금 안내문을 다시 넣는다(알리지 않고 판을 올린다)
-    return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(withPlugin ? this.pluginFor(s) : {}) };
+    return { sessionId: s.sessionId, settingsPath: s.settingsPath, permissionMode: s.permissionMode, model: s.model, effort: s.effort, extraArgs: s.extraArgs || [], startCommand: s.startCommand || '', ...(s.rt && s.rt.forkFrom && s.rt.forkFrom.convId ? { forkFrom: s.rt.forkFrom.convId } : {}), ...(withPlugin ? this.pluginFor(s) : {}) }; // P360: 갈라 연 세션은 대화 기록이 생기기 전이면 다시 갈라 연다(wakeArgs fresh → buildStartArgs)
   }
   // P296: 자체 오케스트레이션 세션의 판 안내문(그 세션의 지금 권한 범위: sub | free). Claude Code는 줄마다, 하네스는 한 줄. → { file, text } | null
   orchPrompt(s, scope = null) {
@@ -1780,7 +1782,7 @@ export class Backend {
         if (env) extra.env = { ...env, ...(extra.env || {}) }; // P33: 호출자의 환경 변수. 판의 값이 이긴다
         settingsPath = writeSessionSettings({ file: path.join(this.cfg.sessionsDir, `${sessionId}.json`), hookUrl: this.hookUrl, token: hookToken, sessionId, timeoutSec: this.cfg.hookTimeoutSec, ...extra });
         trust = predictTrust(cwd, this.cfg.claudeJson);
-        const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...this.pluginFor(orch ? { sessionId, name, kind, orch } : null, orchScope) }; // P296
+        const launch = { sessionId, settingsPath, permissionMode, model, effort, extraArgs, worktree: p.worktree || null, ...(p.forkFrom ? { forkFrom: p.forkFrom.convId } : {}), ...this.pluginFor(orch ? { sessionId, name, kind, orch } : null, orchScope) }; // P296. P360: 갈라 열기(--resume <원래> --fork-session --session-id <새 ID>)
         args = buildStartArgs(launch);
         resumeArgv = buildResumeArgv({ claudeCommand: this.cfg.claudeCommand, startCommand, ...launch });
       }
@@ -1790,6 +1792,7 @@ export class Backend {
       this.ensureWorkspace(ws, `spawn ${name}`);
       const rt = newRuntime({ trustPredicted: !!trust.needsTrust, kind, hooked: claude });
       if (shell) rt.phase = 'running';
+      if (claude && p.forkFrom) rt.forkFrom = forkMark(p.forkFrom); // P360: 갈라 온 대화(계보 선, 대화 기록이 생기기 전 다시 띄울 때)
       let s;
       const hw = await this.withNewPane(() => this.adapter.createWorkspace({ cwd, label: name }), (r) => {
         s = { sessionId, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model, effort, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind, origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor, extraArgs, startCommand, harnessPlan, orch }; // P296: orch
@@ -1806,7 +1809,7 @@ export class Backend {
       // P78: claude -w가 워크트리를 만드는 대로 상자를 세운다(10초 주기를 기다리지 않는다)
       if (p.branch && p.branch.worktree && this.worktrees) for (const ms of [3000, 8000]) { const t = setTimeout(() => this.worktrees.kick('worktree spawn'), ms); if (t.unref) t.unref(); }
       settleRegions(this, 'spawn');
-      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(orch ? { orch } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.store.addEvent(sessionId, 'spawn', { name, kind, cwd: slash(cwd), workspace: ws.key, trust, args, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(env ? { env } : {}), ...(extraArgs.length ? { extraArgs } : {}), ...(startCommand ? { startCommand } : {}), ...(harnessPlan ? { harness: harnessPlan } : {}), ...(orch ? { orch } : {}), ...(flavor || command ? { flavor, command: command || null } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}), ...(rt.forkFrom ? { forkFrom: rt.forkFrom } : {}) });
       await this.adapter.refreshSubscription();
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
@@ -1864,6 +1867,7 @@ export class Backend {
       this.ensureWorkspace(ws, `spawn ${name}`);
       const rt = newRuntime({ kind: 'claude', hooked: true });
       rt.phase = 'running'; rt.term.present = true; rt.term.status = 'idle'; rt.term.launchPending = false;
+      if (p.forkFrom) rt.forkFrom = forkMark(p.forkFrom); // P360: 첫 프로세스가 원래 대화를 갈라 연다(SdkHost.planOf)
       const s = { sessionId, name, cwd, paneId: null, termWorkspaceId: null, agentName: name, model, effort, permissionMode: 'bypassPermissions', settingsPath, hookToken, resumeArgv: null, resumeVerified: false, createdAt: Date.now(), closedAt: null, seenAt: null, touchedAt: Date.now(), rt, lastState: null, kind: 'claude', origin: 'board', parentSessionId: p.parentSessionId || null, workspaceKey: ws.key, flavor: plan.flavor || null, extraArgs, startCommand: '', harnessPlan: null, orch: null, billing: SDK_BILLING, sdkWorktree: p.worktree || null };
       this.store.insertSession({ ...s, runtime: rt });
       this.sessions.set(sessionId, s);
@@ -1872,7 +1876,7 @@ export class Backend {
       const area = this.worktrees ? this.worktrees.areaOf(ws.key, cwd) : '';
       const place = placeSpawn(this, s, { branch: p.branch || null, worktree: p.worktree || null, area });
       settleRegions(this, 'spawn');
-      this.store.addEvent(sessionId, 'spawn', { name, kind: 'claude', sdk: true, cwd: slash(cwd), workspace: ws.key, ...(plan.launcher ? { launcher: plan.launcher } : {}), model, effort, ...(extraArgs.length ? { extraArgs } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
+      this.store.addEvent(sessionId, 'spawn', { name, kind: 'claude', sdk: true, cwd: slash(cwd), workspace: ws.key, ...(plan.launcher ? { launcher: plan.launcher } : {}), ...(rt.forkFrom ? { forkFrom: rt.forkFrom } : {}), model, effort, ...(extraArgs.length ? { extraArgs } : {}), ...(p.branch ? { parent: p.parentSessionId, worktree: p.worktree || null, place: place ? 'tree' : 'slot' } : {}) });
       this.api.broadcast('session.created', { sessionId, name, workspaceKey: ws.key });
       this.broadcastSession(s, { cause: 'spawn' });
       this.probeGit(s, cwd);
@@ -2567,6 +2571,7 @@ export class Backend {
       'relation.set': (p) => this.branch.relationSetUser(p), // P156: 일 관계(사람, 출처 user). { a, b, relation: sub|peer|none|auto }
       'relation.list': () => this.branch.relationList(), // P156
       'session.reopen': (p) => reopenSession(this, p), // P125: 사람이 닫은(끝난) 세션은 같은 자리에서, 닫힌 세션(J2)은 recall.reopen으로
+      ...reviveHandlers(this), // P360: session.revive | session.fork | session.forkInfo
       'link.log': (p) => { const l = this.store.getLink(p.link); if (!l) throw apiError('not_found', `연결을 찾을 수 없습니다: ${p.link}`); return { link: this.linkView(l), events: this.store.linkEvents(l.linkId, p.limit || 200) }; },
       'agent.kinds': (p = {}) => this.adapter.agentKinds({ fresh: !!(p && p.fresh) }), // P205: 창이 틀을 열 때 fresh(다시 찾기)
       // 자원(D1)
