@@ -132,7 +132,7 @@ test('P204 안내 글: 동료 문장이 든 모든 곳에 "끝나면 결과를 �
   }
   for (const k of ['skill', 'peerNotice', 'relHeader', 'relLine', 'relationHelp']) assert.ok(texts[k].includes(PEER_RULE), `${k}는 한 원본(PEER_RULE)을 쓴다`);
   assert.ok(BOARD_SYSTEM_PROMPT.includes(PEER_RULE_SHORT), '판 안내문은 짧은 원본');
-  assert.ok(BOARD_SYSTEM_PROMPT.length <= 1857, `판 안내문이 상한(P364 막히면 atrium know 한 마디 1857자, P360 되살리기·갈라 열기 한 마디 1772자, P334 일 기록 한 마디 1704자, P295 결정 카드 줄에 --no-wait 몇 낱말 1626자, P292 결정 카드 줄에 atrium todo 몇 낱말 1598자, P286 결정 카드 줄을 분명하게 1559자, P284 결정 카드 한 줄로 1533자, P248 1419자, P180 1323자에 대기열·스티어링 한 줄)을 넘지 않는다(${BOARD_SYSTEM_PROMPT.length}자)`);
+  assert.ok(BOARD_SYSTEM_PROMPT.length <= 1925, `판 안내문이 상한(P368 맡기기 전 atrium know로 힌트 찾기 한 마디 1925자, P364 막히면 atrium know 한 마디 1857자, P360 되살리기·갈라 열기 한 마디 1772자, P334 일 기록 한 마디 1704자, P295 결정 카드 줄에 --no-wait 몇 낱말 1626자, P292 결정 카드 줄에 atrium todo 몇 낱말 1598자, P286 결정 카드 줄을 분명하게 1559자, P284 결정 카드 한 줄로 1533자, P248 1419자, P180 1323자에 대기열·스티어링 한 줄)을 넘지 않는다(${BOARD_SYSTEM_PROMPT.length}자)`);
   assert.doesNotMatch(HARNESS_PROMPT, OLD_SHARE);
   // 관계 줄은 한 줄이라 카드는 아래 할 일만 지시로 보인다
   assert.equal(promptTask(`${relationHeader({ relation: 'peer', parent: 'lead' })}\n\n일`), '일');
