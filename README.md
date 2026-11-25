@@ -80,7 +80,7 @@ atrium done ok "Added ThemeToggle and unit tests (all passing)"
 ```
 
 - **Structured delegation.** Workers close their task with `atrium done ok|failed "<report>"`, delivering the result back to their parent once — no polling loops. Peers stay independent and share updates via `atrium news` and `atrium log`.
-- **Auto-Merger (`Settings › Merger`).** When a worktree worker finishes with `atrium done ok`, Atrium can sleep the worker and hand its branch to a dedicated, low-context **merger** session that merges cleanly into your target branch and reports back only if a failure or decision needs the parent. Configure per project (`On`, `Ask`, or `Off`, plus `.atrium/merge.json`).
+- **Auto-Merger (`Settings › Bots › Merge bot`).** When a worktree worker finishes with `atrium done ok`, Atrium can sleep the worker and hand its branch to a dedicated, low-context **merger** session that merges cleanly into your target branch and reports back only if a failure or decision needs the parent. Configure per project (`On`, `Ask`, or `Off`, plus `.atrium/merge.json`).
 - **Board doc checks (`atrium docs`).** Optional, non-blocking checks that keep project docs within size and structure budgets on each turn.
 
 ### Remote & mobile over Tailscale
