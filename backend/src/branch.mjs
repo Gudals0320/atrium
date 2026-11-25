@@ -605,8 +605,9 @@ export class Branch {
     const seen = new Set();
     for (const k of kidIds) {
       const bid = tree.blockOf.get(k);
-      if (!bid || seen.has(bid)) continue;
-      seen.add(bid);
+      const one = bid === pid ? k : bid; // P362: 부모 상자 안의 형제는 노드마다(전에는 상자 블록 하나로 보아 첫 형제만 세었고, 새 하위가 둘째 형제 위에 섰다)
+      if (!bid || seen.has(one)) continue;
+      seen.add(one);
       const r = bid === pid ? all.find((i) => i.kind === 'node' && i.id === k) : bandOf(tree, bid);
       if (r && r.x >= pRect.x + pRect.w - 1) bands.push(r);
     }
