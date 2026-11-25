@@ -9,7 +9,7 @@ import { applySync, applyRow, applyGone } from './lib/mobile.js';
 import { perfLog } from './perf.js';
 import { teleSendFail } from './lib/phone-telemetry.js'; // P352: 보내기·키 보내기 실패는 상황과 함께(API 실패와 화면 오류는 api.js tap과 window가 저절로 남긴다)
 
-const state = { loaded: false, rows: new Map(), rev: null, boot: null, cards: [], workspaces: [], current: null, me: null, deliveries: new Map(), toasts: [], fails: [], v: 0 };
+const state = { loaded: false, rows: new Map(), rev: null, boot: null, cards: [], workspaces: [], current: null, me: null, deliveries: new Map(), toasts: [], fails: [], credits: null, v: 0 }; // P361: credits = API 크레딧 장부(줄인 값)
 const subs = new Set();
 const changed = () => { state.v++; for (const fn of [...subs]) fn(); };
 export const getMobile = () => state;
@@ -41,6 +41,7 @@ function putSync(r) {
   if (r.workspaces) state.workspaces = r.workspaces;
   if (r.current !== undefined) state.current = r.current;
   if (r.me) state.me = r.me;
+  if (r.credits !== undefined) state.credits = r.credits; // P361
   if (r.settings && r.settings.language) setLanguage(r.settings.language);
   state.loaded = true;
   changed();
@@ -54,6 +55,7 @@ export function startMobileStore() {
   api.on('phone.gone', (ev) => { const n = applyGone(state, ev); state.rows = n.rows; state.rev = n.rev; changed(); });
   api.on('phone.cards', (v) => { state.cards = (v && v.cards) || []; changed(); });
   api.on('phone.settings', (v) => { if (v && v.language) setLanguage(v.language); });
+  api.on('phone.credits', (v) => { state.credits = (v && v.credits) || null; changed(); }); // P361
   api.on('delivery', (d) => { if (!d || !d.deliveryId) return; const m = new Map(state.deliveries); m.set(d.deliveryId, { ...(m.get(d.deliveryId) || {}), ...d }); state.deliveries = m; changed(); });
   api.on('$status', () => changed());
 }

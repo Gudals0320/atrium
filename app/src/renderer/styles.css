@@ -3239,3 +3239,52 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-sdk-proc { flex: 1 1 auto; font-size: 11px; }
 .mt-sdk-proc.on { color: #7fd99a; }
 .mt-ln-unusable { margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px; color: #ff9a9a; border: 1px solid rgba(255, 90, 90, 0.45); }
+/* ---------- P361: API 크레딧 장부(사용량 팝업 칸, 설정, SDK 금액) ---------- */
+.mt-credits { gap: 6px; }
+.mt-cr-basis { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--panel-3); color: var(--dim); white-space: nowrap; }
+.mt-cr-basis.official { color: var(--ok); }
+.mt-cr-basis.mixed { color: var(--ok); }
+.mt-cr-rule { margin-left: auto; cursor: help; font-size: 12px; }
+.mt-cr-totals { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 12.5px; }
+.mt-cr-usable b { font-size: 15px; }
+.mt-cr-purchased.due { color: var(--bad); font-weight: 600; }
+.mt-cr-grant { display: grid; gap: 3px; padding: 5px 0 2px; border-top: 1px solid var(--panel-line-2); }
+.mt-cr-grant-top { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; min-width: 0; }
+.mt-cr-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-cr-kind { flex: none; font-size: 10.5px; padding: 0 5px; border-radius: 5px; background: var(--panel-3); color: var(--dim); }
+.mt-cr-kind.k-plan { color: var(--accent, var(--ok)); }
+.mt-cr-amt { margin-left: auto; flex: none; }
+.mt-cr-bar { display: block; height: 6px; border-radius: 3px; background: var(--panel-3); overflow: hidden; }
+.mt-cr-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--ok); }
+.mt-cr-grant.lv-warn .mt-cr-bar > span { background: var(--warn); }
+.mt-cr-grant.lv-gone .mt-cr-bar > span { background: var(--dim); }
+.mt-cr-grant.expired { color: var(--dim); }
+.mt-cr-grant-sub { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11.5px; }
+.mt-cr-exp.soon { color: var(--warn); font-weight: 600; }
+.mt-cr-targets { cursor: help; }
+.mt-cr-next { font-size: 12px; }
+.mt-cr-warn { font-size: 12px; color: var(--bad); }
+.mt-cr-spend { display: flex; gap: 12px; font-size: 12px; }
+.mt-cr-cost { display: inline-flex; align-items: center; height: 1.45em; padding: 0 .4em; margin-left: .35em; border-radius: .35em; font-family: var(--font-mono); font-size: .78em; color: var(--dim); border: 1px solid var(--panel-line-2); white-space: nowrap; flex: none; vertical-align: middle; }
+.mt-badge.mt-cr-cost.node { margin-left: 0; }
+.mt-cr-cost.map { margin-left: .4em; font-size: .85em; }
+.mt-cr-panel .mt-apikey-head .mt-cr-basis { margin-left: auto; }
+.mt-cr-paste { width: 100%; min-height: 72px; padding: 6px 8px; border: 1px solid var(--panel-line-2); border-radius: 7px; background: transparent; color: var(--text); font: inherit; font-size: 12px; resize: vertical; box-sizing: border-box; }
+.mt-cr-preview { display: grid; gap: 4px; padding: 8px; border-radius: 8px; background: var(--panel-2); font-size: 12px; }
+.mt-cr-preview-head { font-weight: 650; }
+.mt-cr-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.mt-cr-table th, .mt-cr-table td { text-align: left; padding: 3px 6px 3px 0; vertical-align: top; border-top: 1px solid var(--panel-line-2); }
+.mt-cr-table th { color: var(--dim); font-weight: 600; border-top: 0; }
+.mt-cr-ledger { display: grid; gap: 4px; }
+.mt-cr-ledger-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 12px; }
+.mt-cr-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px; border-radius: 8px; background: var(--panel-2); }
+.mt-cr-in { height: 26px; padding: 0 6px; border: 1px solid var(--panel-line-2); border-radius: 6px; background: transparent; color: var(--text); font: inherit; font-size: 12px; }
+.mt-cr-in.name { flex: 1 1 160px; }
+.mt-cr-in.money { width: 84px; }
+.mt-cr-in.day { width: 64px; }
+.mt-cr-in.targets { flex: 1 1 180px; }
+.mt-cr-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.mt-cr-sub-title { font-size: 12px; font-weight: 650; }
+.mt-cr-admin { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.mt-cr-admin .mt-apikey-note { flex-basis: 100%; }
+.mt-dc-name.board { cursor: default; }
