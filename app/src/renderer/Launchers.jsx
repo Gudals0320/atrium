@@ -5,7 +5,7 @@
 // P97: 틀 맨 위에 명령줄 붙여 넣기 칸(PasteLine). 실행 명령 칸(예: 래퍼 명령)이 있고, 추가 인자는 고급 밖에 둔다. "레일에 고정"은 만들기 단추 옆(기본 켜짐).
 // P115: 실행 명령은 모든 에이전트 하네스. env에 평문 인증 값이 든 런처는 목록 위에 알린다(판은 옮기지 않는다). P255: 연결 칸은 걷어 냈다.
 // P28 원칙: 최소 창(900×600)에서도 스크롤 없이 들어간다. 목록이 길면 목록 칸만 넘긴다.
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, loadLaunchers, getState } from './store.js';
 import { KindIcon } from './SessionNode.jsx';
@@ -14,8 +14,7 @@ import { useT, errText } from './lib/i18n.js';
 import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, previewLine, envToText, secretNames, harnessFields, harnessModels, harnessModelLabels, modelChoices, blankLauncher, harnessName, harnessOptions, iconName, recognizedChips, fillFromParse, agySandboxNote, defaultPermission, withHarness, PERMISSION_MODES, harnessEfforts, COMMAND_FAMILIES, autoFamily, commandFamily, contractView, checkRows } from './lib/launchers.js'; // P299: harnessEfforts. P309: 하네스 계열. P330: 계약 안내·점검
 import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue, orchHarness } from './lib/orch.js'; // P296: 자체 오케스트레이션. P309: orchHarness
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
-import { ApiKeyPanel, SdkTag } from './AuthRelay.jsx'; // P359: API 키 칸. P363: SDK 표시
-import { ApiCreditsPanel } from './ApiCredits.jsx'; // P361
+import { ApiKeyPanel, SdkTag } from './AuthRelay.jsx'; // P359: 키 칸(P366: SDK 키, SDK 런처 바로 아래). P363: SDK 표시
 import { isSdkLauncher, isUnusableLauncher } from './lib/auth-relay.js';
 
 const MODES = PERMISSION_MODES;
@@ -35,16 +34,18 @@ function LauncherList({ data, onEdit }) {
   const favs = data.favorites || [];
   const [sure, setSure] = useState(null); // 지우기는 두 번 누른다(한 번 누르면 '지울까요?'로 바뀐다)
   const move = (id, d) => { const ids = moveFavorite(favs, id, d); if (ids) call('launcher.order', { ids }, t); };
+  const sdkId = (rows.find((l) => isSdkLauncher(l)) || {}).id || null; // P366: SDK 키 칸은 첫 SDK 런처 줄 바로 아래(없으면 목록 위)
   const del = async (l) => { if (sure !== l.id) { setSure(l.id); return; } setSure(null); await call('launcher.delete', { id: l.id }, t, t('launchers.deleted', { name: l.name })); };
   return (
     <div className="mt-ln" data-role="launchers-list">
       <p className="mt-set-note">{t('launchers.note')}</p>
+      {sdkId ? null : <ApiKeyPanel />}
       <div className="mt-ln-rows">
         {(data.notices || []).map((n) => <div key={n.id} className="mt-ln-secret warn" data-role="launcher-plain-auth" data-launcher={n.id}>{t('p255.plainAuthNotice', { name: n.name, names: n.env.join(', ') })}</div>)}
         {rows.map((l) => {
           const fi = favs.indexOf(l.id);
-          return (
-            <div key={l.id} className={`mt-ln-row${l.favorite ? ' fav' : ''}`} data-role="launcher-row" data-launcher={l.id} data-name={l.name}>
+          return (<Fragment key={l.id}>
+            <div className={`mt-ln-row${l.favorite ? ' fav' : ''}`} data-role="launcher-row" data-launcher={l.id} data-name={l.name}>
               <button type="button" className={`mt-ln-star${l.favorite ? ' on' : ''}`} data-action="launcher-favorite" title={l.favorite ? t('launchers.unfavorite') : t('launchers.favorite')} aria-pressed={l.favorite} onClick={() => call('launcher.favorite', { id: l.id, favorite: !l.favorite }, t)}>{l.favorite ? '★' : '☆'}</button>
               <LauncherIcon l={l} />
               <span className="mt-ln-name" title={l.name}>{l.name}{launcherOrchestrates(data.harnesses, l) && <span className="mt-orch-tag" data-role="launcher-orch-tag" title={t('orch.fieldNote')}>{t('orch.tag')}</span>}{contractView(l.preview && l.preview.contract).flag && <span className="mt-ln-cflag" data-role="launcher-contract-flag" title={t('launcherContract.rowFlag')}>!</span>}{isSdkLauncher(l) ? <SdkTag /> : isUnusableLauncher(l) ? <span className="mt-ln-unusable" data-role="launcher-unusable" title={t('sdkSession.launcherUnusableTitle')}>{t('sdkSession.launcherUnusable')}</span> : <UsageLeft l={l} />}</span>
@@ -56,6 +57,8 @@ function LauncherList({ data, onEdit }) {
                 <button type="button" className={`mt-btn small ${sure === l.id ? 'danger' : 'ghost'}`} data-action="launcher-delete" title={t('launchers.delete')} onBlur={() => sure === l.id && setSure(null)} onClick={() => del(l)}>{sure === l.id ? t('launchers.deleteSure') : <Icon name="x" />}</button>
               </span>
             </div>
+            {l.id === sdkId ? <ApiKeyPanel under /> : null}
+          </Fragment>
           );
         })}
       </div>
@@ -279,5 +282,5 @@ export function LaunchersTab({ startNew = false }) {
   const data = useStore((st) => st.launchers);
   const [editing, setEditing] = useState(() => (startNew ? blankLauncher('claude') : null));
   if (!data) return <div className="dim">{t('settings.loading')}</div>;
-  return editing ? <LauncherForm key={editing.id || 'new'} init={editing} harnesses={data.harnesses} focusPaste={startNew} onDone={() => setEditing(null)} /> : <><ApiKeyPanel /><ApiCreditsPanel /><LauncherList data={data} onEdit={setEditing} /></>; // P361: API 크레딧 장부
+  return editing ? <LauncherForm key={editing.id || 'new'} init={editing} harnesses={data.harnesses} focusPaste={startNew} onDone={() => setEditing(null)} /> : <LauncherList data={data} onEdit={setEditing} />;
 }

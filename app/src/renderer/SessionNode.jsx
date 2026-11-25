@@ -28,7 +28,7 @@ import { ChatView } from './ChatView.jsx';
 import { SdkFace } from './SdkView.jsx'; // P363: SDK 세션(터미널 없음)의 가까이 얼굴
 import { SdkTag } from './AuthRelay.jsx';
 import { ForkSdkRow } from './Revive.jsx'; // P360: SDK로 갈라 열기
-import { SdkCost } from './ApiCredits.jsx'; // P361
+import { SdkCost } from './SdkCost.jsx'; // P361·P366: SDK 세션 금액(추정)
 import { NodeBoundary } from './ErrorBoundary.jsx';
 import { InterruptedBanner } from './SessionExtras.jsx';
 import { enterSession, markInteracted } from './touch.js';

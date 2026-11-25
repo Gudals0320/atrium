@@ -12,7 +12,6 @@ import { tailLines } from './screen.mjs';
 import { readMessages } from './transcript.mjs';
 import { transcriptPathFor } from './launch.mjs';
 import { readGroups } from './ws-groups.mjs'; // P356: 맵 탭의 폴더(가상 그룹)
-import { slimView } from './api-credits.mjs'; // P361: 휴대폰 홈의 API 크레딧 칸
 
 export const LINE_MAX = 120;
 export const GONE_MAX = 500;
@@ -162,7 +161,6 @@ export function phoneRoute(feed, b, event, data) {
     case 'decision.changed': { const v = { cards: cardsOf(data && data.cards) }; return () => ['phone.cards', v]; }
     case 'delivery': { if (!data) return null; const v = { deliveryId: data.deliveryId, sessionId: data.sessionId, status: data.status, reason: data.reason || null, text: data.text != null ? clip(String(data.text), 120) : undefined, seq: data.seq ?? null, steerWhy: data.steerWhy || null }; return (c) => (c.phoneOpen === data.sessionId ? ['delivery', v] : null); }
     case 'settings.updated': { const v = { language: data && data.language }; return () => ['phone.settings', v]; }
-    case 'usage.updated': { if (!data || !('apiCredits' in data)) return null; const v = { credits: slimView(data.apiCredits) }; return () => ['phone.credits', v]; } // P361
     case 'update.state': case 'update.restart': case 'device.updated': case 'terminal': return () => [event, data];
     default: return null;
   }
@@ -184,8 +182,7 @@ export function phoneHandlers(b) {
       feed.refresh([...b.sessions.values()].map((s) => b.summary(s)));
       const d = feed.since(p.since, p.boot);
       const st = b.features && b.features.settings ? b.features.settings.get() : {};
-      let credits = null; try { credits = b.credits ? slimView(b.credits.view()) : null; } catch {} // P361
-      return { phone: true, ...d, ...view(), settings: { language: st.language || null }, me: (c && c.clientId) || null, current: b.currentWorkspace(), credits };
+      return { phone: true, ...d, ...view(), settings: { language: st.language || null }, me: (c && c.clientId) || null, current: b.currentWorkspace() };
     },
     // P356: 맵 탭의 구조(열 때와 세션 구조가 바뀔 때). key가 같으면 same만
     'phone.map': (p) => {

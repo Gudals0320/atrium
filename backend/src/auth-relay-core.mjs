@@ -54,7 +54,7 @@ export class UsageTap {
     if (!l.includes('_tokens')) return;
     const take = (name, field) => { const m = new RegExp(`"${name}"\\s*:\\s*(\\d+)`).exec(l); if (m) this.u[field] = Math.max(this.u[field], Number(m[1])); };
     take('input_tokens', 'in'); take('output_tokens', 'out'); take('cache_creation_input_tokens', 'cacheW'); take('cache_read_input_tokens', 'cacheR');
-    if (l.includes('ephemeral_1h')) { this.u.cacheW1h = this.u.cacheW1h || 0; take('ephemeral_1h_input_tokens', 'cacheW1h'); } // P361: 1시간 캐시 쓰기(값이 다르다)
+    if (l.includes('ephemeral_1h')) { this.u.cacheW1h = this.u.cacheW1h || 0; take('ephemeral_1h_input_tokens', 'cacheW1h'); } // P361: 1시간 캐시 쓰기(값이 다르다, sdk-cost.mjs 가격표)
     this.seen++;
   }
   result() { const { cacheW1h, ...u } = this.u; return { ...u, ...(cacheW1h ? { cacheW1h } : {}), ...(this.errType ? { errType: this.errType } : {}) }; }
@@ -73,24 +73,3 @@ export function entrypointOf(ua) {
 export const KEY_RE = /^[\x21-\x7e]{20,400}$/;
 export const keyOk = (k) => typeof k === 'string' && KEY_RE.test(k.trim());
 
-// P361: 공식 비용 API(Usage and Cost Analytics API, beta) 요청 경로. 1시간 칸, 시각 차례, 한 쪽 1000줄
-export const COST_PATH = '/v1/organizations/analytics/cost';
-export const COST_BETA = 'analytics-usage-cost-2026-08-24';
-export const COST_VERSION = '2026-10-21';
-export function costQuery({ from, to, page = null }) {
-  const iso = (t) => new Date(t).toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const q = new URLSearchParams({ starting_at: iso(from), ending_at: iso(to), time_bucket_width: '1h', order_by: 'time', order: 'asc', limit: '1000' });
-  if (page) q.set('page', page);
-  return `${COST_PATH}?${q}`;
-}
-// 비용 답 한 쪽 → { rows: [{ s, e, usd }], refreshedAt, next }. amount는 센트 글(소수 여섯 자리)
-export function costRowsOf(j) {
-  const rows = [];
-  for (const r of (j && Array.isArray(j.data) ? j.data : [])) {
-    const s = Date.parse(r.starting_at), e = Date.parse(r.ending_at);
-    const c = r.cost && Number(r.cost.amount);
-    if (Number.isFinite(s) && Number.isFinite(e) && Number.isFinite(c)) rows.push({ s, e, usd: c / 100 });
-  }
-  const ref = j && j.data_refreshed_at ? Date.parse(j.data_refreshed_at) : NaN;
-  return { rows, refreshedAt: Number.isFinite(ref) ? ref : null, next: j && j.has_more && typeof j.next_page === 'string' ? j.next_page : null };
-}

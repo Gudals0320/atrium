@@ -9,7 +9,6 @@ import { extraRows, balanceOf, sourceKey, probingOf } from './lib/usage.js'; // 
 import { PROVIDERS, PROVIDER_NAME, pillOf, pillLine, repPart, loadRep, saveRep, shortKey, shownWindows, livePct, levelOf, spanOf, windowKey, creditOf, windowLabel, remainingOf, providerOfLauncher, alertText } from './lib/usage.js';
 import { KINDS } from './lib/kinds.js';
 import { creditMode, creditPillText } from './lib/p255.js'; // P255: Codex 한도를 다 써서 크레딧을 쓰는 중이면 퍼센트 대신 남은 크레딧
-import { CreditsBlock } from './ApiCredits.jsx'; // P361: API 크레딧 장부
 
 function useNow(ms = 30000) { const [n, set] = useState(Date.now()); useEffect(() => { const id = setInterval(() => set(Date.now()), ms); return () => clearInterval(id); }, [ms]); return n; }
 const span = (t, ms) => { const s = spanOf(ms); return t(s.key, s.vars); };
@@ -139,7 +138,6 @@ export function UsagePill({ compact = false }) {
           {compact && <div className="mt-usage-pickhint dim" data-role="usage-pick-hint">{t('phoneHead.repHint')}</div>}
           {PROVIDERS.map((k) => <ProviderBlock key={k} k={k} e={v.providers ? v.providers[k] : null} now={now} pick={compact ? pickRep : null} rep={compact ? rep : null} probing={probingOf(v, k)} />)}
           {(() => { const rows = extraRows(v); return rows.length ? <div className="mt-usage-extras" data-role="usage-extras"><div className="mt-usage-extras-head dim">{t('usageProbe.extrasHead')}</div>{rows.map((r) => <ExtraBlock key={r.provider} row={r} now={now} probing={probingOf(v, r.provider)} />)}</div> : null; })()}
-          <CreditsBlock now={now} />{/* P361: API 크레딧 장부 */}
           <div className="mt-usage-foot dim" data-role="usage-alerts">{v.alertsOn === false ? t('usage.alertsOff') : t('usage.alertsOn')}</div>
         </div>
       )}
