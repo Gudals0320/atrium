@@ -47,7 +47,7 @@ import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
-import { canvasHandlers, slotFor, placeSpawn, markPinned, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes } from './canvas-ops.mjs';
+import { canvasHandlers, slotFor, placeSpawn, markPinned, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes, shiftKidsRight, settleOverlaps, overlapKeys } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules, resolveBotSettings, EFFORTS } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
@@ -2498,6 +2498,8 @@ export class Backend {
       'board.setNode': (p, c) => {
         const s = this.resolve(p.session);
         const before = this.store.nodes().find((n) => n.session_id === s.sessionId);
+        const grew = before && (p.w > before.w + 0.5 || p.h > before.h + 0.5);
+        const overlapBefore = grew ? overlapKeys(this, s.workspaceKey || null) : null; // P362
         const n = { session_id: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z };
         this.store.setNode(n);
         // P73: 사람이 테두리를 끌어 크기를 바꾸면 고른 비율과 크기 단계를 끈다(자유 비율)
@@ -2509,7 +2511,8 @@ export class Backend {
         // P47: 다른 창도 옮긴 자리를 바로 그린다(예전에는 다음 board.changed까지 옛 자리). 보낸 창은 by로 알아보고 무시한다
         this.api.broadcast('board.node', { sessionId: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z, by: (c && c.clientId) || null });
         // P75: 테두리를 끌어 키웠으면 줄의 뒤 형제를 아래로 민다(작아지면 당기지 않는다)
-        if (before && (n.w > before.w + 0.5 || n.h > before.h + 0.5) && (reflowLines(this, s.sessionId, 'resize').length + settleRegions(this, 'resize').length)) this.api.broadcast('board.changed', { why: 'line pushed' });
+        // P362: 넓어졌으면 하위 열을 오른쪽으로(줄 밖으로 빠지지 않게), 밀기가 못 푼 새 겹침은 아래로
+        if (grew && (shiftKidsRight(this, s.sessionId, before, 'resize').length + reflowLines(this, s.sessionId, 'resize').length + settleOverlaps(this, s.workspaceKey || null, { before: overlapBefore, cause: 'resize' }).length + settleRegions(this, 'resize').length)) this.api.broadcast('board.changed', { why: 'line pushed' });
         return { ok: true };
       },
       // P6a: workspace 없이 부르면 캔버스 하나의 뷰포트. P5처럼 workspace를 주면 그 워크스페이스 줄에 남긴다

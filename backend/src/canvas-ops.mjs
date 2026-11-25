@@ -9,7 +9,7 @@ import { clip } from './text.mjs';
 import { areaKey, parseArea, wsOfArea, isBoxKey, WT_EMPTY, withBoxes, nestedRegions, regionConflicts, settleBoxes, migrateBoxes, dockedAreas, visibleAnchors, workersPreset } from './worktree-areas.mjs'; // P27: 워크트리 영역. P35: 리포 영역 안의 상자. P68: 워크트리끼리 붙인 덩어리
 import { layoutRegions, linkWeights } from './region-layout.mjs'; // P31: 판 전체 정리의 영역 배치. P99: 다른 영역끼리의 연결 무게
 import { readGroups, groupIndex } from './ws-groups.mjs'; // P44: 가상 그룹끼리 모으기
-import { blockTree, pushLine, pushFrom, looseSlot, bandOf, subtreeIds, lineKids, boxFrame, frameInner, BOX_PAD } from './tree-line.mjs'; // P75: 하위 세션 줄. P350: 뿌리 줄 밀기(pushFrom)
+import { blockTree, pushLine, pushFrom, looseSlot, bandOf, subtreeIds, lineKids, boxFrame, frameInner, BOX_PAD, LINE_GAP_X, LINE_GAP_Y } from './tree-line.mjs'; // P75: 하위 세션 줄. P350: 뿌리 줄 밀기(pushFrom)
 
 function apiError(code, message) { return Object.assign(new Error(message), { code }); }
 import { keyed } from './msg.mjs'; // P16: 화면 글 열쇠
@@ -125,16 +125,20 @@ export function placeSpawn(b, s, { branch = null, worktree = null, area = '' } =
   if (parent && (parent.workspaceKey || null) !== wsKey) anchorWorkspace(b, wsKey, { near: parent.workspaceKey || null }); // 새 워크스페이스면 부모 영역 곁에
   const place = branch && !branch.head ? b.branch.placeChild(s.parentSessionId, wsKey, { worktree: branch.worktree || null, peer: branch.relation === 'peer' }) : null;
   let slot = place;
+  const before = wsKey ? overlapKeys(b, wsKey) : null; // P362: 새 노드 자리 앞의 겹침(사람이 둔 것은 그대로 둔다)
   // P350(2단계): 부모 없는 세션은 정리가 놓을 자리(영역 아래의 혼자인 블록 줄 끝). 핀 꽂힌 노드는 피한다
   if (!slot && !area && wsKey) {
     anchorWorkspace(b, wsKey);
     const tree = lineTree(b, wsKey);
     const pins = pinnedIds(b);
-    const roots = [...tree.byId.keys()].filter((k) => !tree.parent.has(k) && !(tree.byId.get(k).members || []).some((m) => pins.has(m))).map((k) => ({ ...bandOf(tree, k), lone: !(tree.kids.get(k) || []).length })); // 핀 꽂힌 뿌리는 줄을 정하지 않는다(피하기만)
+    const top = [...tree.byId.keys()].filter((k) => !tree.parent.has(k));
+    const pinnedRoot = (k) => (tree.byId.get(k).members || []).some((m) => pins.has(m));
+    const roots = top.filter((k) => !pinnedRoot(k)).map((k) => ({ ...bandOf(tree, k), lone: !(tree.kids.get(k) || []).length })); // 핀 꽂힌 뿌리는 줄을 정하지 않는다(피하기만)
     if (roots.length) {
       const all = bbox(roots);
       const f = worktree ? boxFrame({ x: 0, y: 0, w: SPAWN_NODE.w, h: SPAWN_NODE.h }) : SPAWN_NODE;
-      const at = looseSlot({ roots, size: { w: f.w, h: f.h }, left: all.x, maxW: Math.max(2400, all.w), pinned: pinnedRects(b) });
+      // P362: 핀 꽂힌 뿌리는 그 노드만이 아니라 나무째 피한다(전에는 핀 노드만 피해 그 하위 위에 서곤 했다)
+      const at = looseSlot({ roots, size: { w: f.w, h: f.h }, left: all.x, maxW: Math.max(2400, all.w), pinned: [...pinnedRects(b), ...top.filter(pinnedRoot).map((k) => bandOf(tree, k))] });
       if (at) slot = worktree ? frameInner(at) : at;
     }
   }
@@ -149,6 +153,7 @@ export function placeSpawn(b, s, { branch = null, worktree = null, area = '' } =
   if (place && (!place.peer || place.push)) reflowLines(b, s.sessionId, 'spawn');
   // P350: 상자 틀만큼 비운 자리, 2단계의 혼자인 블록 줄 끝(아래에 다른 것이 있으면 뿌리 줄 밀기로 민다)
   else if (!place && !area) reflowLines(b, s.sessionId, 'spawn');
+  if (wsKey) settleOverlaps(b, wsKey, { fresh: s.sessionId, before, cause: 'spawn' }); // P362: 밀기가 못 푼 새 겹침(줄 밖의 것, 핀 꽂힌 나무)은 새 노드가 그 아래로
   return place;
 }
 
@@ -618,8 +623,24 @@ function removeInner(b, p) {
   return { removed: true };
 }
 
+// P362: 워크트리 상자의 마지막 세션이 닫히면 빈 상자는 저장한 자리(상자가 처음 선 곳, 그 뒤 줄 밀기로 상자 안 노드만 움직였을 수 있다)로 돌아가
+//   그사이 그 자리에 선 노드와 겹쳤다. 닫히기 전 상자의 왼쪽 위를 그 상자 자리로 저장한다(빈 상자는 그 안쪽에 든다)
+function keepEmptyBox(b, s) {
+  const n = b.store.nodeOf ? b.store.nodeOf(s.sessionId) : null;
+  if (!n || !n.area || dockOf(b, s.sessionId)) return;
+  const row = areaRows(b).find((a) => a.wsKey === (s.workspaceKey || null) && a.wt === n.area);
+  if (!row) return;
+  const key = areaKey(row.wsKey, row.wt);
+  if (canvasItems(b).some((i) => i.ws === key && i.kind !== 'wtbox')) return; // 아직 안에 다른 것이 있다
+  const f = boxFrame(n);
+  if (row.x === f.x && row.y === f.y) return;
+  b.store.putWorktreeArea({ ...row, x: f.x, y: f.y });
+  b.store.addEvent(null, 'worktree_box_kept', { key: row.wsKey, worktree: row.path, at: { x: f.x, y: f.y }, why: 'last session closed' });
+}
+
 // 세션이 닫히면(끄기, 보관, 삭제) 덩어리에서 빠진다
 export function onSessionClosed(b, s) {
+  keepEmptyBox(b, s);
   const d = dockOf(b, s.sessionId);
   if (!d) return;
   keepBoxes(b, () => detach(b, d, s.sessionId, 'session closed'), { closed: s }); // P68: 남은 워크트리 세션은 자기 상자로
@@ -710,6 +731,94 @@ export function reflowLines(b, sid, cause = 'unknown') {
   return moved;
 }
 
+// P362: 노드가 넓어지면(크기 단계, 테두리 끌기) 그 하위 열(전에 노드 오른쪽 끝보다 오른쪽에 섰던 하위 나무)을 넓어진 만큼 오른쪽으로 옮긴다.
+//   전에는 넓어진 노드가 하위 열을 덮고, 덮인 하위는 부모 오른쪽 끝보다 왼쪽이라 줄(lineKids) 밖으로 빠져 그 뒤 줄 밀기가 옮기지 않았다(손 크기 노드의 하위가 자리에 묶인 것처럼 보였다).
+//   before: 바뀌기 전 노드 사각형. 덩어리 안 노드는 보지 않는다(덩어리 바깥은 줄 밀기가 아래로). 핀 꽂힌 블록은 옮기지 않는다. → 옮긴 것 [{ block, dx }]
+export function shiftKidsRight(b, sid, before, cause = 'size') {
+  const s = b.sessions.get(sid);
+  const n = nodeRect(b, sid);
+  if (!s || !n || !before || dockOf(b, sid)) return [];
+  const oldRight = before.x + before.w, newRight = n.x + n.w;
+  const dx = Math.round(newRight - oldRight);
+  if (dx <= 0) return [];
+  const tree = lineTree(b, s.workspaceKey || null);
+  const bid = tree.blockOf.get(sid);
+  if (!bid || bid !== sid) return []; // 상자 안 노드는 상자가 감싼다(상자가 넓어지는 것은 영역 겹침 풀기가)
+  const kids = (tree.kids.get(bid) || []).filter((k) => tree.byId.get(k).x >= oldRight - 1 && tree.byId.get(k).x < newRight + LINE_GAP_X);
+  if (!kids.length) return [];
+  const pins = pinnedIds(b);
+  const moved = [];
+  const done = new Set();
+  for (const k of kids) for (const x of subtreeIds(tree, k)) {
+    if (done.has(x)) continue;
+    done.add(x);
+    const blk = tree.byId.get(x);
+    if ((blk.members || []).some((m) => pins.has(m))) continue;
+    if (blk.kind === 'wtbox') shiftWorkspace(b, blk.box, dx, 0);
+    else for (const m of blk.members) { const r = nodeRect(b, m); if (r) b.store.setNode({ ...r, x: r.x + dx }); }
+    moved.push({ block: x.startsWith('w:') || x.startsWith('d:') || !b.nameOf ? x : b.nameOf(x), dx });
+  }
+  if (moved.length) { b.store.addEvent(sid, 'line_shifted', { cause, moved }); if (b.log) b.log(`line shifted right (${cause}) ${JSON.stringify(moved)}`); }
+  return moved;
+}
+
+// P362: 같은 워크스페이스의 줄 블록(노드, 덩어리, 워크트리 상자, 상자가 설 틀)과 메모·칸반 가운데 겹친 쌍(블록 ID 쌍의 키)
+function blockOverlaps(b, wsKey) {
+  const items = canvasItems(b);
+  const tree = lineTree(b, wsKey, items);
+  const rects = [...tree.byId.values()].map((x) => ({ id: x.id, x: x.x, y: x.y, w: x.w, h: x.h }));
+  for (const i of items) if ((i.kind === 'memo' || i.kind === 'kanban') && (i.wsKey || null) === (wsKey || null)) rects.push({ id: `i:${i.id}`, x: i.x, y: i.y, w: i.w, h: i.h, item: true });
+  const out = [];
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (overlaps(rects[i], rects[j], -1)) out.push([rects[i], rects[j]]);
+  // 상자 안 노드끼리(상자는 한 블록이라 위에서는 보이지 않는다). 덩어리 안은 뺀다
+  const docks = b.store.docks();
+  const inBox = items.filter((i) => i.kind === 'node' && isBoxKey(i.ws) && (i.wsKey || null) === (wsKey || null) && !docks.some((d) => d.members.includes(i.id))).map((i) => ({ id: i.id, x: i.x, y: i.y, w: i.w, h: i.h, box: i.ws, inner: true }));
+  for (let i = 0; i < inBox.length; i++) for (let j = i + 1; j < inBox.length; j++) if (inBox[i].box === inBox[j].box && overlaps(inBox[i], inBox[j], -1)) out.push([inBox[i], inBox[j]]);
+  return { tree, out, key: (a, c) => [a.id, c.id].sort().join('|') };
+}
+export function overlapKeys(b, wsKey) { const o = blockOverlaps(b, wsKey); return new Set(o.out.map(([a, c]) => o.key(a, c))); }
+// P362: 마지막 안전망. 새 노드 자리, 줄 밀기, 크기 바꾸기가 끝난 뒤에도 남은 새 겹침(before에 없던 쌍)을 푼다. 전부터 겹쳐 있던 쌍(사람이 둔 자리)은 그대로다.
+//   줄 밀기는 줄(lineKids)과 뿌리 줄만 보아서, 사람이 부모 왼쪽으로 옮긴 하위나 핀 꽂힌 노드가 든 나무 같은 줄 밖의 것에 밀린 블록을 그 위에 세우곤 했다.
+//   옮기는 쪽: fresh(막 선 블록)가 끼면 그것, 한쪽이 다른 쪽의 나무 위면 아래 나무 쪽, 아니면 윗변이 더 아래인 것(같으면 나중에 띄운 것).
+//   핀 꽂힌 노드가 든 블록과 메모·칸반은 옮기지 않는다. 옮기는 블록은 상대 아래(LINE_GAP_Y)로 자기 나무째(핀 꽂힌 블록은 빼고) 내린다. 아래로만 민다
+export function settleOverlaps(b, wsKey, { fresh = null, before = new Set(), cause = 'unknown' } = {}) {
+  const pins = pinnedIds(b);
+  const moved = [];
+  const skip = new Set(before);
+  for (let round = 0; round < 300; round++) {
+    const { tree, out, key } = blockOverlaps(b, wsKey);
+    const freshBlock = fresh ? tree.blockOf.get(fresh) : null;
+    const isFresh = (r) => (r.inner ? r.id === fresh : !!freshBlock && r.id === freshBlock);
+    const fixed = (r) => r.item || (r.inner ? pins.has(r.id) : (tree.byId.get(r.id).members || []).some((m) => pins.has(m)));
+    const under = (a, c) => !a.inner && !c.inner && !a.item && !c.item && subtreeIds(tree, c.id).includes(a.id); // a가 c의 나무 안
+    let pick = null;
+    for (const [a, c] of out) {
+      if (skip.has(key(a, c))) continue;
+      const fa = fixed(a), fc = fixed(c);
+      if (fa && fc) { skip.add(key(a, c)); continue; }
+      let mover;
+      if (fa) mover = c; else if (fc) mover = a;
+      else if (isFresh(a) || isFresh(c)) mover = isFresh(a) ? a : c;
+      else if (under(a, c)) mover = a;
+      else if (under(c, a)) mover = c;
+      else mover = a.y > c.y || (a.y === c.y && (tree.rank.get(a.id) || 0) > (tree.rank.get(c.id) || 0)) ? a : c;
+      pick = { mover, other: mover === a ? c : a };
+      break;
+    }
+    if (!pick) break;
+    const { mover, other } = pick;
+    const dy = Math.round(other.y + other.h + LINE_GAP_Y - mover.y);
+    if (dy <= 0) { skip.add(key(mover, other)); continue; }
+    if (mover.inner) { const r = nodeRect(b, mover.id); b.store.setNode({ ...r, y: r.y + dy }); moved.push({ block: b.nameOf ? b.nameOf(mover.id) : mover.id, dy, inBox: true }); continue; } // 상자 안 노드는 그 노드만(상자가 커진 것은 다음 바퀴가 본다)
+    let ids = subtreeIds(tree, mover.id).filter((x) => x === mover.id || !(tree.byId.get(x).members || []).some((m) => pins.has(m)));
+    // 상대가 자기 나무 안이거나 자손이 그 블록보다 위에 섰으면(사람이 옮긴 것) 그 블록만(함께 내리면 서로 번갈아 끝없이 겹친다)
+    if (ids.includes(other.id) || ids.some((x) => tree.byId.get(x).y < mover.y)) ids = [mover.id];
+    for (const x of ids) { lowerBlock(b, tree.byId.get(x), dy); moved.push({ block: x.startsWith('w:') || x.startsWith('d:') || !b.nameOf ? x : b.nameOf(x), dy, below: other.id.startsWith('i:') || other.id.startsWith('w:') || other.id.startsWith('d:') || !b.nameOf ? other.id : b.nameOf(other.id) }); }
+  }
+  if (moved.length) { b.store.addEvent(fresh, 'overlap_settled', { cause, moved }); if (b.log) b.log(`overlap settled (${cause}) ${JSON.stringify(moved)}`); }
+  return moved;
+}
+
 // P17: 옛 한 줄 덩어리 행(tree 없음)을 뜰 때 한 마디짜리 나무로 바꾼다. 비율은 지금 노드 크기(가로줄은 너비, 세로줄은 높이)라서 모양이 그대로다
 export function migrateDocks(b) {
   const out = [];
@@ -768,6 +877,8 @@ export function setSize(b, p) {
   const req = sizeRequest(p);
   const r = nodeRect(b, s.sessionId);
   const d = dockOf(b, s.sessionId);
+  const ws = s.workspaceKey || null;
+  const before = overlapKeys(b, ws); // P362
   let out;
   if (d) {
     // P80: 틀 비율은 그대로 두고 바깥만 바꾼다. 덩어리를 단독 세션 하나(dockVirtual)로 보아 단독 세션처럼 크기를 정하고(out) 바깥으로 되돌린다(dockFit, 왼쪽 위 그대로)
@@ -783,7 +894,9 @@ export function setSize(b, p) {
     markHandSize(b, s.sessionId, true, out); // P177. P310: 값도
   }
   b.store.addEvent(s.sessionId, 'node_size', { size: out.key || p.size || null, dir: out.dir, aspect: out.aspect, level: out.level, dock: d ? d.dockId : undefined });
+  if (!d) shiftKidsRight(b, s.sessionId, r, 'size'); // P362: 넓어졌으면 하위 열을 오른쪽으로(하위가 줄 밖으로 빠지지 않게)
   reflowLines(b, s.sessionId, 'size'); // P75: 커졌으면 줄의 뒤 형제를 아래로
+  settleOverlaps(b, ws, { before, cause: 'size' }); // P362
   settleRegions(b, 'size');
   b.api.broadcast('board.changed', { why: 'size' });
   return { session: s.name, size: out.key, dir: out.dir, aspect: out.aspect, level: out.level, w: out.w, h: out.h, dock: d ? d.dockId : null, ...(d ? { outer: { w: dockOuter(b, d).w, h: dockOuter(b, d).h } } : {}) }; // P80: 덩어리는 w·h가 같은 규칙의 단독 세션, outer가 바깥
@@ -883,9 +996,12 @@ export function clearHandSize(b, p) {
   if (!r) throw apiError('not_found', '판에 노드가 없습니다.');
   markHandSize(b, s.sessionId, false);
   if (!dockOf(b, s.sessionId)) {
+    const ws = s.workspaceKey || null, before = overlapKeys(b, ws); // P362
     b.store.setNode({ ...r, w: NEW_NODE.w, h: NEW_NODE.h });
     b.store.setNodeAspect(s.sessionId, DEFAULT_ASPECT, NEW_NODE_STEP);
+    shiftKidsRight(b, s.sessionId, r, 'size');
     reflowLines(b, s.sessionId, 'size');
+    settleOverlaps(b, ws, { before, cause: 'size' });
     settleRegions(b, 'size');
   }
   b.store.addEvent(s.sessionId, 'node_size_auto', {});
