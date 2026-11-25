@@ -286,7 +286,7 @@ export class UsageBook {
   stop() { clearInterval(this.timer); this.timer = null; }
   alertsOn() { const s = this.o.settings ? this.o.settings() || {} : {}; return s.usageAlerts !== false; }
   // P314: 알약 밖(EXTRAS) 값은 있을 때만 싣는다(옛 창·시험이 보는 꼴 그대로)
-  get() { return { providers: Object.fromEntries(ALL_PROVIDERS.filter((p) => PROVIDERS.includes(p) || this.data[p]).map((p) => [p, this.data[p]])), alertsOn: this.alertsOn(), probeOn: this.probeOn(), probing: [...this.probing], at: this.now() }; }
+  get() { return { providers: Object.fromEntries(ALL_PROVIDERS.filter((p) => PROVIDERS.includes(p) || this.data[p]).map((p) => [p, this.data[p]])), alertsOn: this.alertsOn(), probeOn: this.probeOn(), probing: [...this.probing], at: this.now(), ...(this.o.extra ? this.o.extra() : {}) }; } // P361: extra = API 크레딧 장부(apiCredits)
   pollCodex() {
     let r = null;
     try { r = this.codex.poll(); } catch (e) { if (this.o.log) this.o.log(`usage codex poll failed: ${e.message}`); }

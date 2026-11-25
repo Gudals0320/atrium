@@ -39,6 +39,7 @@ import { ResourceGuard, transitOf } from './resource-guard.mjs'; // P341: 폭주
 import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금). P363: SDK 세션이 쓴다
+import { CreditBook } from './credit-book.mjs'; // P361: API 크레딧 장부
 import { SdkHost, isSdk, SDK_IDLE_MS, SDK_BILLING } from './sdk-session.mjs'; // P363: SDK 세션 종류(claude -p stream-json)
 import { forkMark, reviveHandlers } from './revive.mjs'; // P360: 되살리기·갈라 열기
 import { probeCodex, probeClaude, probeBalance, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
@@ -48,7 +49,7 @@ import { migrateWorkspaces } from './migrate.mjs';
 import { adoptTwin, reconcileWorkspaces } from './workspace-merge-ops.mjs'; // P37: 폴더 워크스페이스가 저장소가 되면 합치기
 import { migrateSingleCanvas } from './migrate-canvas.mjs';
 import { NEW_NODE, NEW_NODE_STEP, DEFAULT_ASPECT } from './canvas.mjs'; // P73: 새 세션 크기
-import { canvasHandlers, slotFor, placeSpawn, markPinned, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes } from './canvas-ops.mjs';
+import { canvasHandlers, slotFor, placeSpawn, markPinned, anchorWorkspace, onSessionClosed, autoDockSplit, noteNodeMove, settleRegions, migrateDocks, migrateBoxesInside, reflowLines, markHandSize, handSizes, shiftKidsRight, settleOverlaps, overlapKeys } from './canvas-ops.mjs';
 import { attachFeatures } from './features.mjs'; // P6b: 출력 보기, Thread, 메모, 칸반, 루프, 미션 맵, 설정(ARCH 4절 I)
 import { PERMISSION_MODES as MODES, touchesRemoteRules, resolveBotSettings, EFFORTS } from './settings.mjs';
 import { attachRecall } from './recall.mjs'; // P7: 되살리기, 닫힌 세션 다시 열기, 판 밖 대화(ARCH 4절 J)
@@ -250,19 +251,32 @@ export class Backend {
         balance: () => { const sr = findSecretRun(); return sr ? probeBalance({ secretRun: sr, grant: cfg.usageGrant || 'atrium-usage' }) : Promise.resolve(null); },
       },
       busy: (k) => [...this.sessions.values()].some((s) => !s.closedAt && (s.kind || 'claude') === k && s.rt && s.rt.term && s.rt.term.status === 'working'),
+      extra: () => { if (!this.credits) return {}; try { return { apiCredits: this.credits.view() }; } catch (e) { this.log(`api credits view failed: ${e.message}`); return {}; } }, // P361
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
     // P359: 판 중계기. 키는 OS 보호 저장소로 암호화한 암호문만 데이터 폴더에 두고, 푸는 것은 중계기 자식 프로세스뿐이다.
     //   키 넣기·지우기는 이 PC의 창에서만(휴대폰 등 기기 연결은 거부). 답과 로그에는 키 값이 없다(있음/없음만)
-    this.authRelay = new AuthRelay({ dataDir: cfg.dataDir, upstream: cfg.authRelayUpstream || (cfg.profile === 'dev' ? process.env.ATRIUM_AUTH_RELAY_UPSTREAM || null : null), log: (m) => this.log(m), onChange: (st) => this.api.broadcast('relay.status', st), onNotice: (n) => this.relayNotice(n), onMoved: (urlOf) => this.relayMoved(urlOf) });
+    this.authRelay = new AuthRelay({ dataDir: cfg.dataDir, upstream: cfg.authRelayUpstream || (cfg.profile === 'dev' ? process.env.ATRIUM_AUTH_RELAY_UPSTREAM || null : null), log: (m) => this.log(m), onChange: (st) => { this.api.broadcast('relay.status', st); if (this.credits) this.credits.relayChanged(); }, onNotice: (n) => this.relayNotice(n), onMoved: (urlOf) => this.relayMoved(urlOf) });
     const pcOnly = (fn) => (p, c) => { if (c && c.auth && c.auth.kind !== 'local') throw apiError('forbidden', 'only the board on this PC can do this'); return fn(p || {}, c); };
     this.api.handlers['relay.status'] = (p = {}) => ({ ...this.authRelay.status(), recent: this.authRelay.recent(Math.min(Math.max(Number(p && p.limit) || 10, 1), 100)) });
     this.api.handlers['relay.setKey'] = pcOnly((p) => this.authRelay.setKey(p.key));
     this.api.handlers['relay.removeKey'] = pcOnly(() => this.authRelay.removeKey());
     this.api.handlers['relay.stop'] = pcOnly(async () => { await this.authRelay.stop(); return this.authRelay.status(); }); // 다음 SDK 세션 프로세스를 띄울 때 다시 켠다
+    // P361: API 크레딧 장부. 붙여 넣기 미리 보기·저장·손 편집과 Admin 키 넣기·지우기는 이 PC의 창에서만. 보기는 usage.get의 apiCredits로도 간다
+    this.credits = new CreditBook(this, { relay: this.authRelay, onChange: () => { if (this.usage) this.usage.sendNow(); } });
+    this.api.handlers['relay.setAdminKey'] = pcOnly(async (p) => { const r = await this.authRelay.setAdminKey(p.key); this.credits.refreshOfficial({ force: true }).catch(() => {}); return r; });
+    this.api.handlers['relay.removeAdminKey'] = pcOnly(async () => { const r = await this.authRelay.removeAdminKey(); await this.credits.refreshOfficial({ force: true }).catch(() => {}); return r; });
+    this.api.handlers['credits.get'] = () => this.credits.view();
+    this.api.handlers['credits.preview'] = pcOnly((p) => this.credits.preview(p.text));
+    this.api.handlers['credits.save'] = pcOnly((p) => this.credits.saveParsed(p));
+    this.api.handlers['credits.grant'] = pcOnly((p) => this.credits.grantOp(p));
+    this.api.handlers['credits.purchased'] = pcOnly((p) => this.credits.setPurchased(p));
+    this.api.handlers['credits.plan'] = pcOnly((p) => this.credits.setPlan(p.plan || null));
+    this.api.handlers['credits.clear'] = pcOnly(() => this.credits.clear());
+    this.api.handlers['credits.refresh'] = async () => { await this.credits.refreshOfficial({ open: true }).catch(() => {}); return this.credits.view(); };
     // P363: SDK 세션 프로세스(claude -p). 쉬면 idleMs 뒤 끝내고 다음 글에서 --resume
     this.sdk = new SdkHost(this, { idleMs: cfg.sdkIdleMs ?? SDK_IDLE_MS, command: cfg.sdkCommandArgv || null });
-    this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
+    this.api.handlers['usage.refresh'] = () => { if (this.credits) this.credits.refreshOfficial({ open: true }).catch(() => {}); return this.usage.refresh(); }; // P314: 알약을 펼칠 때. P361: 공식 비용도(10분 지났으면)
     // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄, decisions.mjs autoTurn). 단위 시험 판에서는 끈다(진짜 claude를 부르지 않게)
     // P338: 할 일 정리 봇이 런처를 골랐으면 하네스·모델·노력은 그 런처(settings.mjs resolveBotSettings)
     this.todoTidy = new TodoTidy({ settings: () => (this.features && this.features.settings ? resolveBotSettings(this.features.settings.get(), (id) => (this.features.launchers ? this.features.launchers.find(id) : null)) : {}), dir: (cfg.todoTidy ?? !process.env.NODE_TEST_CONTEXT) ? path.join(cfg.dataDir, 'todo-tidy') : null, ...(cfg.todoTidyCall ? { call: cfg.todoTidyCall } : {}), log: (m) => this.log(m) });
@@ -454,6 +468,7 @@ export class Backend {
     { const set0 = this.api.handlers['settings.set']; if (set0) this.api.handlers['settings.set'] = async (p, c) => { const r = await set0(p, c); try { this.guard.onSettings(); } catch {} return r; }; } // 우선순위 끔 → 곧바로 되돌린다
     this.resources.start((snap) => this.api.broadcast('resources', snap));
     this.usage.start(); // P211
+    if (this.credits) this.credits.start(); // P361: 공식 비용 주기 조회와 만료 알림
     this.store.addEvent(null, 'backend_started', { pid: process.pid, previousRun: this.previousRun });
     this.log(`backend up pid=${process.pid} port=${cfg.port} profile=${cfg.profile} terminal=${cfg.terminalSession} previousRun=${JSON.stringify(this.previousRun)}`);
   }
@@ -465,6 +480,7 @@ export class Backend {
     stopMigration(this);
     this.resources.stop();
     if (this.usage) this.usage.stop(); // P211
+    if (this.credits) this.credits.stop(); // P361
     if (this.sdk) await this.sdk.stopAll().catch(() => {}); // P363: SDK 세션 프로세스도 판과 함께 끝난다(다음 글에서 --resume)
     if (this.authRelay) await this.authRelay.stop().catch(() => {}); // P359: 판과 함께 끈다
     this.queue.stop();
@@ -1837,6 +1853,10 @@ export class Backend {
     pending.add(name);
     try {
       await this.authRelay.ensure(); // 키가 없으면 auth_relay_no_key(세션을 만들지 않는다)
+      // P361: 장부에서 구매 잔액이 0 이하이고 월·프로모션 크레딧도 바닥이면 띄우되 알린다(막지 않는다: 장부는 붙여 넣은 값과 추정이다)
+      let creditWarning = null;
+      try { creditWarning = this.credits ? this.credits.spawnWarning() : null; } catch {}
+      if (creditWarning) { this.store.addEvent(null, 'credits_exhausted_spawn', { name }); this.api.broadcast('credits.alert', { kind: 'exhausted', name, ...creditWarning }); }
       const ws = await workspaceOf(cwd);
       const firstPrompt = p.prompt ? await this.humanFirstPrompt(p) : null;
       const sessionId = crypto.randomUUID();
@@ -1862,7 +1882,7 @@ export class Backend {
       this.probeGit(s, cwd);
       if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } });
       this.log(`spawned ${name} sdk ${sessionId} ws=${ws.key} model=${model || '-'}`);
-      return { sessionId, name, kind: 'claude', sdk: true, billing: SDK_BILLING, flavor: plan.flavor || null, paneId: null, termWorkspaceId: null, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, resumeArgv: null, argv: null };
+      return { sessionId, name, kind: 'claude', sdk: true, billing: SDK_BILLING, flavor: plan.flavor || null, paneId: null, termWorkspaceId: null, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, resumeArgv: null, argv: null, ...(creditWarning ? { creditWarning: { ...creditWarning, text: `API 크레딧 장부로는 월·프로모션 크레딧이 바닥이고 구매 잔액이 ${creditWarning.vars.purchased}입니다. 이 세션은 미납으로 쌓일 수 있습니다.` } } : {}) };
     } finally { pending.delete(name); }
   }
   // 사람이 띄우며 준 첫 요청 → 넣을 글 | null
@@ -2502,6 +2522,8 @@ export class Backend {
       'board.setNode': (p, c) => {
         const s = this.resolve(p.session);
         const before = this.store.nodes().find((n) => n.session_id === s.sessionId);
+        const grew = before && (p.w > before.w + 0.5 || p.h > before.h + 0.5);
+        const overlapBefore = grew ? overlapKeys(this, s.workspaceKey || null) : null; // P362
         const n = { session_id: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z };
         this.store.setNode(n);
         // P73: 사람이 테두리를 끌어 크기를 바꾸면 고른 비율과 크기 단계를 끈다(자유 비율)
@@ -2513,7 +2535,8 @@ export class Backend {
         // P47: 다른 창도 옮긴 자리를 바로 그린다(예전에는 다음 board.changed까지 옛 자리). 보낸 창은 by로 알아보고 무시한다
         this.api.broadcast('board.node', { sessionId: s.sessionId, x: p.x, y: p.y, w: p.w, h: p.h, z: p.z, by: (c && c.clientId) || null });
         // P75: 테두리를 끌어 키웠으면 줄의 뒤 형제를 아래로 민다(작아지면 당기지 않는다)
-        if (before && (n.w > before.w + 0.5 || n.h > before.h + 0.5) && (reflowLines(this, s.sessionId, 'resize').length + settleRegions(this, 'resize').length)) this.api.broadcast('board.changed', { why: 'line pushed' });
+        // P362: 넓어졌으면 하위 열을 오른쪽으로(줄 밖으로 빠지지 않게), 밀기가 못 푼 새 겹침은 아래로
+        if (grew && (shiftKidsRight(this, s.sessionId, before, 'resize').length + reflowLines(this, s.sessionId, 'resize').length + settleOverlaps(this, s.workspaceKey || null, { before: overlapBefore, cause: 'resize' }).length + settleRegions(this, 'resize').length)) this.api.broadcast('board.changed', { why: 'line pushed' });
         return { ok: true };
       },
       // P6a: workspace 없이 부르면 캔버스 하나의 뷰포트. P5처럼 workspace를 주면 그 워크스페이스 줄에 남긴다

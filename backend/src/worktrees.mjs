@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { parseWorktreeList, liveWorktrees, worktreeOfPath, areaKey, wsOfArea, boxSlot } from './worktree-areas.mjs';
-import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, anchorWorkspace, reflowLines, wtWanted } from './canvas-ops.mjs';
+import { canvasItems, regions, settleRegions, dockOf, slotRegions, slotItems, anchorWorkspace, reflowLines, wtWanted, overlapKeys, settleOverlaps } from './canvas-ops.mjs';
 import { slotInRegion } from './canvas.mjs';
 import { boxFrame } from './tree-line.mjs'; // P75
 import { pathKey, goneWorkspaces, workspaceNames, GONE_GRACE_MS } from './workspaces.mjs';
@@ -186,9 +186,12 @@ export function attachWorktrees(b, { tickMs = TICK_MS, list = gitWorktrees, exis
       // P37: 폴더 워크스페이스가 저장소가 됐으면(반대도) 먼저 키를 옮긴다(workspace-merge-ops.mjs). 옮겼으면 영역 행도 다시 맞춘다
       const merged = b.reconcileWorkspaces ? await b.reconcileWorkspaces(cause).catch((e) => { log(`workspace merge error ${e.stack}`); return []; }) : [];
       const pruned = pruneGone();
+      const repos = b.store.workspaces().filter((w) => w.kind === 'repo').map((w) => w.key);
+      const before = new Map(repos.map((k) => [k, overlapKeys(b, k)])); // P362: 상자가 서기 전의 겹침(사람이 둔 것은 그대로)
       const changed = (await syncAreas()) || merged.length > 0 || pruned.length > 0;
       const moved = relocateNodes();
       if (!changed && !moved) return { changed: false, moved: 0 };
+      for (const k of repos) settleOverlaps(b, k, { before: before.get(k) || new Set(), cause: `worktrees ${cause}` }); // P362: 상자·줄 밀기가 못 푼 새 겹침
       settleRegions(b, `worktrees ${cause}`);
       if (b.broadcastWorkspaces) b.broadcastWorkspaces();
       if (b.api) b.api.broadcast('board.changed', { why: 'worktrees' });

@@ -24,6 +24,7 @@ import { markInteracted } from './touch.js';
 import { cardFacts, DoneMark, ST } from './MapCard.jsx'; // P356: 줄·카드 얼굴은 판 세션 맵 카드와 같은 함수
 import { nodeTier } from './lib/mission-model.js';
 import { liveFromRow, todoCounts } from './lib/mobile-map.js';
+import { usd, dayShort, phoneRows, hasCredits, totalParts, basisKey, whenShort } from './lib/api-credits.js'; // P361: 홈의 API 크레딧 칸
 import './phone.css';
 import './mobile.css';
 
@@ -258,6 +259,39 @@ function Home({ home, onOpen, onTab, focus = null }) {
           {home.done.slice(0, 8).map((s) => <Row key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} showWs todo={todo.get(s.sessionId) || 0} />)}
         </>
       )}
+      <PhoneCredits now={now} />
+    </div>
+  );
+}
+
+// P361: 홈 아래 API 크레딧 칸(합계와 지급 줄). 장부도 지출도 없으면 그리지 않는다. 누르면 펼친다(처음은 합계 한 줄)
+function PhoneCredits({ now }) {
+  const t = useT();
+  const c = useMobile((m) => m.credits);
+  const [open, setOpen] = useState(false);
+  if (!hasCredits(c)) return null;
+  const tot = c.totals;
+  const rows = phoneRows(c, now);
+  return (
+    <div className={'mt-mp-credits' + (open ? ' open' : '')} data-role="mp-credits" data-basis={c.basis}>
+      <button type="button" className="mt-mp-later-head" data-action="mp-credits-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span>{open ? '▾' : '▸'}</span>{t('apiCredits.head')}
+        {tot ? <b className="mono" data-role="mp-credits-usable">{usd(tot.usable)}</b> : null}
+        <span className={`mt-cr-basis ${c.basis}`} data-role="mp-credits-basis">{t(basisKey(c.basis))}</span>
+      </button>
+      {open && <div className="mt-mp-credits-body">
+        {tot ? <div className="mt-cr-totals">{totalParts(tot).map((p) => <span key={p.k} className={p.k === 'purchased' ? (p.due ? 'mt-cr-purchased due' : 'mt-cr-purchased') : undefined}>{t(p.k === 'plan' ? 'apiCredits.planShort' : p.k === 'promo' ? 'apiCredits.promoShort' : 'apiCredits.purchasedShort')} {usd(p.v)}</span>)}</div> : <div className="dim">{t('apiCredits.noLedgerPhone')}</div>}
+        {c.basis === 'mixed' && c.coveredUntil ? <div className="dim" data-role="mp-credits-covered">{t('apiCredits.coveredLine', { at: whenShort(c.coveredUntil, true, now) })}</div> : null}
+        {rows.map((g) => (
+          <div key={g.id} className={`mt-cr-grant lv-${g.level}`} data-role="mp-credits-grant">
+            <div className="mt-cr-grant-top"><span className="mt-cr-name">{g.name}</span><span className="mt-cr-amt mono">{usd(g.left)} / {usd(g.total)}</span></div>
+            <span className="mt-cr-bar" aria-hidden="true"><span style={{ width: `${g.pct}%` }} /></span>
+            <div className="mt-cr-grant-sub dim"><span className={g.level === 'warn' ? 'mt-cr-exp soon' : 'mt-cr-exp'}>{g.when ? t('apiCredits.expires', { when: g.when }) : ''} ({t(g.left2.key, g.left2.vars)})</span></div>
+          </div>
+        ))}
+        {c.nextGrant ? <div className="dim">{t('apiCredits.next', { day: dayShort(c.nextGrant.date), amt: c.nextGrant.amount != null ? usd(c.nextGrant.amount) : '?' })}</div> : null}
+        <div className="mt-cr-spend"><span>{t('apiCredits.spendToday', { amt: usd(c.spend ? c.spend.today : 0) })}</span><span>{t('apiCredits.spendMonth', { amt: usd(c.spend ? c.spend.month : 0) })}</span></div>
+      </div>}
     </div>
   );
 }

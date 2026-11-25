@@ -4,7 +4,8 @@
 // - 중계기: 판이 node로 띄우는 자식. 127.0.0.1의 포트 하나, 경로 앞머리 비밀(같은 PC의 다른 프로그램이 마음대로 쓰지 못하게).
 //   처음 API 런처를 띄울 때 뜨고, 판이 꺼지면 함께 끈다. 갑자기 죽으면 다시 띄우고 알린다(1분에 3번까지).
 //   포트·비밀은 relay.json에 두어 판을 다시 켜도 세션 설정 파일의 주소가 그대로 맞는다. 포트가 막히면 새 포트로 띄우고 onMoved로 알린다.
-// - 요청 기록: requests.jsonl(시각, 경로, 상태, 모델, 입력·출력·캐시 토큰, 세션). 머리글·본문·키는 남기지 않는다.
+// - 요청 기록: requests.jsonl(시각, 경로, 상태, 모델, 입력·출력·캐시 토큰(P361: 1시간 캐시 쓰기 cacheW1h), 세션). 머리글·본문·키는 남기지 않는다.
+// - P361: Admin 키(admin.bin, 같은 암호화). 공식 비용 조회(queryCost)는 같은 자식 프로그램을 mode cost로 한 번 띄워 그 자식만 키를 푼다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -27,6 +28,7 @@ export class AuthRelay {
   constructor({ dataDir, log = () => {}, onChange = () => {}, onNotice = () => {}, onMoved = () => {}, upstream = null, node = process.execPath, protect = dpapiProtect, now = () => Date.now() }) {
     this.dir = path.join(dataDir, 'auth-relay');
     this.keyFile = path.join(this.dir, 'key.bin');
+    this.adminKeyFile = path.join(this.dir, 'admin.bin'); // P361: Admin 키(공식 사용량·비용 API). 암호문만, 푸는 것은 자식(비용 조회)뿐
     this.stateFile = path.join(this.dir, 'relay.json');
     this.logFile = path.join(this.dir, 'requests.jsonl');
     Object.assign(this, { log, onChange, onNotice, onMoved, upstream, node, protect, now });
@@ -40,8 +42,9 @@ export class AuthRelay {
   }
   saveState() { fs.mkdirSync(this.dir, { recursive: true }); fs.writeFileSync(this.stateFile, JSON.stringify(this.state)); }
   keyPresent() { try { return fs.statSync(this.keyFile).size > 0; } catch { return false; } }
+  adminPresent() { try { return fs.statSync(this.adminKeyFile).size > 0; } catch { return false; } }
   status() {
-    return { keyPresent: this.keyPresent(), running: !!(this.child && this.port), starting: !!this.starting, port: this.child ? this.port : null, requests: this.requests, refused: this.refused, lastError: this.lastError, startedAt: this.startedAt, pid: this.child ? this.child.pid : null };
+    return { keyPresent: this.keyPresent(), adminKeyPresent: this.adminPresent(), running: !!(this.child && this.port), starting: !!this.starting, port: this.child ? this.port : null, requests: this.requests, refused: this.refused, lastError: this.lastError, startedAt: this.startedAt, pid: this.child ? this.child.pid : null };
   }
   changed() { try { this.onChange(this.status()); } catch {} }
   fail(kind) { this.lastError = { kind, at: this.now() }; }
@@ -67,6 +70,63 @@ export class AuthRelay {
     this.log('auth relay: key removed');
     this.changed();
     return { keyPresent: false };
+  }
+
+  // P361: Admin 키. API 키와 같이 암호화해 두고 값은 돌려주지 않는다. 중계기를 다시 띄우지 않는다(비용 조회 자식이 그때그때 푼다)
+  async setAdminKey(key) {
+    const k = typeof key === 'string' ? key.trim() : '';
+    if (!keyOk(k)) throw err('bad_request', 'Admin 키 모양이 아닙니다(보이는 글자 20~400자)', 'apiCredits.err.adminShape');
+    let ct;
+    try { ct = await this.protect(k); } catch (e) { throw err('protect_failed', `키를 OS 보호 저장소로 암호화하지 못했습니다 (${e.code || 'error'})`, 'authRelay.err.protect'); }
+    fs.mkdirSync(this.dir, { recursive: true });
+    const tmp = this.adminKeyFile + '.tmp';
+    fs.writeFileSync(tmp, ct); fs.renameSync(tmp, this.adminKeyFile);
+    this.log('auth relay: admin key saved (encrypted)');
+    this.changed();
+    return { adminKeyPresent: true };
+  }
+  async removeAdminKey() {
+    try { fs.rmSync(this.adminKeyFile, { force: true }); } catch {}
+    this.log('auth relay: admin key removed');
+    this.changed();
+    return { adminKeyPresent: false };
+  }
+  // P361: 공식 비용 조회(1시간 칸). 자식을 한 번 띄워 묻고 끝낸다 → { rows: [{ s, e, usd }], refreshedAt, pages }. 실패는 code cost_failed, vars.why
+  queryCost({ from, to, timeoutMs = 90000 }) {
+    if (!this.adminPresent()) return Promise.reject(err('no_admin_key', 'Admin 키가 없습니다', 'apiCredits.err.noAdmin'));
+    return new Promise((resolve, reject) => {
+      let p;
+      try { p = spawn(this.node, [CHILD], { env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }); }
+      catch { return reject(err('cost_failed', '비용 조회를 띄우지 못했습니다', 'apiCredits.err.cost', { why: 'spawn_failed' })); }
+      let done = false; let buf = '';
+      const finish = (e, v) => { if (done) return; done = true; clearTimeout(t); try { p.stdin.end(); } catch {} if (e) reject(e); else resolve(v); };
+      const fail = (why) => finish(err('cost_failed', `공식 비용을 받지 못했습니다 (${why})`, 'apiCredits.err.cost', { why }));
+      const t = setTimeout(() => { try { p.kill(); } catch {} fail('timeout'); }, timeoutMs);
+      p.stdout.setEncoding('utf8');
+      p.stdout.on('data', (c) => {
+        buf += c; let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i); buf = buf.slice(i + 1);
+          let m; try { m = JSON.parse(line); } catch { continue; }
+          if (m.t === 'cost') finish(null, { rows: Array.isArray(m.rows) ? m.rows : [], refreshedAt: m.refreshedAt ?? null, pages: m.pages || 0 });
+          else if (m.t === 'fatal') fail(String(m.why || 'fatal').slice(0, 60));
+        }
+      });
+      p.stderr.on('data', () => {});
+      p.on('error', () => fail('spawn_failed'));
+      p.on('exit', (code) => fail(`exit_${code}`));
+      p.stdin.write(JSON.stringify({ mode: 'cost', adminKeyFile: this.adminKeyFile, from, to, ...(this.upstream ? { upstream: this.upstream } : {}) }) + '\n');
+    });
+  }
+  // P361: 요청 기록 모두(돌려 쓴 .1 먼저) → 줄 목록. 장부가 지출을 셈할 때 쓴다(파일이 그대로면 담아 둔 것)
+  allRequests() {
+    const files = [this.logFile + '.1', this.logFile];
+    const sig = files.map((f) => { try { const s = fs.statSync(f); return `${s.size}:${s.mtimeMs}`; } catch { return '-'; } }).join('|');
+    if (this.allCache && this.allCache.sig === sig) return this.allCache.recs;
+    const recs = [];
+    for (const f of files) { let text = ''; try { text = fs.readFileSync(f, 'utf8'); } catch { continue; } for (const l of text.split('\n')) { if (!l) continue; try { recs.push(JSON.parse(l)); } catch {} } }
+    this.allCache = { sig, recs };
+    return recs;
   }
 
   url(sessionId) {

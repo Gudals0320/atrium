@@ -607,8 +607,9 @@ export class Branch {
     const seen = new Set();
     for (const k of kidIds) {
       const bid = tree.blockOf.get(k);
-      if (!bid || seen.has(bid)) continue;
-      seen.add(bid);
+      const one = bid === pid ? k : bid; // P362: 부모 상자 안의 형제는 노드마다(전에는 상자 블록 하나로 보아 첫 형제만 세었고, 새 하위가 둘째 형제 위에 섰다)
+      if (!bid || seen.has(one)) continue;
+      seen.add(one);
       const r = bid === pid ? all.find((i) => i.kind === 'node' && i.id === k) : bandOf(tree, bid);
       if (r && r.x >= pRect.x + pRect.w - 1) bands.push(r);
     }
@@ -849,7 +850,7 @@ export class Branch {
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
       harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgsFor(kind, other.model, other.launcher ? other.launcher.startCommand || '' : '', effortPlan.args), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
-      permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
+      permissionMode: child.permissionMode, state, trust: out.trust, waited: wait, ...(out.creditWarning ? { creditWarning: out.creditWarning.text } : {}), // P361: SDK 세션인데 장부의 크레딧이 바닥
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
       exit: state === 'exited' && child.rt.exit ? { kind: child.rt.exit.kind, code: child.rt.exit.code ?? null, error: child.rt.exit.error || null } : null, // P337: 끝 화면의 오류 문장(claude -w가 워크트리를 만들지 못함 등)
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,
