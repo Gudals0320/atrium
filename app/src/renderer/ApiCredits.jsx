@@ -5,18 +5,27 @@ import { useStore, getState, toast } from './store.js';
 import { api } from './api.js';
 import { useT, t as tt, errText } from './lib/i18n.js';
 import { notifyAllowed } from './lib/multiclient.js';
-import { usd, whenShort, dayShort, leftOf, targetsShort, barPct, grantLevel, sessionCost, saveBodyOf, toLocalInput, fromLocalInput, moneyInput, RULE_KEY } from './lib/api-credits.js';
+import { usd, whenShort, dayShort, leftOf, targetsShort, barPct, grantLevel, sessionCost, saveBodyOf, toLocalInput, fromLocalInput, moneyInput, RULE_KEY, tzLabel, pastedKey, totalParts, basisKey } from './lib/api-credits.js';
 import { spanOf } from './lib/usage.js';
 import { setCostRender } from './lib/cost-slot.js';
 
 const span = (t, ms) => { const s = spanOf(ms); return t(s.key, s.vars); };
 const useCredits = () => useStore((st) => (st.usage && st.usage.apiCredits) || null);
 
+// 기준 표시: 공식(조직 비용 API가 지금까지 덮음) | 공식+추정(덮은 때 뒤는 중계기 추정) | 추정
 function BasisTag({ c, now }) {
   const t = useT();
-  const official = c.basis === 'official';
-  const title = official ? t('apiCredits.officialTitle', { at: c.basisAt ? new Date(c.basisAt).toLocaleString() : '?' }) : t('apiCredits.estimateTitle', { updated: c.prices ? c.prices.updated : '?' });
-  return <span className={`mt-cr-basis ${official ? 'official' : 'estimate'}`} data-role="credits-basis" data-basis={c.basis} title={title}>{official ? t('apiCredits.official') : t('apiCredits.estimate')}{official && c.basisAt ? <span className="dim"> · {t('usage.ago', { span: span(t, now - c.basisAt) })}</span> : null}</span>;
+  const updated = c.prices ? c.prices.updated : '?';
+  const covered = c.coveredUntil ? whenShort(c.coveredUntil, true, now) : '?';
+  const title = c.basis === 'official' ? t('apiCredits.officialTitle', { at: covered }) : c.basis === 'mixed' ? t('apiCredits.mixedTitle', { at: covered, updated }) : t('apiCredits.estimateTitle', { updated });
+  return <span className={`mt-cr-basis ${c.basis || 'estimate'}`} data-role="credits-basis" data-basis={c.basis} title={title}>{t(basisKey(c.basis))}{c.basis === 'mixed' && c.coveredUntil ? <span className="dim"> · {t('apiCredits.coveredUntil', { at: covered })}</span> : null}</span>;
+}
+// 합계 줄의 칸(0인 프로모션·구매는 뺀다)
+export function TotalParts({ tot }) {
+  const t = useT();
+  return totalParts(tot).map((p) => p.k === 'purchased'
+    ? <span key={p.k} className={`mt-cr-purchased${p.due ? ' due' : ''}`} data-role="credits-purchased" title={t('apiCredits.purchasedTitle')}>{t('apiCredits.purchasedShort')} {usd(p.v)}{p.due ? ` (${t('apiCredits.due')})` : ''}</span>
+    : <span key={p.k} className="dim" data-role={`credits-total-${p.k}`} title={p.k === 'plan' ? t('apiCredits.kindPlanTitle') : t('apiCredits.kindPromoTitle')}>{t(p.k === 'plan' ? 'apiCredits.planShort' : 'apiCredits.promoShort')} {usd(p.v)}</span>);
 }
 
 // 지급 한 줄: 이름, 잔액/총액 막대, 적용 대상 줄임(툴팁), 만료일과 남은 때, 부여 날짜
@@ -34,8 +43,8 @@ function GrantRow({ g, now }) {
       </div>
       <span className="mt-cr-bar" aria-hidden="true"><span style={{ width: `${barPct(g)}%` }} /></span>
       <div className="mt-cr-grant-sub dim">
-        <span className={`mt-cr-exp${g.soon ? ' soon' : ''}`} data-role="credits-grant-exp" title={g.expiresAt ? new Date(g.expiresAt).toLocaleString() : ''}>{g.expiresAt ? t('apiCredits.expires', { when: whenShort(g.expiresAt, g.hasTime) }) : ''}{g.expired ? '' : ` (${t(left.key, left.vars)})`}</span>
-        {g.grantedOn ? <span>{t('apiCredits.granted', { day: dayShort(g.grantedOn) })}</span> : null}
+        <span className={`mt-cr-exp${g.soon ? ' soon' : ''}`} data-role="credits-grant-exp" title={g.expiresAt ? new Date(g.expiresAt).toLocaleString() : ''}>{g.expiresAt ? t('apiCredits.expires', { when: whenShort(g.expiresAt, g.hasTime, now) }) : ''}{g.expired ? '' : ` (${t(left.key, left.vars)})`}</span>
+        {g.grantedOn ? <span>{t('apiCredits.granted', { day: dayShort(g.grantedOn, now) })}</span> : null}
         {tg.text ? <span className="mt-cr-targets" title={`${t('apiCredits.appliesTo')}: ${(g.appliesTo || []).join(', ')}`}>{tg.text}{tg.more ? ` ${t('apiCredits.more', { n: tg.more })}` : ''}</span> : null}
         {g.spent > 0 ? <span title={t('apiCredits.spentTitle')}>{t('apiCredits.spentSince', { amt: usd(g.spent, { small: true }) })}</span> : null}
       </div>
@@ -55,9 +64,7 @@ export function CreditsBlock({ now = Date.now() }) {
       {!c.ledger ? <div className="mt-usage-src dim" data-role="credits-empty">{t('apiCredits.noLedger')}</div> : <>
         <div className="mt-cr-totals" data-role="credits-totals">
           <span className="mt-cr-usable" title={t('apiCredits.usableTitle')}><b className="mono">{usd(tot.usable)}</b> {t('apiCredits.usable')}</span>
-          <span className="dim">{t('apiCredits.planShort')} {usd(tot.plan)}</span>
-          <span className="dim">{t('apiCredits.promoShort')} {usd(tot.promo)}</span>
-          {tot.purchased != null ? <span className={`mt-cr-purchased${tot.purchased < 0 ? ' due' : ''}`} data-role="credits-purchased" title={t('apiCredits.purchasedTitle')}>{t('apiCredits.purchasedShort')} {usd(tot.purchased)}{tot.purchased < 0 ? ` (${t('apiCredits.due')})` : ''}</span> : null}
+          <TotalParts tot={tot} />
         </div>
         {(c.grants || []).map((g) => <GrantRow key={g.id} g={g} now={now} />)}
         {c.nextGrant ? <div className="mt-cr-next dim" data-role="credits-next" title={t('apiCredits.nextTitle')}>{t('apiCredits.next', { day: dayShort(c.nextGrant.date), amt: c.nextGrant.amount != null ? usd(c.nextGrant.amount) : '?' })}</div> : null}
@@ -65,7 +72,7 @@ export function CreditsBlock({ now = Date.now() }) {
       </>}
       <div className="mt-cr-spend" data-role="credits-spend"><span>{t('apiCredits.spendToday', { amt: usd(c.spend ? c.spend.today : 0) })}</span><span>{t('apiCredits.spendMonth', { amt: usd(c.spend ? c.spend.month : 0) })}</span></div>
       <div className="mt-usage-src dim">
-        {c.ledger && c.pastedAt ? t('apiCredits.pastedAgo', { span: span(t, now - c.pastedAt) }) : ''}
+        {c.ledger && c.pastedAt ? t(pastedKey(c.pastedAt, now), { span: span(t, now - c.pastedAt) }) : ''}
         {c.unpriced ? ` · ${t('apiCredits.unpriced', { n: c.unpriced })}` : ''}
         {c.officialError ? ` · ${t('apiCredits.officialFailed', { why: c.officialError })}` : ''}
       </div>
@@ -87,13 +94,13 @@ function PreviewTable({ pv }) {
   const t = useT();
   return (
     <div className="mt-cr-preview" data-role="credits-preview">
-      <div className="mt-cr-preview-head">{t('apiCredits.previewHead')}</div>
+      <div className="mt-cr-preview-head">{t('apiCredits.previewHead')} <span className="dim" data-role="credits-preview-tz">{t('apiCredits.tzNote', { tz: tzLabel() })}</span></div>
       {pv.purchased ? <div data-role="credits-preview-purchased">{t('apiCredits.purchasedShort')} <b className="mono">{usd(pv.purchased.balance)}</b>{pv.purchased.due ? ` (${t('apiCredits.due')})` : ''}{pv.autoReload === false ? ` · ${t('apiCredits.autoOff')}` : pv.autoReload ? ` · ${t('apiCredits.autoOn')}` : ''}</div> : null}
       {pv.grants.length ? (
         <table className="mt-cr-table">
           <thead><tr><th>{t('apiCredits.colName')}</th><th>{t('apiCredits.colLeft')}</th><th>{t('apiCredits.appliesTo')}</th><th>{t('apiCredits.colExpires')}</th><th>{t('apiCredits.colGranted')}</th></tr></thead>
           <tbody>{pv.grants.map((g, i) => (
-            <tr key={i} data-role="credits-preview-grant"><td>{g.name} <span className={`mt-cr-kind k-${g.kind}`}>{t(g.kind === 'plan' ? 'apiCredits.kindPlan' : 'apiCredits.kindPromo')}</span></td><td className="mono">{usd(g.remaining)} / {usd(g.total)}</td><td>{(g.appliesTo || []).join(', ')}</td><td>{g.expiresAt ? new Date(g.expiresAt).toLocaleString() : '—'}</td><td>{g.grantedOn || '—'}</td></tr>
+            <tr key={i} data-role="credits-preview-grant"><td>{g.name} <span className={`mt-cr-kind k-${g.kind}`}>{t(g.kind === 'plan' ? 'apiCredits.kindPlan' : 'apiCredits.kindPromo')}</span></td><td className="mono">{usd(g.remaining)} / {usd(g.total)}</td><td>{(g.appliesTo || []).join(', ')}</td><td>{g.expiresAt ? whenShort(g.expiresAt, g.hasTime) : '—'}</td><td>{g.grantedOn ? dayShort(g.grantedOn) : '—'}</td></tr>
           ))}</tbody>
         </table>
       ) : null}
@@ -197,12 +204,12 @@ export function ApiCreditsPanel() {
 
       {c && c.ledger ? (
         <div className="mt-cr-ledger" data-role="credits-ledger">
-          <div className="mt-cr-sub-title">{t('apiCredits.ledgerTitle', { span: c.pastedAt ? span(t, now - c.pastedAt) : '?' })}</div>
+          <div className="mt-cr-sub-title">{t(pastedKey(c.pastedAt, now) === 'apiCredits.pastedJust' ? 'apiCredits.ledgerTitleJust' : 'apiCredits.ledgerTitle', { span: c.pastedAt ? span(t, now - c.pastedAt) : '?' })}</div>
           {(c.grants || []).map((g) => edit === g.id ? <GrantEdit key={g.id} g={g} onDone={() => setEdit(null)} /> : (
             <div key={g.id} className="mt-cr-ledger-row" data-role="credits-ledger-row" data-id={g.id}>
               <span className="mt-cr-name">{g.name}</span><span className={`mt-cr-kind k-${g.kind}`}>{t(g.kind === 'plan' ? 'apiCredits.kindPlan' : 'apiCredits.kindPromo')}</span>
               <span className="mono">{usd(g.remaining)} / {usd(g.total)}</span>
-              <span className="dim">{g.expiresAt ? t('apiCredits.expires', { when: whenShort(g.expiresAt, g.hasTime) }) : t('apiCredits.noExpiry')}</span>
+              <span className="dim">{g.expiresAt ? t('apiCredits.expires', { when: whenShort(g.expiresAt, g.hasTime, now) }) : t('apiCredits.noExpiry')}</span>
               <span className="dim">{g.grantedOn ? t('apiCredits.granted', { day: dayShort(g.grantedOn) }) : ''}</span>
               <button className="mt-btn small" onClick={() => setEdit(g.id)} data-role="credits-edit">{t('apiCredits.edit')}</button>
               <button className="mt-btn small danger" disabled={busy} onClick={() => call('credits.grant', { op: 'remove', id: g.id })} data-role="credits-remove">{t('apiCredits.remove')}</button>

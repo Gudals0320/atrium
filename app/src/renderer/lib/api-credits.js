@@ -8,14 +8,33 @@ export function usd(v, { small = false } = {}) {
   if (small && v > 0 && v < 0.01) return '<$0.01';
   return `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
 }
-// 11/27 09:00 (이 PC 시간대). 시각이 없던 날짜는 11/27
-export function whenShort(ms, hasTime = true) {
+// 11/27 09:00 (이 PC 시간대). 시각이 없던 날짜는 11/27. 올해가 아니면 2027/1/3 09:00
+export function whenShort(ms, hasTime = true, now = Date.now()) {
   if (!num(ms)) return '';
   const d = new Date(ms);
-  return `${d.getMonth() + 1}/${d.getDate()}${hasTime ? ` ${two(d.getHours())}:${two(d.getMinutes())}` : ''}`;
+  const y = d.getFullYear() !== new Date(now).getFullYear() ? `${d.getFullYear()}/` : '';
+  return `${y}${d.getMonth() + 1}/${d.getDate()}${hasTime ? ` ${two(d.getHours())}:${two(d.getMinutes())}` : ''}`;
 }
-// 'YYYY-MM-DD' → 11/24
-export const dayShort = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); return m ? `${Number(m[2])}/${Number(m[3])}` : ''; };
+// 'YYYY-MM-DD' → 11/24 (올해가 아니면 2025/11/24)
+export const dayShort = (s, now = Date.now()) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); return m ? `${Number(m[1]) !== new Date(now).getFullYear() ? `${m[1]}/` : ''}${Number(m[2])}/${Number(m[3])}` : ''; };
+// 이 PC 시간대 표시: GMT+9, GMT-7:30
+export function tzLabel(at = Date.now()) {
+  const off = -new Date(at).getTimezoneOffset();
+  const h = Math.floor(Math.abs(off) / 60), m = Math.abs(off) % 60;
+  return `GMT${off < 0 ? '-' : '+'}${h}${m ? `:${two(m)}` : ''}`;
+}
+// 붙여 넣은 때 글 열쇠: 1분 안이면 "방금"
+export const pastedKey = (pastedAt, now = Date.now()) => (num(pastedAt) && now - pastedAt < 60000 ? 'apiCredits.pastedJust' : 'apiCredits.pastedAgo');
+// 합계 줄에 보일 칸: 0인 프로모션·구매는 뺀다(Console은 월 크레딧도 프로모션 크레딧 아래에 보인다) → [{ k: plan|promo|purchased, v, due }]
+export function totalParts(tot) {
+  if (!tot) return [];
+  const out = [{ k: 'plan', v: tot.plan }];
+  if (num(tot.promo) && Math.abs(tot.promo) >= 0.005) out.push({ k: 'promo', v: tot.promo });
+  if (num(tot.purchased) && Math.abs(tot.purchased) >= 0.005) out.push({ k: 'purchased', v: tot.purchased, due: tot.purchased < 0 });
+  return out;
+}
+// 기준 표시 열쇠: official 공식 | mixed 공식+추정 | estimate 추정
+export const basisKey = (b) => (b === 'official' ? 'apiCredits.official' : b === 'mixed' ? 'apiCredits.mixed' : 'apiCredits.estimate');
 // 남은 때 → 글 열쇠 { key, vars }
 export function leftOf(expiresAt, now = Date.now()) {
   if (!num(expiresAt)) return { key: 'apiCredits.noExpiry', vars: {} };

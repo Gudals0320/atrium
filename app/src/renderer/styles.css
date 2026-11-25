@@ -3243,6 +3243,7 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-credits { gap: 6px; }
 .mt-cr-basis { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--panel-3); color: var(--dim); white-space: nowrap; }
 .mt-cr-basis.official { color: var(--ok); }
+.mt-cr-basis.mixed { color: var(--ok); }
 .mt-cr-rule { margin-left: auto; cursor: help; font-size: 12px; }
 .mt-cr-totals { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 12.5px; }
 .mt-cr-usable b { font-size: 15px; }

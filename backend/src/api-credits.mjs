@@ -310,10 +310,13 @@ export function creditView({ ledger, relayRecs = [], official = null, now = Date
   const sessions = {};
   for (const x of priced) if (x.session) sessions[x.session] = round6((sessions[x.session] || 0) + x.usd);
   const items = mergeItems({ official, relay: priced });
-  const basis = official && Array.isArray(official.rows) ? 'official' : 'estimate';
+  // 기준: 공식 칸이 지금까지 덮으면 official, 덮지 못한 뒤쪽(공식 값은 보통 몇 시간 늦다)을 중계기 추정으로 채웠으면 mixed(공식+추정), 공식 값이 없으면 estimate
+  const hasOfficial = !!(official && Array.isArray(official.rows));
+  const coveredUntil = hasOfficial && num(official.coveredUntil) ? official.coveredUntil : null;
+  const basis = !hasOfficial ? 'estimate' : coveredUntil != null && coveredUntil >= now - 60000 ? 'official' : 'mixed';
   const sumSince = (t) => round2(items.reduce((a, x) => { if (x.at >= t) return a + x.usd; const end = num(x.end) ? x.end : x.at; return end > t ? a + x.usd * ((end - t) / (end - x.at)) : a; }, 0));
   const spend = { today: sumSince(dayStart(now)), month: sumSince(monthStart(now)) };
-  const base = { basis, basisAt: basis === 'official' ? official.refreshedAt || official.at || null : now, officialAt: official ? official.at || null : null, officialError: official && official.error ? official.error : null, adminKey: !!adminKey, prices: { updated: PRICES_UPDATED, url: PRICES_URL }, unpriced, sessions, spend, at: now };
+  const base = { basis, basisAt: hasOfficial ? coveredUntil : now, coveredUntil, officialAt: official ? official.at || null : null, officialError: official && official.error ? official.error : null, adminKey: !!adminKey, prices: { updated: PRICES_UPDATED, url: PRICES_URL }, unpriced, sessions, spend, at: now };
   if (!ledger) return { ...base, ledger: false, grants: [], totals: null, nextGrant: null, plan: null, expiring: [], exhausted: false };
   const pastedAt = ledger.pastedAt || null;
   const al = allocate(ledger, items, now);
@@ -338,5 +341,5 @@ export const alertKey = (g) => `${g.name}|${g.expiresAt}`;
 // 휴대폰·작은 화면용 줄인 값
 export function slimView(v) {
   if (!v) return null;
-  return { ledger: !!v.ledger, basis: v.basis, basisAt: v.basisAt, totals: v.totals || null, spend: v.spend, nextGrant: v.nextGrant || null, exhausted: !!v.exhausted, at: v.at, grants: (v.grants || []).filter((g) => !g.expired).map((g) => ({ id: g.id, name: g.name, kind: g.kind, total: g.total, left: g.left, expiresAt: g.expiresAt, grantedOn: g.grantedOn, soon: g.soon })) };
+  return { ledger: !!v.ledger, basis: v.basis, basisAt: v.basisAt, coveredUntil: v.coveredUntil ?? null, totals: v.totals || null, spend: v.spend, nextGrant: v.nextGrant || null, exhausted: !!v.exhausted, at: v.at, grants: (v.grants || []).filter((g) => !g.expired).map((g) => ({ id: g.id, name: g.name, kind: g.kind, total: g.total, left: g.left, expiresAt: g.expiresAt, grantedOn: g.grantedOn, soon: g.soon })) };
 }

@@ -24,7 +24,7 @@ import { markInteracted } from './touch.js';
 import { cardFacts, DoneMark, ST } from './MapCard.jsx'; // P356: 줄·카드 얼굴은 판 세션 맵 카드와 같은 함수
 import { nodeTier } from './lib/mission-model.js';
 import { liveFromRow, todoCounts } from './lib/mobile-map.js';
-import { usd, dayShort, phoneRows, hasCredits } from './lib/api-credits.js'; // P361: 홈의 API 크레딧 칸
+import { usd, dayShort, phoneRows, hasCredits, totalParts, basisKey, whenShort } from './lib/api-credits.js'; // P361: 홈의 API 크레딧 칸
 import './phone.css';
 import './mobile.css';
 
@@ -277,10 +277,11 @@ function PhoneCredits({ now }) {
       <button type="button" className="mt-mp-later-head" data-action="mp-credits-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span>{open ? '▾' : '▸'}</span>{t('apiCredits.head')}
         {tot ? <b className="mono" data-role="mp-credits-usable">{usd(tot.usable)}</b> : null}
-        <span className={`mt-cr-basis ${c.basis}`}>{c.basis === 'official' ? t('apiCredits.official') : t('apiCredits.estimate')}</span>
+        <span className={`mt-cr-basis ${c.basis}`} data-role="mp-credits-basis">{t(basisKey(c.basis))}</span>
       </button>
       {open && <div className="mt-mp-credits-body">
-        {tot ? <div className="mt-cr-totals"><span>{t('apiCredits.planShort')} {usd(tot.plan)}</span><span>{t('apiCredits.promoShort')} {usd(tot.promo)}</span>{tot.purchased != null ? <span className={tot.purchased < 0 ? 'mt-cr-purchased due' : 'mt-cr-purchased'}>{t('apiCredits.purchasedShort')} {usd(tot.purchased)}</span> : null}</div> : <div className="dim">{t('apiCredits.noLedgerPhone')}</div>}
+        {tot ? <div className="mt-cr-totals">{totalParts(tot).map((p) => <span key={p.k} className={p.k === 'purchased' ? (p.due ? 'mt-cr-purchased due' : 'mt-cr-purchased') : undefined}>{t(p.k === 'plan' ? 'apiCredits.planShort' : p.k === 'promo' ? 'apiCredits.promoShort' : 'apiCredits.purchasedShort')} {usd(p.v)}</span>)}</div> : <div className="dim">{t('apiCredits.noLedgerPhone')}</div>}
+        {c.basis === 'mixed' && c.coveredUntil ? <div className="dim" data-role="mp-credits-covered">{t('apiCredits.coveredLine', { at: whenShort(c.coveredUntil, true, now) })}</div> : null}
         {rows.map((g) => (
           <div key={g.id} className={`mt-cr-grant lv-${g.level}`} data-role="mp-credits-grant">
             <div className="mt-cr-grant-top"><span className="mt-cr-name">{g.name}</span><span className="mt-cr-amt mono">{usd(g.left)} / {usd(g.total)}</span></div>

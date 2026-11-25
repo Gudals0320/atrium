@@ -148,7 +148,10 @@ test('보기: 합계·남은 날·곧 만료·바닥·다음 지급·세션별 �
   // 공식: [from, coveredUntil) 시간은 공식 칸, 그 밖은 중계기
   const official = { at: now, from: now - 3 * H, to: now + H, coveredUntil: now - H / 2, refreshedAt: now - H / 2, rows: [{ s: now - 2 * H, e: now - H, usd: 30 }] };
   const w = creditView({ ledger, relayRecs: recs, official, now });
-  assert.equal(w.basis, 'official');
+  assert.equal(w.basis, 'mixed', '공식 값이 지금까지 덮지 못하면 공식+추정');
+  assert.equal(w.coveredUntil, now - H / 2); assert.equal(w.basisAt, now - H / 2);
+  assert.match(creditLines(w, now).join('\n'), /공식\+추정\(조직 비용 API는 .*까지, 그 뒤는 추정/);
+  assert.equal(creditView({ ledger, official: { ...official, coveredUntil: now }, now }).basis, 'official', '지금까지 덮으면 공식');
   assert.equal(w.grants[0].spent, 30, '공식 칸 안의 중계기 기록은 두 번 세지 않는다');
   const late = creditView({ ledger, relayRecs: [{ ...recs[0], at: now - 10 * 60000 }], official, now });
   assert.equal(late.grants[0].spent, 36, '공식 값이 아직 없는 시간은 중계기 추정을 더한다');
@@ -162,6 +165,17 @@ test('보기: 합계·남은 날·곧 만료·바닥·다음 지급·세션별 �
   const lines = creditLines(v, now).join('\n');
   assert.match(lines, /쓸 수 있음 \$321\.11/); assert.match(lines, /API credit \(Ultra\)\[월\]: \$121\.11 \/ \$130\.33/); assert.match(lines, /구매 잔액 -\$4\.33\(미납\)/); assert.match(lines, /다음 지급 예정: 2026-12-24 \$200\.00/); assert.match(lines, /곧 만료/);
   assert.ok(usageLines({ providers: {}, apiCredits: v }, now).some((l) => l.startsWith('API 크레딧')));
+  assert.doesNotMatch(lines, /프로모션 \$0\.00|\+ 구매 \$0\.00/, '0인 프로모션·구매는 합 줄에서 뺀다');
+  assert.match(lines, /Console 결제 페이지는 요금제 월 크레딧도 "프로모션 크레딧" 아래에/);
+  assert.match(creditLines({ ...v, pastedAt: now - 20000 }, now).join('\n'), /붙여 넣은 때 방금/);
+  // 같은 상태면 CLI·휴대폰(slimView)·창이 같은 숫자(창 팝업도 이 값을 그대로 쓴다)
+  for (const view of [v, w, late]) {
+    const sl = slimView(view); const txt = creditLines(view, now).join('\n');
+    assert.deepEqual(sl.totals, view.totals); assert.equal(sl.basis, view.basis);
+    assert.deepEqual(sl.grants.map((g) => g.left), view.grants.filter((g) => !g.expired).map((g) => g.left));
+    assert.ok(txt.includes(`쓸 수 있음 $${view.totals.usable.toFixed(2)}`));
+    for (const g of view.grants) assert.ok(txt.includes(`$${g.left.toFixed(2)} / $${g.total.toFixed(2)}`), `CLI에 ${g.left}`);
+  }
 });
 
 // 판 흉내: 판 기록 meta, 결정 카드 저장소, 알림
@@ -265,7 +279,7 @@ test('Admin 키: 암호문만 디스크에, 비용 조회는 자식이 키를 �
     book.saveParsed({ grants: [{ name: 'API credit (Ultra)', total: 200, remaining: 200, expiresAt: Date.UTC(2026, 11, 27) }] });
     await book.refreshOfficial({ force: true });
     const v = book.view();
-    assert.equal(v.basis, 'official'); assert.equal(v.adminKey, true);
+    assert.equal(v.basis, 'mixed', '가짜 위쪽의 반영 시각(03:00)이 지금(04:00)보다 앞이라 공식+추정'); assert.equal(v.coveredUntil, Date.UTC(2026, 10, 25, 3)); assert.equal(v.adminKey, true);
     // 실패: 까닭만(키 없음)
     mode = 'bad';
     await assert.rejects(() => r.queryCost({ from: Date.UTC(2026, 10, 25, 0), to: Date.UTC(2026, 10, 25, 4) }), (e) => e.code === 'cost_failed' && e.vars.why === 'http_401:authentication_error' && !e.message.includes(admin));

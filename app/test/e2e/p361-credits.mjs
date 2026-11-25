@@ -107,6 +107,8 @@ async function shots() {
     const pv = await page.$$eval('[data-role=credits-preview-grant]', (els) => els.map((e) => e.textContent));
     check('미리 보기: 지급 둘(이름·잔액/총액·적용 대상·만료·부여), 구매 -$4.33 미납', pv.length === 2 && /\$127\.11 \/ \$130\.33/.test(pv[0]) && /\$200\.00/.test(pv[1]) && /미납/.test(await page.$eval('[data-role=credits-preview-purchased]', (e) => e.textContent)), pv);
     check('미리 보기는 아직 저장하지 않았다', call('credits.get').ledger === false);
+    const pvDates = await page.$eval('[data-role=credits-preview]', (e) => ({ tz: (e.querySelector('[data-role=credits-preview-tz]') || {}).textContent || '', cells: [...e.querySelectorAll('[data-role=credits-preview-grant] td')].map((td) => td.textContent) }));
+    check('미리 보기 날짜는 장부·팝업 꼴(11/27 09:00), 시간대는 한 번', /GMT[+-]\d/.test(pvDates.tz) && pvDates.cells.some((c) => /^\d{1,2}\/\d{1,2} \d{2}:\d{2}$/.test(c)) && !pvDates.cells.some((c) => /오전|AM|PM/.test(c)), pvDates);
     await (await page.$('[data-role=credits-panel]')).screenshot({ path: path.join(OUT, '1-settings-preview.png') });
     await page.click('[data-role=credits-save]');
     await page.waitForSelector('[data-role=credits-ledger-row]', { timeout: 8000 });
@@ -162,17 +164,26 @@ async function shots() {
     // 7) Admin 키(가짜) → 공식 비용(가짜 위쪽) → 팝업 "공식"
     const ar = call('relay.setAdminKey', { key: 'sk-test-admin-' + crypto.randomBytes(20).toString('hex') });
     check('Admin 키 넣기: 답에 값이 없다', ar.adminKeyPresent === true && !JSON.stringify(ar).includes('sk-test-admin-'), ar);
-    await until(() => call('credits.get').basis === 'official', 30000, 1500).catch(() => {});
+    await until(() => call('credits.get').basis !== 'estimate', 30000, 1500).catch(() => {});
     const v3 = call('credits.get');
-    check('공식 비용(1시간 칸) → 공식 표시, 반영 시각', v3.basis === 'official' && v3.basisAt && !v3.officialError, { basis: v3.basis, basisAt: v3.basisAt, err: v3.officialError, spend: v3.spend });
+    check('공식 비용(1시간 칸)이 지금까지 덮지 못함(가짜 위쪽 반영 1시간 전) → 공식+추정, 덮은 때', v3.basis === 'mixed' && v3.coveredUntil && v3.coveredUntil < Date.now() && !v3.officialError, { basis: v3.basis, coveredUntil: v3.coveredUntil, err: v3.officialError, spend: v3.spend });
     await page.click('[data-role=usage]');
-    await page.waitForSelector('[data-role=api-credits][data-basis=official]', { timeout: 10000 }).catch(() => {});
+    await page.waitForSelector('[data-role=api-credits][data-basis=mixed]', { timeout: 10000 }).catch(() => {});
     await sleep(600);
     await page.$eval('[data-role=api-credits]', (e) => e.scrollIntoView({ block: 'end' })); await sleep(300);
     await (await page.$('[data-role=api-credits]')).screenshot({ path: path.join(OUT, '7-usage-credits-official.png') });
     await page.keyboard.press('Escape'); await sleep(400);
     // 8) atrium usage
+    // 같은 상태에서 팝업·atrium usage·판 값(credits.get)이 같은 숫자인가
+    await page.click('[data-role=usage]'); await page.waitForSelector('[data-role=api-credits]', { timeout: 8000 }); await sleep(500);
+    const vNow = call('credits.get');
+    const popNums = await page.$eval('[data-role=api-credits]', (e) => ({ usable: (e.querySelector('.mt-cr-usable b') || {}).textContent, lefts: [...e.querySelectorAll('[data-role=credits-grant-left]')].map((x) => x.textContent.trim()), basis: (e.querySelector('[data-role=credits-basis]') || {}).textContent, promo: !!e.querySelector('[data-role=credits-total-promo]') })).catch(() => null);
+    const usdOf = (v) => `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
+    const want = { usable: usdOf(vNow.totals.usable), lefts: vNow.grants.map((g) => `${usdOf(g.left)} / ${usdOf(g.total)}`) };
     const txt = atrium('usage');
+    check('같은 상태: 팝업 = credits.get = atrium usage(합계·지급 잔액), 팝업 기준 글 공식+추정, 0인 프로모션 숨김', popNums && popNums.usable === want.usable && JSON.stringify(popNums.lefts) === JSON.stringify(want.lefts) && txt.includes(`쓸 수 있음 ${want.usable}`) && want.lefts.every((l) => txt.includes(l)) && /공식\+추정/.test(popNums.basis || '') && !popNums.promo, { popNums, want });
+    save('numbers-desktop.json', { want, popNums });
+    await page.keyboard.press('Escape'); await sleep(300);
     save('8-atrium-usage.txt', txt);
     check('atrium usage에 API 크레딧 줄(합계, 지급마다 한 줄, 다음 지급, 지출, 공식)', /API 크레딧\(/.test(txt) && (txt.match(/API credit \(Ultra\)\[월\]/g) || []).length === 2 && /다음 지급 예정/.test(txt) && /지출 오늘/.test(txt) && /공식/.test(txt), txt.split('\n').filter((l) => /크레딧|credit|지급|지출/.test(l)).join(' | ').slice(0, 900));
     // 키 값이 판 폴더·로그에 평문으로 없는가
@@ -225,6 +236,13 @@ async function phone() {
     await sleep(800);
     const x = await pg.$eval('[data-role=mp-credits]', (e) => ({ basis: e.dataset.basis, rows: e.querySelectorAll('[data-role=mp-credits-grant]').length, usable: (e.querySelector('[data-role=mp-credits-usable]') || {}).textContent, text: e.textContent }));
     check('휴대폰 홈: API 크레딧 합계와 지급 줄', x.rows === 2 && /^\$\d/.test(x.usable || ''), { ...x, text: x.text.slice(0, 300) });
+    // 같은 상태: 휴대폰 = credits.get = atrium usage
+    const vNow = call('credits.get'); const txt = atrium('usage');
+    const usdOf = (v) => `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
+    const lefts = await pg.$$eval('[data-role=mp-credits-grant] .mt-cr-amt', (els) => els.map((e) => e.textContent.trim()));
+    const want = { usable: usdOf(vNow.totals.usable), lefts: vNow.grants.filter((g) => !g.expired).map((g) => `${usdOf(g.left)} / ${usdOf(g.total)}`), basis: vNow.basis };
+    check('같은 상태: 휴대폰 = credits.get = atrium usage(합계·지급 잔액·기준)', x.usable === want.usable && JSON.stringify(lefts) === JSON.stringify(want.lefts) && x.basis === want.basis && txt.includes(`쓸 수 있음 ${want.usable}`) && want.lefts.every((l) => txt.includes(l)), { phone: { usable: x.usable, lefts, basis: x.basis }, want });
+    save('numbers-phone.json', { phone: { usable: x.usable, lefts, basis: x.basis }, want });
     await pg.$eval('[data-role=mp-credits]', (e) => e.scrollIntoView({ block: 'center' }));
     await sleep(500);
     await pg.screenshot({ path: path.join(OUT, '9-phone-home-credits.png') });

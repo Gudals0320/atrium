@@ -44,15 +44,22 @@ const two = (n) => String(n).padStart(2, '0');
 const whenText = (t) => { const d = new Date(t); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`; };
 export function creditLines(c, now = Date.now()) {
   const out = [];
-  const basis = c.basis === 'official' ? `공식(조직 비용 API, ${c.basisAt ? `${spanText(now - c.basisAt)} 전까지 반영` : '반영 시각 모름'})` : `추정(보드 중계기 기록 × 가격표 ${c.prices ? c.prices.updated : '?'}, 보드 세션 몫만)`;
+  const est = `보드 중계기 기록 × 가격표 ${c.prices ? c.prices.updated : '?'}, 보드 세션 몫만`;
+  const basis = c.basis === 'official' ? '공식(조직 비용 API)'
+    : c.basis === 'mixed' ? `공식+추정(조직 비용 API는 ${c.coveredUntil ? `${whenText(c.coveredUntil)}(${spanText(now - c.coveredUntil)} 전)까지` : '반영 시각 모름'}, 그 뒤는 추정: ${est})`
+    : `추정(${est})`;
+  const ago = (t) => (now - t < 60000 ? '방금' : `${spanText(now - t)} 전`);
   if (!c.ledger) {
     out.push('API 크레딧: 장부 없음(설정 › 런처 › API 크레딧에 Console 결제 페이지를 붙여 넣는다)');
     if (c.spend) out.push(`  지출 오늘 ${usd(c.spend.today)} · 이번 달 ${usd(c.spend.month)} · ${basis}`);
     return out;
   }
   const t = c.totals || {};
-  out.push(`API 크레딧(붙여 넣은 때 ${c.pastedAt ? `${spanText(now - c.pastedAt)} 전` : '?'}, 뺀 지출 ${basis}):`);
-  out.push(`  쓸 수 있음 ${usd(t.usable)} = 월 크레딧 ${usd(t.plan)} + 프로모션 ${usd(t.promo)}${t.purchased != null ? ` + 구매 ${usd(Math.max(0, t.purchased))}` : ''}${t.purchased != null ? ` · 구매 잔액 ${usd(t.purchased)}${t.purchased < 0 ? '(미납)' : ''}` : ''}${c.autoReload === false ? ' · 자동 충전 꺼짐' : c.autoReload ? ' · 자동 충전 켜짐' : ''}`);
+  out.push(`API 크레딧(붙여 넣은 때 ${c.pastedAt ? ago(c.pastedAt) : '?'}, 뺀 지출 ${basis}):`);
+  // 0인 프로모션·구매는 합 줄에서 뺀다(Console은 월 크레딧도 "프로모션 크레딧" 아래에 보인다)
+  const parts = [`월 크레딧 ${usd(t.plan)}`, ...(t.promo > 0 ? [`프로모션 ${usd(t.promo)}`] : []), ...(t.purchased > 0 ? [`구매 ${usd(t.purchased)}`] : [])];
+  out.push(`  쓸 수 있음 ${usd(t.usable)} = ${parts.join(' + ')}${t.purchased != null && t.purchased <= 0 ? ` · 구매 잔액 ${usd(t.purchased)}${t.purchased < 0 ? '(미납)' : ''}` : ''}${c.autoReload === false ? ' · 자동 충전 꺼짐' : c.autoReload ? ' · 자동 충전 켜짐' : ''}`);
+  out.push('  (Console 결제 페이지는 요금제 월 크레딧도 "프로모션 크레딧" 아래에 보인다)');
   for (const g of c.grants || []) {
     const left = g.expired ? '만료됨' : `${usd(g.left)} / ${usd(g.total)}`;
     const exp = g.expiresAt ? `만료 ${whenText(g.expiresAt)}${!g.expired ? `(${spanText(g.expiresAt - now)} 남음)` : ''}` : '만료일 모름';

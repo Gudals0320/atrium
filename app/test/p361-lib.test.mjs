@@ -1,7 +1,7 @@
 // P361: API 크레딧 장부를 창에서 보이는 순수 함수(금액·남은 때·적용 대상 줄임·막대·세션 금액·저장 꼴·입력 칸)와 사전 두 벌
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { usd, whenShort, dayShort, leftOf, targetsShort, barPct, grantLevel, sessionCost, hasCredits, saveBodyOf, toLocalInput, fromLocalInput, moneyInput, phoneRows } from '../src/renderer/lib/api-credits.js';
+import { usd, whenShort, dayShort, leftOf, targetsShort, barPct, grantLevel, sessionCost, hasCredits, saveBodyOf, toLocalInput, fromLocalInput, moneyInput, phoneRows, tzLabel, pastedKey, totalParts, basisKey } from '../src/renderer/lib/api-credits.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
 
@@ -40,6 +40,19 @@ test('미리 본 값 → 저장 꼴, 휴대폰 줄', () => {
   assert.deepEqual(b.purchased, { balance: -4.33, due: true }); assert.equal(b.autoReload, false); assert.equal('plan' in b, false);
   const rows = phoneRows({ grants: [{ id: 'a', name: 'n', kind: 'plan', left: 50, total: 100, expiresAt: Date.now() + 86400000, soon: true }] });
   assert.equal(rows[0].pct, 50); assert.equal(rows[0].level, 'warn'); assert.equal(rows[0].left2.key, 'apiCredits.leftHours');
+});
+
+test('올해가 아니면 연도, 시간대 표시, 방금 붙여 넣음, 0인 프로모션·구매 빼기, 기준 열쇠', () => {
+  const now = new Date(2026, 10, 25, 12).getTime();
+  assert.equal(whenShort(new Date(2027, 0, 3, 9, 0).getTime(), true, now), '2027/1/3 09:00');
+  assert.equal(whenShort(new Date(2026, 10, 27, 9, 0).getTime(), true, now), '11/27 09:00');
+  assert.equal(dayShort('2025-12-24', now), '2025/12/24'); assert.equal(dayShort('2026-11-24', now), '11/24');
+  assert.match(tzLabel(), /^GMT[+-]\d{1,2}(:\d{2})?$/);
+  assert.equal(pastedKey(now - 30000, now), 'apiCredits.pastedJust'); assert.equal(pastedKey(now - 90000, now), 'apiCredits.pastedAgo');
+  assert.deepEqual(totalParts({ plan: 324.85, promo: 0, purchased: -4.33 }).map((p) => p.k), ['plan', 'purchased']);
+  assert.deepEqual(totalParts({ plan: 10, promo: 5, purchased: 0 }).map((p) => p.k), ['plan', 'promo']);
+  assert.equal(totalParts({ plan: 1, promo: 0, purchased: -1 })[1].due, true);
+  assert.equal(basisKey('mixed'), 'apiCredits.mixed'); assert.equal(basisKey('official'), 'apiCredits.official'); assert.equal(basisKey('estimate'), 'apiCredits.estimate');
 });
 
 test('사전: 영어·한국어 apiCredits 절의 열쇠가 같다', () => {
