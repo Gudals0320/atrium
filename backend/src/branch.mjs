@@ -97,9 +97,9 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
   ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, `Bash(${c} revive:*)`, `Bash(${c} revive *)`, `Bash(${c} fork:*)`, `Bash(${c} fork *)`, // P360 // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
-    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`, `Bash(${c} todo:*)`, `Bash(${c} todo *)`, `Bash(${c} plan)`, `Bash(${c} plan:*)`, `Bash(${c} plan *)`]), // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`, `Bash(${c} todo:*)`, `Bash(${c} todo *)`, `Bash(${c} plan)`, `Bash(${c} plan:*)`, `Bash(${c} plan *)`, `Bash(${c} know:*)`, `Bash(${c} know *)`]), // P364: know // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
-    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`, `PowerShell(${c} todo *)`, `PowerShell(${c} plan)`, `PowerShell(${c} plan *)`]), // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
+    `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`, `PowerShell(${c} todo *)`, `PowerShell(${c} plan)`, `PowerShell(${c} plan *)`, `PowerShell(${c} know *)`]), // P364: know // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
 ];
 // P129: 옛 터미널 명령 규칙(P4~P115의 일 시키기·답 읽기, P4의 자동 승인). 도는 세션의 설정 파일에서 뺀다(refreshSettings)
 const OLD_TERMINAL_RULE = /^(Bash|PowerShell)\(herdr[ :]/;
@@ -278,7 +278,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
    - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커).
    - 모델과 추론 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
    - 사용자가 모델을 말로 하면("glm flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "glm flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 사용자가 말한 모델·워커를 서브에이전트로 갈음하지 않는다.
-2. 지시 쓰는 법(\`--prompt\`나 \`atrium prompt\`의 글): 목표, 할 것, 손대지 말 것, 완료 기준, 보고에 담을 것(바꾼 파일과 결과 다섯 줄, 워크트리면 커밋 해시). 보고하는 길은 보드가 워커에게 알려 준다. 워커는 너의 대화를 모른다. 필요한 파일 경로와 사실을 글에 넣는다.
+2. 지시 쓰는 법(\`--prompt\`나 \`atrium prompt\`의 글): 예전 일에서 건넬 힌트(앞 단위, 측정값, 함정)는 기억 대신 \`atrium know "<물음>"\`(위치와 짧은 발췌)로 찾아 포인터로 적는다(P364).  목표, 할 것, 손대지 말 것, 완료 기준, 보고에 담을 것(바꾼 파일과 결과 다섯 줄, 워크트리면 커밋 해시). 보고하는 길은 보드가 워커에게 알려 준다. 워커는 너의 대화를 모른다. 필요한 파일 경로와 사실을 글에 넣는다.
 3. 맡기고 턴을 끝낸다: \`--prompt\`나 \`atrium prompt <이름> "<지시>"\`로 맡기고 턴을 끝낸다. 워커가 \`atrium done\`으로 닫으면 보드가 그 보고를 넣어 주고, 보고 없이 멈추면(쉼, 오류, 사람의 답, 닫힘) 한 번 알린다. 폴링하지 않는다.
    - 지금 답이 꼭 필요할 때만 \`atrium prompt <이름> "<지시>" --wait\`(한 번에 100초, 아직이면 \`atrium wait <이름>\`).
    - 여럿에게는 한 응답에 셸 호출을 여러 개 낸다. 일하는 중이거나 잠든 워커에게도 그냥 보낸다.
@@ -691,7 +691,7 @@ export class Branch {
     if (op === 'turn') return this.verbs.wait(s, body, res); // P116: atrium wait(옛 /branch/wait는 child-wait)
     if (op === 'read') return this.verbs.read(s, body); // P116: atrium read
     if (op === 'relate') return this.relateVerb(s, body); // P156: atrium relate
-    if (op === 'done') return this.units.doneVerb(s, body); // P180: atrium done ok|failed "<글>"
+    if (op === 'done') { const r = this.units.doneVerb(s, body); try { if (this.b.know) this.b.know.touch(s.workspaceKey); } catch {} return r; } // P180: atrium done ok|failed "<글>". P364: 색인이 있으면 뒤에서 고쳐 둔다
     if (op === 'guide') return this.guideVerb(s, body); // P182: atrium guide [주제]
     if (op === 'item') return this.units.item(s, body); // P180: atrium item
     if (op === 'items') return this.units.items(s, body); // P180: atrium items
@@ -702,6 +702,7 @@ export class Branch {
     if (op === 'plan') return this.plans.verb(s, body); // P304: atrium plan …
     if (op === 'revive') return this.reviveVerb(s, body); // P360: atrium revive <이름|ID>
     if (op === 'fork') return this.forkVerb(s, body); // P360: atrium fork <이름|ID> [--launcher …]
+    if (op === 'know') return this.b.know ? this.b.know.verb(s, body) : Promise.reject(apiError('unavailable', '이 보드에는 atrium know가 없다')); // P364: 작업 지식 찾기
     if (op === 'docs') return this.docs.verb(s, body); // P257: atrium docs(문서 점검 결과). P346: init|on|off(지휘 세션만)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
     if (op === 'perm') return this.permView(s); // P296: 이 세션의 허용 동사(atrium help가 묻는다)

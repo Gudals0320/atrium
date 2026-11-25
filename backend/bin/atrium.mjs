@@ -55,6 +55,7 @@ const HELP = `atrium [--dev] [--json] <명령>
   brief <이름>                              작업 재개를 위한 요약 (마지막 요청·응답, 상태, 질문)
   res                                     리소스 사용량 (세션별 메모리, 터미널 제어 프로세스, 동시 실행 수)
   usage [--json]                          구독 사용량 (Claude·Codex·AGY의 한도 창 사용률, 리셋까지 남은 시간, 크레딧)
+  know "<물음>" --ws 리포 [-k N] [--kind 종류] [--before 시각|커밋] · know open <포인터> --ws 리포 · know unit <PNNN> --ws 리포 · know build --ws 리포 [--full] · know --usage [--since 날짜|7d]   작업 지식 찾기와 사용 집계 (P364)
   docs [init|on|off] [--ws 리포] [--dir 폴더] [--only brief,arch,plan]   문서 점검 결과 (P257). on은 .atrium/(git 밖)과 점검을 켜고, off는 끈다. init은 BRIEF·ARCH·PLAN 틀(없는 파일만)과 docs.json (P346)
   sleep [<리포>]                            프로젝트의 에이전트 세션(Claude Code, Codex, opencode, pi, AGY)을 절전 모드로 전환. 생략하면 대기 중인 프로젝트 전체에 적용
   wake <리포|이름>                            기존 대화로 재개. 리포면 절전 중인 모든 세션, 이름이면 그 세션(프로젝트 전체가 절전되었으면 그 프로젝트)
@@ -316,6 +317,18 @@ async function main() {
       }
       case 'brief': return out(await c.call('session.briefing', { session: rest[0] }));
       case 'res': return out(await c.call('resources.get', { fresh: true }));
+      case 'know': { // P364: 작업 지식 찾기(사람). --usage는 세션·날짜별 집계
+        if (flags.usage) { const r = await c.call('know.usage', { ...(typeof flags.since === 'string' ? { since: flags.since } : {}), json: JSONOUT }); return void process.stdout.write(r.out); }
+        const words = []; let k = null;
+        for (let i = 0; i < rest.length; i++) { if (rest[i] === '-k') { k = Number(rest[i + 1]); i++; } else words.push(rest[i]); }
+        const base = { workspace: flags.ws, json: JSONOUT, ...(typeof flags.before === 'string' ? { before: flags.before } : {}) };
+        let r;
+        if (words[0] === 'open' && words[1]) r = await c.call('know.open', { ...base, pointer: words.slice(1).join(' '), ...(flags.context ? { context: Number(flags.context) } : {}) });
+        else if (words[0] === 'unit' && words[1]) r = await c.call('know.unit', { ...base, unit: words[1] });
+        else if (words[0] === 'build' && words.length === 1) r = await c.call('know.build', { ...base, full: !!flags.full });
+        else r = await c.call('know.query', { ...base, q: words.join(' '), ...(k ? { k } : {}), ...(typeof flags.kind === 'string' ? { kind: flags.kind } : {}) });
+        return void process.stdout.write(r.out);
+      }
       case 'docs': { // P257: 문서 점검
         if (rest[0] === 'on') return out(await c.call('docs.enable', { workspace: flags.ws, dir: flags.dir }));
         if (rest[0] === 'off') return out(await c.call('docs.disable', { workspace: flags.ws }));

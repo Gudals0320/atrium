@@ -118,7 +118,7 @@ const ask = (b, s, o) => b.branch.dispatch('ask', s, o);
 const err = (fn) => { try { fn(); } catch (e) { return e; } return null; };
 
 test('P284 계약과 안내: ask 동사, 계약 7, 허용 규칙, 판·하네스 안내문 한 줄, 스킬', async () => {
-  assert.equal(CONTRACT_VERSION, 11); // P360: revive·fork로 11. // P346: docs init·on·off로 10. // P296: 오케스트레이션 허용 동사로 9. // P292: todo로 8
+  assert.equal(CONTRACT_VERSION, 12); // P364: know로 12. // P360: revive·fork로 11. // P346: docs init·on·off로 10. // P296: 오케스트레이션 허용 동사로 9. // P292: todo로 8
   assert.ok(VERB_NAMES.includes('ask'));
   const v = VERBS.find((x) => x.name === 'ask');
   assert.ok(v.args.some((a) => a.includes('--option')) && v.args.some((a) => a.includes('--done')) && v.args.some((a) => a.includes('--list')));

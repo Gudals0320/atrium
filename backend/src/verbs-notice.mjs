@@ -40,6 +40,7 @@ export const VERB_BRIEF = {
   todo: '사람에게 넘기는 일·명령·확인·미룬 일을 할 일 카드로 남기기',
   plan: '리포의 목표·마일스톤 레인',
   revive: '닫힌·보관된·끝난 세션을 같은 대화로 되살리기(사람이 시킬 때만)', fork: '세션의 대화를 이어받는 새 세션(SDK면 API 크레딧, 사람이 시킬 때만)', // P360
+  know: '이 리포의 예전 기록·문서·주석·판 일에서 찾기(막혔을 때 먼저)', // P364
 };
 // 동사가 dev에 합쳐진 때(판 기록이 없는 옛 세션의 어림. 여기 없는 동사는 그보다 오래되어 안다고 본다)
 export const VERB_SINCE = {
@@ -53,6 +54,7 @@ export const VERB_SINCE = {
   todo: Date.parse('2026-11-21T11:55:07+09:00'), // P292
   plan: Date.parse('2026-11-21T21:58:40+09:00'), // P304
   revive: Date.parse('2026-11-25T12:00:00+09:00'), fork: Date.parse('2026-11-25T12:00:00+09:00'), // P360
+  know: Date.parse('2026-11-26T00:00:00+09:00'), // P364(일을 시작한 때. 띄울 때 판 기록이 있는 세션은 이 값을 쓰지 않는다)
 };
 
 // 그 세션 종류가 띄울 때 받는 판 안내문(backend.mjs pluginFor·harnessLaunchOf·orchPrompt와 같은 글). scope: 오케스트레이션 세션의 권한 범위(sub | free)
