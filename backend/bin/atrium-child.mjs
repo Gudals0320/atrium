@@ -19,6 +19,7 @@
 //       atrium docs [init [--dir 폴더] [--only brief,arch,plan] | on [--dir 폴더] | off] [--json]   (P257: 이 워크스페이스의 문서 점검 결과. P346: 문서 시작·켜기·끄기, 지휘 세션만)
 //       atrium ask "<질문>" [--option "<보기>"]… [--why "<맥락>"] [--no-wait | --wait] | --done <번호> | --list [--json]   (P284: 결정 카드. P295: 보내는 때)
 //       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] [--no-wait | --wait] | --done <번호> | --list [--json]   (P292: 사용자 몫. P295: 보내는 때)
+//       atrium revive <이름|ID> [--json] · atrium fork <이름|ID> [--launcher 런처] [--name 새 이름] [--model m] [--effort e] [--peer] [--json]   (P360: 되살리기·갈라 열기, 사람이 시킬 때만)
 //       atrium plan [show|list|new|goal|metric|ms|focus|item|check|owner|status|import|export|log] … [--plan <이름|번호>] [--json]   (P304: 리포별 목표·마일스톤 레인. 사용법 atrium help plan)
 import http from 'node:http';
 import fs from 'node:fs';
@@ -186,6 +187,7 @@ async function main() {
   if (cmd === 'ask') return askVerb(); // P284
   if (cmd === 'todo') return todoVerb(); // P292
   if (cmd === 'plan') return planVerb(); // P304
+  if (cmd === 'revive' || cmd === 'fork') return reviveVerb(cmd); // P360
   if (cmd === 'docs') { // P257: 문서 점검 결과. P346: init | on | off
     const action = rest[0] || 'status';
     if (!['status', 'init', 'on', 'off'].includes(action)) fail(`알 수 없는 docs 낱말: ${action}. 사용: atrium docs [init [--dir 폴더] [--only brief,arch,plan] | on [--dir 폴더] | off]`, 2);
@@ -404,6 +406,18 @@ function newsLine(r, now) {
   if (r.kind === 'turn') return `${head}: "${r.task}" → ${r.text}`;
   if (r.kind === 'done') return `${head} ${r.result}${r.task ? ` "${r.task}"` : ''}: ${r.text}`;
   return `${head}: ${r.text}`;
+}
+// P360: atrium revive <이름|ID> · atrium fork <이름|ID> [--launcher 런처] [--name 새 이름] [--model m] [--effort e] [--peer]
+async function reviveVerb(cmd) {
+  if (!rest[0]) fail(cmd === 'revive' ? '되살릴 세션의 이름이나 세션 ID를 준다: atrium revive <이름|ID>' : '갈라 열 세션의 이름이나 세션 ID를 준다: atrium fork <이름|ID> [--launcher claude-sdk]', 2);
+  if (rest.length > 1) fail(`이름 자리에 낱말이 여럿이다(${rest.join(' ')}). 사용법: atrium help`, 2);
+  if (cmd === 'revive' && (flags.launcher || flags.name || flags.model || flags.effort || flags.peer)) fail('revive는 이름(또는 ID)만 받는다. 새 세션으로 띄우려면 atrium fork', 2);
+  const body = cmd === 'revive' ? { name: rest[0] } : { name: rest[0], launcher: flags.launcher || null, as: flags.name || null, model: flags.model || null, effort: flags.effort || null, ...(flags.peer ? { peer: true } : {}) };
+  const r = await call(cmd, body, 180000);
+  { const want = terminalSessionVar(); if (r.board && want && r.board.terminalSession !== want) fail(`다른 보드에서 응답했습니다 (${r.board.terminalSession}, 기대 ${want})`); }
+  if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
+  if (r.error) fail(`${cmd === 'revive' ? '되살리지 않았다' : '갈라 열지 않았다'}(${r.error.code}): ${r.error.message}`);
+  for (const line of r.result.lines || []) say(line);
 }
 async function newsVerb(cmd) {
   let r;

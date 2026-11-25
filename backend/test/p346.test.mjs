@@ -288,12 +288,12 @@ test('P346 판 API: docs.init(이 PC의 판 토큰만, 덮지 않음)', async ()
 
 // ---------- 4. 계약·허용 동사·규칙 글 ----------
 test('P346 계약 10: docs init·on·off, 지휘 세션만, 하위 오케스트레이션에는 docs가 없다', () => {
-  assert.equal(CONTRACT_VERSION, 10);
+  assert.equal(CONTRACT_VERSION, 11); // P360: revive·fork로 11
   const d = VERBS.find((v) => v.name === 'docs');
   assert.ok(d.args.join(' ').includes('init') && d.args.join(' ').includes('off'));
   for (const k of ['action', 'created', 'skipped', 'next']) assert.ok(d.out.includes(k), k);
   assert.match(d.does, /지휘 세션만/);
-  assert.equal(contractJson().contract, 10);
+  assert.equal(contractJson().contract, 11); // P360
   assert.deepEqual([...LEAD_ONLY_SUBS.docs], ['init', 'on', 'off']);
   assert.ok(!ORCH_SUB_VERBS.includes('docs'));
   const sub = permOf({ orch: { on: true }, relation: 'sub', parentId: 'p' });

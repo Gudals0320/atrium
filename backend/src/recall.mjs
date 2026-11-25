@@ -33,6 +33,8 @@ import { m, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { takenNames, keepLabel, findSession } from './session-label.mjs'; // P66
 import { startOpt } from './launchers.mjs'; // P97: 실행 명령
 import { adapterOf, harnessResumable, codexSessionOf } from './harness.mjs'; // P115: Claude Code 밖 하네스의 이어 가기
+import { SDK_BILLING } from './sdk-session.mjs'; // P360: SDK 세션 다시 열기
+import { restoreRelations } from './revive.mjs'; // P360: 다시 연 세션의 계보 부모·선 되찾기
 
 const SHELL = 'shell';
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
@@ -836,8 +838,8 @@ export class Recall {
   // 판 세션 하나를 새 작업 공간에 띄운다. 행이 있으면(닫힌 세션) 그 행을 다시 쓰고, 없으면(판 밖 대화) 만든다
   async bring(spec) {
     const b = this.b, cfg = this.cfg;
-    // P363: SDK 세션(claude -p)을 다시 여는 길은 아직 없다(다음 조각). 터미널 claude로 조용히 바꾸지 않고 까닭을 보인다
-    if (spec.reuseRow && spec.reuseRow.billing === 'sdk') throw keyed(apiError('sdk_reopen', 'SDK 세션은 아직 다시 열 수 없습니다. 같은 폴더에서 런처 "Claude Code SDK"로 새 세션을 띄우세요.'), 'sdkSession.err.reopen');
+    // P360: SDK 세션(claude -p)은 터미널 없이 같은 세션 ID로 다시 연다(다음 글에서 --resume). 터미널 claude로 조용히 바꾸지 않는다
+    if (spec.reuseRow && spec.reuseRow.billing === SDK_BILLING) return this.bringSdk(spec);
     b.requireTerminal();
     const cwd = path.resolve(String(spec.cwd || ''));
     if (!spec.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${spec.cwd}`), 'noFolder', { path: spec.cwd });
@@ -876,9 +878,9 @@ export class Recall {
     let s;
     const hw = await b.withNewPane(() => b.adapter.createWorkspace({ cwd, label: name }), (r) => {
       const now = Date.now();
-      s = { sessionId: id, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind, origin: 'board', parentSessionId: null, workspaceKey: ws.key, flavor: spec.flavor || null, extraArgs: claude ? spec.extraArgs || [] : [], startCommand: shell ? '' : spec.startCommand || '', harnessPlan }; // P97: 실행 명령(P115: 모든 에이전트 하네스). P25: flavor는 다시 열어도 남는다
+      s = { sessionId: id, name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: shell ? r.paneId : name, model: claude ? spec.model || null : null, effort: claude ? spec.effort || null : null, permissionMode, settingsPath, hookToken, resumeArgv, resumeVerified: false, createdAt: spec.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind, origin: 'board', parentSessionId: spec.parentSessionId || null, workspaceKey: ws.key, flavor: spec.flavor || null, extraArgs: claude ? spec.extraArgs || [] : [], startCommand: shell ? '' : spec.startCommand || '', harnessPlan }; // P97: 실행 명령(P115: 모든 에이전트 하네스). P25: flavor는 다시 열어도 남는다
       if (spec.reuseRow) {
-        this.store.reopenRow(id, { name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: s.agentName, settingsPath, hookToken, resumeArgv, resumeVerified: false, runtime: rt, kind, origin: 'board', workspaceKey: ws.key, permissionMode, model: s.model, effort: s.effort, touchedAt: now, parentSessionId: null, startCommand: s.startCommand || null, harnessPlan });
+        this.store.reopenRow(id, { name, cwd, paneId: r.paneId, termWorkspaceId: r.workspaceId, agentName: s.agentName, settingsPath, hookToken, resumeArgv, resumeVerified: false, runtime: rt, kind, origin: 'board', workspaceKey: ws.key, permissionMode, model: s.model, effort: s.effort, touchedAt: now, parentSessionId: s.parentSessionId, startCommand: s.startCommand || null, harnessPlan }); // P360: 계보 부모는 사실이라 남긴다(spec.parentSessionId)
         if (spec.reuseRow.name !== name) this.store.addEvent(id, 'renamed', { from: spec.reuseRow.name, to: name, why: 'name taken on reopen' });
         // P66: 판의 이름은 다시 열어도 남는다. 그새 다른 세션이 그 이름을 쓰면 버린다
         s.label = keepLabel(spec.reuseRow.label, b.sessions.values(), s);
@@ -903,6 +905,50 @@ export class Recall {
     catch (e) { if (e.code !== 'agent_not_ready') throw e; this.store.addEvent(id, 'agent_not_ready', { kind }); }
     b.log(`reopened ${name} ${kind} ${id} from=${spec.from} resume=${!!spec.resume} pane=${hw.paneId}`);
     return out;
+  }
+  // P360: 닫힌 SDK 세션 다시 열기. 터미널 없이 같은 세션 ID·새 설정 파일과 hook 토큰으로 판에 올리고, 프로세스는 다음 글에서 뜬다(SdkHost: 대화 기록이 있으면 --resume).
+  //   키가 없거나 중계기를 못 띄우면 열지 않고 까닭을 던진다(auth_relay_no_key). 마지막 자리·이름(겹치면 -2)·판의 이름을 되찾는다
+  async bringSdk(spec) {
+    const b = this.b, cfg = this.cfg, row = spec.reuseRow, id = spec.id;
+    if (b.sessions.has(id)) throw apiError('already_open', "이미 보드에 열린 세션입니다.");
+    const cwd = path.resolve(String(spec.cwd || ''));
+    if (!spec.cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw keyed(apiError('bad_request', `폴더를 찾을 수 없습니다: ${spec.cwd}`), 'noFolder', { path: spec.cwd });
+    if (b.authRelay) await b.authRelay.ensure();
+    const name = this.freeName(spec.name, 's');
+    const ws = await workspaceOf(cwd);
+    const hookToken = crypto.randomBytes(24).toString('hex');
+    const settingsPath = writeSessionSettings({ file: path.join(cfg.sessionsDir, `${id}.json`), hookUrl: b.hookUrl, token: hookToken, sessionId: id, timeoutSec: cfg.hookTimeoutSec, ...(b.branch ? b.branch.settingsExtra(id) : {}) });
+    const prevRt = row.runtime || {};
+    const rt = newRuntime({ kind: 'claude', hooked: true });
+    rt.phase = 'running'; rt.term.present = true; rt.term.status = 'idle'; rt.term.launchPending = false;
+    if (prevRt.cwd) rt.cwd = prevRt.cwd; // 워크트리로 들어간 세션은 그 폴더에서 이어 간다
+    if (prevRt.forkFrom) rt.forkFrom = prevRt.forkFrom;
+    if (prevRt.lastAnswer) { rt.lastAnswer = prevRt.lastAnswer; rt.lastAnswerAt = prevRt.lastAnswerAt || null; }
+    if (spec.modelNow) rt.modelNow = spec.modelNow;
+    const model = spec.resumeModel ? spec.resumeModel.model || spec.model || null : spec.model || null;
+    const effort = spec.resumeModel ? spec.resumeModel.effort || null : spec.effort || null;
+    b.ensureWorkspace(ws, `reopen ${name}`);
+    const area = b.worktrees ? b.worktrees.areaOf(ws.key, cwd) : '';
+    const prev = this.store.nodeOf(id);
+    const at = this.placeFor(id, ws.key, prev && (prev.area || '') === area ? prev : null, null, area);
+    const now = Date.now();
+    const s = { sessionId: id, name, cwd, paneId: null, termWorkspaceId: null, agentName: name, model, effort, permissionMode: 'bypassPermissions', settingsPath, hookToken, resumeArgv: null, resumeVerified: false, createdAt: row.createdAt || now, closedAt: null, seenAt: null, touchedAt: now, rt, lastState: null, kind: 'claude', origin: 'board', parentSessionId: spec.parentSessionId || null, workspaceKey: ws.key, flavor: row.flavor || null, extraArgs: row.extraArgs || [], startCommand: '', harnessPlan: null, orch: null, billing: SDK_BILLING, sdkWorktree: null };
+    this.store.reopenRow(id, { name, cwd, paneId: null, termWorkspaceId: null, agentName: name, settingsPath, hookToken, resumeArgv: null, resumeVerified: false, runtime: rt, kind: 'claude', origin: 'board', workspaceKey: ws.key, permissionMode: 'bypassPermissions', model, effort, touchedAt: now, parentSessionId: s.parentSessionId, startCommand: null, harnessPlan: null });
+    if (row.name !== name) this.store.addEvent(id, 'renamed', { from: row.name, to: name, why: 'name taken on reopen' });
+    s.label = keepLabel(row.label, b.sessions.values(), s);
+    if ((row.label || null) !== s.label) this.store.setSessionLabel(id, s.label);
+    b.sessions.set(id, s);
+    if (b.briefNotices) try { b.briefNotices.stamp(s, 'reopen'); } catch {}
+    this.store.setNode({ session_id: id, x: at.x, y: at.y, w: at.w, h: at.h, z: 0, size: at.size || null, aspect: at.aspect || null, area });
+    settleRegions(b, 'reopen');
+    const resume = b.sdk ? b.sdk.hasTranscript(s) : this.transcriptExists(id, rt.cwd || cwd);
+    this.store.addEvent(id, 'reopened', { from: spec.from, kind: 'claude', sdk: true, cwd: slash(cwd), workspace: ws.key, resume, place: at.kept ? 'last' : 'slot', name });
+    b.api.broadcast('session.created', { sessionId: id, name, workspaceKey: ws.key, reopened: true });
+    b.broadcastSession(s, { cause: `reopen:${spec.from}` });
+    if (b.probeGit) b.probeGit(s, rt.cwd || cwd);
+    this.changed().catch(() => {});
+    b.log(`reopened ${name} sdk ${id} from=${spec.from} resume=${resume}`);
+    return { sessionId: id, name, kind: 'claude', sdk: true, billing: SDK_BILLING, paneId: null, workspaceKey: ws.key, resume, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, place: at.kept ? 'last' : 'slot' };
   }
   // P227: 닫힌 claude 행의 지금 모델. 대화 기록을 읽고(P137 refreshModel), 못 읽으면 판 DB(runtime.modelNow)
   closedModelNow(row) {
@@ -929,7 +975,7 @@ export class Recall {
     const info = this.store.spawnInfo(row.sessionId) || {};
     // P25 세션(flavor만, env 기록 없음)은 그 아이콘의 런처 env. P255: 옛 연결 세션(spawn의 connection)은 연결이 더한 주소 없이 호출자 env(launcherEnv)만
     const legacy = !info.connection && !info.env && kind === 'claude' && row.flavor && this.b.features && this.b.features.launchers ? legacyFlavorLauncher(this.b.features.launchers.data().items, row.flavor) : null;
-    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, createdAt: row.createdAt, flavor: row.flavor || null, env: info.connection ? info.launcherEnv || null : info.env || (legacy ? legacy.env : null), extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '' }; // P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
+    const base = { cwd: row.cwd, name: row.name, kind, permissionMode: p.permissionMode || row.permissionMode, model: p.model !== undefined ? p.model : row.model, effort: p.effort !== undefined ? p.effort : row.effort, createdAt: row.createdAt, flavor: row.flavor || null, env: info.connection ? info.launcherEnv || null : info.env || (legacy ? legacy.env : null), extraArgs: row.extraArgs && row.extraArgs.length ? row.extraArgs : info.extraArgs || [], startCommand: row.startCommand || info.startCommand || '', parentSessionId: row.parentSessionId || null }; // P360: 계보 부모. P97: 실행 명령. P33: 호출자의 환경 변수와 추가 인자도 그대로
     if (kind === 'claude') {
       const conv = convOf(row);
       if (conv) {
@@ -942,7 +988,8 @@ export class Recall {
         const resume = !!conv && this.transcriptExists(conv, row.cwd);
         // P227: 띄운 값을 바꾸지 않고 다시 열면 그 대화가 마지막으로 쓰던 모델·노력 수준으로 이어 간다
         const now = resume && p.model === undefined && p.effort === undefined ? this.closedModelNow(row) : null;
-        return this.bring({ ...base, id: row.sessionId, reuseRow: row, from: 'closed', resume, ...(now ? { modelNow: now, resumeModel: resumeModel('claude', { model: base.model, effort: base.effort }, now) } : {}) });
+        const out = await this.bring({ ...base, id: row.sessionId, reuseRow: row, from: 'closed', resume, ...(now ? { modelNow: now, resumeModel: resumeModel('claude', { model: base.model, effort: base.effort }, now) } : {}) });
+        return this.withRelations(out, row);
       }
       // 판에 올린 claude: 판의 hook을 붙여 그 대화 ID로 이어 가는 판 세션이 된다. 세션 ID가 대화 ID와 달라 새 행을 쓰고, 옛 행은 옮겨 갔다고 남긴다
       const existing = this.store.getSession(conv);
@@ -957,7 +1004,13 @@ export class Recall {
     const args = kind === SHELL ? [] : Array.isArray(info.args) ? info.args : [];
     // P115: 하네스 세션은 띄울 때의 값(모델·추가 인자·호출자)과 하네스 세션 ID로 같은 대화를 이어 간다
     const harnessSessionId = (row.runtime && row.runtime.term && row.runtime.term.agentSessionId) || null; // Codex: 터미널이 알았던 세션 ID(기록이 없을 때)
-    return this.bring({ ...base, id: row.sessionId, reuseRow: row, from: 'closed', args, harnessPlan: row.harnessPlan || null, harnessSessionId });
+    return this.withRelations(await this.bring({ ...base, id: row.sessionId, reuseRow: row, from: 'closed', args, harnessPlan: row.harnessPlan || null, harnessSessionId }), row);
+  }
+  // P360: 다시 연 세션의 계보 부모와 닫힐 때 뗀 선(역할 그대로)을 되찾고, 지금 관계와 되찾지 못한 것을 응답에 붙인다(덩어리는 되찾지 않는다)
+  withRelations(out, row) {
+    try { out.relations = restoreRelations(this.b, out.sessionId, { closedAt: row.closedAt || 0, parentSessionId: row.parentSessionId || null }); }
+    catch (e) { this.b.log(`relations restore failed ${out.name}: ${e.stack}`); }
+    return out;
   }
   // P7의 "빼기"는 보관으로 합쳤다(P10). 판 기록과 대화 기록 파일은 그대로
   dismiss(p) { return { dismissed: true, ...this.archiveAdd({ session: p.session }) }; }

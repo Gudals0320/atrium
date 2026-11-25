@@ -42,6 +42,7 @@ import { installRelations, relationHeader, RELATION_WORD } from './branch-relati
 import { WorkUnits, checkAgentText } from './work-units.mjs'; // P180: 일 단위와 시도
 import { Merger, readMergerGuide } from './merger.mjs'; // P267: 합치기 merger
 import { PEER_ROLE, workDescendantsOf, lineageKept } from './relations.mjs';
+import { reviveSession, forkSession, reviveLines, forkLines } from './revive.mjs'; // P360
 import { PEER_RULE } from './cli-contract.mjs'; // P204: 동료에게 보낼 때와 동료 소식
 import { DocWatch } from './doc-watch.mjs'; // P257: 문서 점검(지휘 세션 턴 끝·done 알림)
 import { Decisions } from './decisions.mjs'; // P284: 결정 카드(atrium ask)
@@ -95,7 +96,7 @@ function apiError(code, message, extra = {}) { return Object.assign(new Error(me
 // Claude Code는 $변수, $(…) 같은 셸 확장이 든 명령은 규칙과 상관없이 묻는다(P4). 스킬은 그런 모양을 쓰지 말라고 한다
 // 범위는 같은 판의 모든 세션이다(atrium prompt는 판의 어느 에이전트에게나 간다. 같은 사용자 계정이라 격리는 아니다)
 export const ATRIUM_ALLOW = [
-  ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
+  ...['atrium', 'mtask'].flatMap((c) => [`Bash(${c} child:*)`, `Bash(${c} child *)`, `Bash(${c} children:*)`, `Bash(${c} children)`, `Bash(${c} child-kill:*)`, `Bash(${c} child-kill *)`, `Bash(${c} wake:*)`, `Bash(${c} wake *)`, `Bash(${c} child-wait:*)`, `Bash(${c} child-wait *)`, `Bash(${c} models)`, `Bash(${c} models:*)`, `Bash(${c} models *)`, `Bash(${c} me)`, `Bash(${c} me:*)`, `Bash(${c} me *)`, `Bash(${c} help)`, `Bash(${c} help:*)`, `Bash(${c} help *)`, `Bash(${c} revive:*)`, `Bash(${c} revive *)`, `Bash(${c} fork:*)`, `Bash(${c} fork *)`, // P360 // P21: wake, P36: child-wait, P41: models, P81: me, P115: help
     `Bash(${c} prompt:*)`, `Bash(${c} prompt *)`, `Bash(${c} wait:*)`, `Bash(${c} wait *)`, `Bash(${c} read:*)`, `Bash(${c} read *)`, `Bash(${c} relate:*)`, `Bash(${c} relate *)`, `Bash(${c} done:*)`, `Bash(${c} done *)`, `Bash(${c} item)`, `Bash(${c} item:*)`, `Bash(${c} item *)`, `Bash(${c} items)`, `Bash(${c} items:*)`, `Bash(${c} items *)`, `Bash(${c} guide)`, `Bash(${c} guide:*)`, `Bash(${c} guide *)`, `Bash(${c} log:*)`, `Bash(${c} log *)`, `Bash(${c} news)`, `Bash(${c} news:*)`, `Bash(${c} news *)`, `Bash(${c} docs)`, `Bash(${c} docs:*)`, `Bash(${c} docs *)`, `Bash(${c} ask:*)`, `Bash(${c} ask *)`, `Bash(${c} todo:*)`, `Bash(${c} todo *)`, `Bash(${c} plan)`, `Bash(${c} plan:*)`, `Bash(${c} plan *)`]), // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
   ...['atrium', 'mtask'].flatMap((c) => [`PowerShell(${c} child *)`, `PowerShell(${c} children)`, `PowerShell(${c} children *)`, `PowerShell(${c} child-kill *)`, `PowerShell(${c} wake *)`, `PowerShell(${c} child-wait *)`, `PowerShell(${c} models)`, `PowerShell(${c} models *)`, `PowerShell(${c} me)`, `PowerShell(${c} me *)`, `PowerShell(${c} help)`, `PowerShell(${c} help *)`,
     `PowerShell(${c} prompt *)`, `PowerShell(${c} wait *)`, `PowerShell(${c} read *)`, `PowerShell(${c} relate *)`, `PowerShell(${c} done *)`, `PowerShell(${c} item)`, `PowerShell(${c} item *)`, `PowerShell(${c} items)`, `PowerShell(${c} items *)`, `PowerShell(${c} guide)`, `PowerShell(${c} guide *)`, `PowerShell(${c} log *)`, `PowerShell(${c} news)`, `PowerShell(${c} news *)`, `PowerShell(${c} docs)`, `PowerShell(${c} docs *)`, `PowerShell(${c} ask *)`, `PowerShell(${c} todo *)`, `PowerShell(${c} plan)`, `PowerShell(${c} plan *)`]), // P304: plan // P292: todo. P284: ask. P257: docs. P116. P156: relate. P180: done·item·items. P182: guide. P183: tool. P204: log·news. P269: rig 걷음
@@ -304,6 +305,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - 브랜치에서 일한 워커가 \`atrium done ok\`로 닫으면 보드가 그 워커를 재우고 병합을 merger에게 맡긴다. 합쳐지면 보드가 그 워커를 닫고 보관한다. 병합이 실패했거나 고침이 필요하면 보드가 너에게 알리고 워커는 재운 채 둔다: 고칠 것을 그 워커에게 \`atrium prompt\`로 다시 시킨다. 그 밖의 끝난 워커는 끄지 않고 둔다(사람이 끄라고 할 때만 \`atrium child-kill <이름>\`. 하위 관계로 그 아래도 함께, 자기 하위만. 동료·독립은 남는다).
 - 워커가 권한이나 질문으로 멈추면(보드의 멈춤 알림, \`atrium wait\`의 waiting) 대신 답하지 않는다. 사용자에게 "보드에서 @이름에 답해 주세요"라고 알린다.
 - 오래 쉰 워커는 혼자 잠든다. 미리 깨우려면 \`atrium wake <이름>\`.
+- 사람이 세션 이름이나 ID를 말하며 되살리라고 하면 \`atrium revive <이름|ID>\`(닫힘·보관·사람이 끝냄·잠듦 모두 같은 대화로, 관계도 되찾는다), SDK(API 크레딧)로 갈라 열라고 하면 \`atrium fork <이름|ID> --launcher claude-sdk\`(원래 세션은 그대로, 새 세션은 독립). 사람이 시킬 때만 쓴다.
 - 워커가 모델 오류로 답하지 못하면(\`atrium children\`의 오류 줄) 사용자에게 알리고 \`atrium models\`의 다른 줄로 다시 띄운다.
 
 ## 사람에게 묻기(결정 카드)
@@ -697,6 +699,8 @@ export class Branch {
     if (op === 'ask') return this.decisions.askVerb(s, body); // P284: atrium ask "<질문>" | --done <번호> | --list
     if (op === 'todo') return this.decisions.todoVerb(s, body); // P292: atrium todo "<할 일>" [--cmd …] [--check] [--later …] [--tell] | --done <번호> | --list
     if (op === 'plan') return this.plans.verb(s, body); // P304: atrium plan …
+    if (op === 'revive') return this.reviveVerb(s, body); // P360: atrium revive <이름|ID>
+    if (op === 'fork') return this.forkVerb(s, body); // P360: atrium fork <이름|ID> [--launcher …]
     if (op === 'docs') return this.docs.verb(s, body); // P257: atrium docs(문서 점검 결과). P346: init|on|off(지휘 세션만)
     if (op === 'usage') return this.b.usage ? this.b.usage.get() : { providers: {}, alertsOn: false, at: Date.now() }; // P211: atrium usage
     if (op === 'perm') return this.permView(s); // P296: 이 세션의 허용 동사(atrium help가 묻는다)
@@ -709,6 +713,15 @@ export class Branch {
     throw apiError('unknown_op', `알 수 없는 명령입니다: ${op}`);
   }
 
+  // P360: atrium revive·fork. 사람이 시킬 때만(안내). 결과에 사람이 읽을 줄(lines)을 붙인다
+  async reviveVerb(s, o = {}) {
+    const x = await reviveSession(this.b, String(o.name || ''), { by: `agent:${s.name}` });
+    return { ...x, lines: reviveLines(x) };
+  }
+  async forkVerb(s, o = {}) {
+    const x = await forkSession(this.b, String(o.name || ''), { launcher: o.launcher || null, name: o.as || null, model: o.model || null, effort: o.effort || null, peer: !!o.peer, caller: s });
+    return { ...x, lines: forkLines(x) };
+  }
   // P182: atrium guide [주제]. 판의 일반 안내(help --long)는 CLI가 붙인다. P269: rig 안내는 걷어 냈다
   // P267: atrium guide merger는 merger 안내(merger-guide.md)
   guideVerb(s, o = {}) {
