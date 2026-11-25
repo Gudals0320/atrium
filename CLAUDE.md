@@ -14,7 +14,7 @@
 - 문서와 코드 주석은 한국어로 쓴다.
 - 다른 제품의 화면을 참고할 때는 화면 구성, 동작, 생김새(색, 크기, 모양)만 따른다. 비공개 제품의 코드, 이름, 로고, 에셋(그림, 영상, 글꼴 파일)은 가져오지 않고 그 이름을 공개 저장소에 쓰지 않는다. 데모 화면 캡처는 공개 저장소에 넣지 않는다(`app/design/`은 git 밖).
 - OpenCove(MIT) 코드를 가져올 때는 파일 머리에 원본 경로와 커밋(`DeadWaveWave/opencove@e10604b`)을 남기고, 저장소에 MIT 고지를 둔다.
-- 일을 맡길 작업자 CLI 세션은 `claude --model claude-opus-5-5 --effort high`로 띄운다. 사용자 기본 모델이 Fable이고 Opus 5.5의 기본 노력 수준이 medium이라, 둘 다 직접 지정해야 한다.
+- 일을 맡길 작업자 CLI 세션은 평소 구독(Claude Code 런처)으로 `claude --model claude-opus-5-5 --effort high`로 띄운다. 구독 한도가 빠듯할 때만 SDK 워커(`atrium child … --launcher claude-sdk --model claude-opus-5-5 --effort high`, 요금제 API 크레딧)로 띄운다. 사용자 기본 모델이 Fable이고 Opus 5.5의 기본 노력 수준이 medium이라, 둘 다 직접 지정해야 한다.
 - 작업자 여럿에게 나눠 맡길 때는 Claude Code 워크트리(`claude -w <이름>`)에서 띄우고, 작업자마다 개발용 판을 따로 준다.
 - 지휘 세션은 워커 지시를 쓰기 전에 그 일이 건드릴 부분을 `atrium know`로 1~3번 찾아 쓸 만한 위치를 힌트로 적는다. 워커는 시작할 때 자기가 건드릴 부분을 `atrium know`로 한 번 찾고, 막히면 다시 찾는다.
 - 작업자는 자기 브랜치에만 커밋하고, `atrium done ok` 글에 브랜치와 끝 커밋, 돌린 시험과 결과, 사용자가 얻는 것 한 줄을 적는다. 병합은 판이 merger 세션(병합 봇)에게 맡긴다(설정 › 봇, `.atrium/merge.json`). merger가 dev에 닿는 기계적 작업(병합, 충돌 풀기, 병합 뒤 시험, 버전 올리기, dev 빌드, 워크트리 치우기)을 하고, 판의 merger가 꺼져 있을 때만 지휘 세션이 한다.
