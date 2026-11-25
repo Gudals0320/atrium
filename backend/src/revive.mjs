@@ -19,6 +19,7 @@ import { findSession, shownName } from './session-label.mjs';
 import { slotFor, settleRegions } from './canvas-ops.mjs';
 import { PEER_ROLE } from './relations.mjs';
 import { clip } from './text.mjs';
+import { archiveState, itemKey } from './archive.mjs';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TAIL_BYTES = 512 * 1024; // 대화 크기를 읽을 때 기록 끝에서 읽는 양
@@ -47,10 +48,7 @@ export function findTarget(b, ref) {
     const r2 = st.closedSession(row.reopenedAs);
     if (r2) row = r2;
   }
-  if (row) {
-    const marks = st.archiveMarks ? st.archiveMarks() : new Map();
-    return { state: 'closed', row, archived: !!(marks.get(`session:${String(row.sessionId).toLowerCase()}`) || {}).archivedAt || !!row.dismissedAt };
-  }
+  if (row) return { state: 'closed', row, archived: archivedNow(b, row) };
   if (UUID_RE.test(key)) {
     const known = st.boardConversations ? st.boardConversations().get(key.toLowerCase()) : null;
     if (known) { const s = b.sessions.get(known.movedTo || known.sessionId); if (s) return findTarget(b, s.sessionId); const r = st.closedSession(known.sessionId); if (r) return { state: 'closed', row: r, archived: false }; }
@@ -59,6 +57,13 @@ export function findTarget(b, ref) {
   return { state: 'none' };
 }
 
+// 닫힌 행이 지금 보관함에 있는가(손 보관이나 기간이 지난 자동 보관, archive.mjs archiveState)
+function archivedNow(b, row) {
+  const mark = (b.store.archiveMarks ? b.store.archiveMarks() : new Map()).get(itemKey('session', row.sessionId)) || null;
+  const rt = row.runtime || {};
+  const days = b.recall && b.recall.archiveDays ? b.recall.archiveDays() : 0;
+  return archiveState({ lastAt: Math.max(rt.lastActivityAt || 0, row.closedAt || 0), mark, days }).archived || !!row.dismissedAt;
+}
 const nameOf = (b, sid) => { const x = b.sessions.get(sid); if (x) return shownName(x); const r = b.store.getSession(sid); return r ? r.label || r.name : String(sid).slice(0, 8); };
 
 // 다시 연 세션의 관계를 되찾는다. 계보 부모(사실)를 다시 적고, 닫힐 때 판이 뗀 선(그 세션이 낀 선, 닫힌 때 무렵 지움)은 상대가 살아 있으면
@@ -142,7 +147,7 @@ export function transcriptOf(b, src) {
 // 되살리기. by: 'agent:<이름>' | 'user'. → { name, sessionId, from: 'sleeping'|'exited'|'closed'|'archived'|'convo', ... }
 export async function reviveSession(b, ref, { by = 'user' } = {}) {
   const t = findTarget(b, ref);
-  if (t.state === 'none') throw apiError('not_found', `판에서 그 이름이나 세션 ID를 찾지 못했다: ${ref}. 닫힌 세션 목록: atrium(사람용) closed`);
+  if (t.state === 'none') throw apiError('not_found', `판에서 그 이름이나 세션 ID를 찾지 못했다: ${ref}. 닫힌·보관된 세션은 판 사이드바의 닫힌 세션과 보관함에 있다`);
   if (t.state === 'live') throw keyed(apiError('alive', `@${shownName(t.s)}은 살아 있다(되살릴 것이 없다). 일을 맡기려면 atrium prompt ${t.s.name}`, { name: t.s.name }), 'revive.err.alive', { name: shownName(t.s) });
   let out;
   if (t.state === 'sleeping') {
