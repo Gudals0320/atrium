@@ -836,7 +836,7 @@ export class Branch {
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
       harness: other ? { ...other.record, argv: effortPlan && effortPlan.applied ? [...modelArgsFor(kind, other.model, other.launcher ? other.launcher.startCommand || '' : '', effortPlan.args), ...effortPlan.args] : other.argv, ...(effortPlan && effortPlan.applied ? { effort: otherEffort } : {}) } : null, // P208: 옮긴 노력 수준 // P96: 다른 종류가 물려받은 것(바탕 호출자, 모델, 옮긴 승인 인자, 띄운 인자)
-      permissionMode: child.permissionMode, state, trust: out.trust, waited: wait,
+      permissionMode: child.permissionMode, state, trust: out.trust, waited: wait, ...(out.creditWarning ? { creditWarning: out.creditWarning.text } : {}), // P361: SDK 세션인데 장부의 크레딧이 바닥
       status: needsTrust ? 'needs_trust' : state, needsTrust, tellHuman: needsTrust ? trustSentence(name) : null, gate: gate ? 'trust' : null,
       exit: state === 'exited' && child.rt.exit ? { kind: child.rt.exit.kind, code: child.rt.exit.code ?? null, error: child.rt.exit.error || null } : null, // P337: 끝 화면의 오류 문장(claude -w가 워크트리를 만들지 못함 등)
       firstPrompt: first ? { ...first, status: (b.store.getDelivery(first.deliveryId) || {}).status || first.status } : null,

@@ -39,6 +39,7 @@ import { ResourceGuard, transitOf } from './resource-guard.mjs'; // P341: 폭주
 import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금). P363: SDK 세션이 쓴다
+import { CreditBook } from './credit-book.mjs'; // P361: API 크레딧 장부
 import { SdkHost, isSdk, SDK_IDLE_MS, SDK_BILLING } from './sdk-session.mjs'; // P363: SDK 세션 종류(claude -p stream-json)
 import { probeCodex, probeClaude, probeBalance, findSecretRun } from './usage-probe.mjs'; // P314: 사용량 탐침
 import { tailText, screenAnswerText, ROLE_RE } from './links.mjs';
@@ -249,19 +250,32 @@ export class Backend {
         balance: () => { const sr = findSecretRun(); return sr ? probeBalance({ secretRun: sr, grant: cfg.usageGrant || 'atrium-usage' }) : Promise.resolve(null); },
       },
       busy: (k) => [...this.sessions.values()].some((s) => !s.closedAt && (s.kind || 'claude') === k && s.rt && s.rt.term && s.rt.term.status === 'working'),
+      extra: () => { if (!this.credits) return {}; try { return { apiCredits: this.credits.view() }; } catch (e) { this.log(`api credits view failed: ${e.message}`); return {}; } }, // P361
     });
     this.api.handlers['usage.get'] = () => this.usage.get();
     // P359: 판 중계기. 키는 OS 보호 저장소로 암호화한 암호문만 데이터 폴더에 두고, 푸는 것은 중계기 자식 프로세스뿐이다.
     //   키 넣기·지우기는 이 PC의 창에서만(휴대폰 등 기기 연결은 거부). 답과 로그에는 키 값이 없다(있음/없음만)
-    this.authRelay = new AuthRelay({ dataDir: cfg.dataDir, upstream: cfg.authRelayUpstream || (cfg.profile === 'dev' ? process.env.ATRIUM_AUTH_RELAY_UPSTREAM || null : null), log: (m) => this.log(m), onChange: (st) => this.api.broadcast('relay.status', st), onNotice: (n) => this.relayNotice(n), onMoved: (urlOf) => this.relayMoved(urlOf) });
+    this.authRelay = new AuthRelay({ dataDir: cfg.dataDir, upstream: cfg.authRelayUpstream || (cfg.profile === 'dev' ? process.env.ATRIUM_AUTH_RELAY_UPSTREAM || null : null), log: (m) => this.log(m), onChange: (st) => { this.api.broadcast('relay.status', st); if (this.credits) this.credits.relayChanged(); }, onNotice: (n) => this.relayNotice(n), onMoved: (urlOf) => this.relayMoved(urlOf) });
     const pcOnly = (fn) => (p, c) => { if (c && c.auth && c.auth.kind !== 'local') throw apiError('forbidden', 'only the board on this PC can do this'); return fn(p || {}, c); };
     this.api.handlers['relay.status'] = (p = {}) => ({ ...this.authRelay.status(), recent: this.authRelay.recent(Math.min(Math.max(Number(p && p.limit) || 10, 1), 100)) });
     this.api.handlers['relay.setKey'] = pcOnly((p) => this.authRelay.setKey(p.key));
     this.api.handlers['relay.removeKey'] = pcOnly(() => this.authRelay.removeKey());
     this.api.handlers['relay.stop'] = pcOnly(async () => { await this.authRelay.stop(); return this.authRelay.status(); }); // 다음 SDK 세션 프로세스를 띄울 때 다시 켠다
+    // P361: API 크레딧 장부. 붙여 넣기 미리 보기·저장·손 편집과 Admin 키 넣기·지우기는 이 PC의 창에서만. 보기는 usage.get의 apiCredits로도 간다
+    this.credits = new CreditBook(this, { relay: this.authRelay, onChange: () => { if (this.usage) this.usage.sendNow(); } });
+    this.api.handlers['relay.setAdminKey'] = pcOnly(async (p) => { const r = await this.authRelay.setAdminKey(p.key); this.credits.refreshOfficial({ force: true }).catch(() => {}); return r; });
+    this.api.handlers['relay.removeAdminKey'] = pcOnly(async () => { const r = await this.authRelay.removeAdminKey(); await this.credits.refreshOfficial({ force: true }).catch(() => {}); return r; });
+    this.api.handlers['credits.get'] = () => this.credits.view();
+    this.api.handlers['credits.preview'] = pcOnly((p) => this.credits.preview(p.text));
+    this.api.handlers['credits.save'] = pcOnly((p) => this.credits.saveParsed(p));
+    this.api.handlers['credits.grant'] = pcOnly((p) => this.credits.grantOp(p));
+    this.api.handlers['credits.purchased'] = pcOnly((p) => this.credits.setPurchased(p));
+    this.api.handlers['credits.plan'] = pcOnly((p) => this.credits.setPlan(p.plan || null));
+    this.api.handlers['credits.clear'] = pcOnly(() => this.credits.clear());
+    this.api.handlers['credits.refresh'] = async () => { await this.credits.refreshOfficial({ open: true }).catch(() => {}); return this.credits.view(); };
     // P363: SDK 세션 프로세스(claude -p). 쉬면 idleMs 뒤 끝내고 다음 글에서 --resume
     this.sdk = new SdkHost(this, { idleMs: cfg.sdkIdleMs ?? SDK_IDLE_MS, command: cfg.sdkCommandArgv || null });
-    this.api.handlers['usage.refresh'] = () => this.usage.refresh(); // P314: 알약을 펼칠 때
+    this.api.handlers['usage.refresh'] = () => { if (this.credits) this.credits.refreshOfficial({ open: true }).catch(() => {}); return this.usage.refresh(); }; // P314: 알약을 펼칠 때. P361: 공식 비용도(10분 지났으면)
     // P316: 할 일 정리(자동 할 일 카드 후보를 작은 모델로 걸러 냄, decisions.mjs autoTurn). 단위 시험 판에서는 끈다(진짜 claude를 부르지 않게)
     // P338: 할 일 정리 봇이 런처를 골랐으면 하네스·모델·노력은 그 런처(settings.mjs resolveBotSettings)
     this.todoTidy = new TodoTidy({ settings: () => (this.features && this.features.settings ? resolveBotSettings(this.features.settings.get(), (id) => (this.features.launchers ? this.features.launchers.find(id) : null)) : {}), dir: (cfg.todoTidy ?? !process.env.NODE_TEST_CONTEXT) ? path.join(cfg.dataDir, 'todo-tidy') : null, ...(cfg.todoTidyCall ? { call: cfg.todoTidyCall } : {}), log: (m) => this.log(m) });
@@ -453,6 +467,7 @@ export class Backend {
     { const set0 = this.api.handlers['settings.set']; if (set0) this.api.handlers['settings.set'] = async (p, c) => { const r = await set0(p, c); try { this.guard.onSettings(); } catch {} return r; }; } // 우선순위 끔 → 곧바로 되돌린다
     this.resources.start((snap) => this.api.broadcast('resources', snap));
     this.usage.start(); // P211
+    if (this.credits) this.credits.start(); // P361: 공식 비용 주기 조회와 만료 알림
     this.store.addEvent(null, 'backend_started', { pid: process.pid, previousRun: this.previousRun });
     this.log(`backend up pid=${process.pid} port=${cfg.port} profile=${cfg.profile} terminal=${cfg.terminalSession} previousRun=${JSON.stringify(this.previousRun)}`);
   }
@@ -464,6 +479,7 @@ export class Backend {
     stopMigration(this);
     this.resources.stop();
     if (this.usage) this.usage.stop(); // P211
+    if (this.credits) this.credits.stop(); // P361
     if (this.sdk) await this.sdk.stopAll().catch(() => {}); // P363: SDK 세션 프로세스도 판과 함께 끝난다(다음 글에서 --resume)
     if (this.authRelay) await this.authRelay.stop().catch(() => {}); // P359: 판과 함께 끈다
     this.queue.stop();
@@ -1834,6 +1850,10 @@ export class Backend {
     pending.add(name);
     try {
       await this.authRelay.ensure(); // 키가 없으면 auth_relay_no_key(세션을 만들지 않는다)
+      // P361: 장부에서 구매 잔액이 0 이하이고 월·프로모션 크레딧도 바닥이면 띄우되 알린다(막지 않는다: 장부는 붙여 넣은 값과 추정이다)
+      let creditWarning = null;
+      try { creditWarning = this.credits ? this.credits.spawnWarning() : null; } catch {}
+      if (creditWarning) { this.store.addEvent(null, 'credits_exhausted_spawn', { name }); this.api.broadcast('credits.alert', { kind: 'exhausted', name, ...creditWarning }); }
       const ws = await workspaceOf(cwd);
       const firstPrompt = p.prompt ? await this.humanFirstPrompt(p) : null;
       const sessionId = crypto.randomUUID();
@@ -1858,7 +1878,7 @@ export class Backend {
       this.probeGit(s, cwd);
       if (firstPrompt) this.queue.enqueue(sessionId, firstPrompt, { origin: { kind: 'human' } });
       this.log(`spawned ${name} sdk ${sessionId} ws=${ws.key} model=${model || '-'}`);
-      return { sessionId, name, kind: 'claude', sdk: true, billing: SDK_BILLING, flavor: plan.flavor || null, paneId: null, termWorkspaceId: null, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, resumeArgv: null, argv: null };
+      return { sessionId, name, kind: 'claude', sdk: true, billing: SDK_BILLING, flavor: plan.flavor || null, paneId: null, termWorkspaceId: null, workspaceKey: ws.key, workspaceRoot: ws.root, settingsPath, trust: { needsTrust: false, reason: 'sdk (claude -p)' }, resumeArgv: null, argv: null, ...(creditWarning ? { creditWarning: { ...creditWarning, text: `API 크레딧 장부로는 월·프로모션 크레딧이 바닥이고 구매 잔액이 $${creditWarning.vars.purchased}입니다. 이 세션은 미납으로 쌓일 수 있습니다.` } } : {}) };
     } finally { pending.delete(name); }
   }
   // 사람이 띄우며 준 첫 요청 → 넣을 글 | null

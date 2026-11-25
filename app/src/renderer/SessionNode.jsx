@@ -27,6 +27,7 @@ import { boardPlan } from './crash-watch.js'; // P86
 import { ChatView } from './ChatView.jsx';
 import { SdkFace } from './SdkView.jsx'; // P363: SDK 세션(터미널 없음)의 가까이 얼굴
 import { SdkTag } from './AuthRelay.jsx';
+import { SdkCost } from './ApiCredits.jsx'; // P361
 import { NodeBoundary } from './ErrorBoundary.jsx';
 import { InterruptedBanner } from './SessionExtras.jsx';
 import { enterSession, markInteracted } from './touch.js';
@@ -95,6 +96,7 @@ function Origin({ s }) {
     {s.flavor && <span className="mt-badge kind flavor" data-kind={s.flavor} data-role="flavor-badge" title={t(s.hooked ? 'node.flavorHookedTitle' : 'node.flavorCommandTitle', { kind: kindOf(s.flavor).label })}>{kindOf(s.flavor).label}</span>}
     {s.kind === 'shell' && <span className="mt-badge kind shell" data-kind="shell" title={t('node.shellTitle')}>{t('node.shell')}</span>}
     {s.billing === 'sdk' && <SdkTag className="mt-badge node" />}{/* P363: SDK 세션(claude -p, 판 중계기를 거쳐 API 키로 과금) */}
+    {s.billing === 'sdk' && <SdkCost sessionId={s.sessionId} className="mt-badge node" />}{/* P361: 그 세션이 쓴 금액(추정) */}
     {s.kind && s.kind !== 'claude' && s.kind !== 'shell' && <span className="mt-badge kind" data-kind={s.kind} title={t('node.kindTitle')}>{s.kind}</span>}
     {s.fromShell && <span className="mt-badge kind" data-role="from-shell" title={t('node.fromShellTitle')}>{t('node.fromShell')}</span>}
     {s.imported && <span className="mt-badge adopted" data-role="imported-badge" title={t('node.importedTitle', { title: s.imported.title || '', gen: s.imported.gen })}>{t('node.imported')}</span>}

@@ -69,7 +69,7 @@ function CardHead({ d, onGo, now, t, timing = null, onTiming = null }) {
   const name = nameOf(d);
   return (
     <div className="mt-dc-line">
-      <button type="button" className="mt-dc-name" data-action="decision-go" title={t('decisions.goTitle', { name })} onClick={() => onGo(d.sessionId)}>@{name}</button>
+      {d.sessionId === 'board' ? <span className="mt-dc-name board" data-role="decision-board" title={t('apiCredits.boardCardTitle')}>{t('apiCredits.boardCard')}</span> /* P361: 판이 남긴 카드(세션 없음) */ : <button type="button" className="mt-dc-name" data-action="decision-go" title={t('decisions.goTitle', { name })} onClick={() => onGo(d.sessionId)}>@{name}</button>}
       {d.workspaceKey ? <span className="mt-chip-ws">{wsName(d.workspaceKey)}</span> : null}
       <span className={`mt-ut-kind k-${d.kind}`} data-role="decision-kind" data-kind={d.kind}>{t(kindWord(d.kind))}</span>
       {d.auto ? <span className="mt-dc-auto" data-role="decision-auto" title={t('autoDecisions.tagTitle')}>{t('autoDecisions.tag')}</span> : null}

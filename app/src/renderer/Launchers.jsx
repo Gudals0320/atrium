@@ -15,6 +15,7 @@ import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, prev
 import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue, orchHarness } from './lib/orch.js'; // P296: 자체 오케스트레이션. P309: orchHarness
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
 import { ApiKeyPanel, SdkTag } from './AuthRelay.jsx'; // P359: API 키 칸. P363: SDK 표시
+import { ApiCreditsPanel } from './ApiCredits.jsx'; // P361
 import { isSdkLauncher, isUnusableLauncher } from './lib/auth-relay.js';
 
 const MODES = PERMISSION_MODES;
@@ -278,5 +279,5 @@ export function LaunchersTab({ startNew = false }) {
   const data = useStore((st) => st.launchers);
   const [editing, setEditing] = useState(() => (startNew ? blankLauncher('claude') : null));
   if (!data) return <div className="dim">{t('settings.loading')}</div>;
-  return editing ? <LauncherForm key={editing.id || 'new'} init={editing} harnesses={data.harnesses} focusPaste={startNew} onDone={() => setEditing(null)} /> : <><ApiKeyPanel /><LauncherList data={data} onEdit={setEditing} /></>;
+  return editing ? <LauncherForm key={editing.id || 'new'} init={editing} harnesses={data.harnesses} focusPaste={startNew} onDone={() => setEditing(null)} /> : <><ApiKeyPanel /><ApiCreditsPanel /><LauncherList data={data} onEdit={setEditing} /></>; // P361: API 크레딧 장부
 }
