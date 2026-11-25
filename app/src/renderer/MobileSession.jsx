@@ -110,7 +110,9 @@ export function SessionScreen({ s, onBack, onGo, needIds, bump, scale }) {
   const [direct, setDirect] = useState(false);
   const [overOpen, setOverOpen] = useState(false); // P358: 겹친 카드는 기본으로 접는다
   const [pageKey, setPageKey] = useState(null);
-  const live = isLive(s);
+  const sdk = s.billing === 'sdk'; // P363: SDK 세션은 터미널이 없다(마지막 답과 입력칸)
+  const alive = isLive(s);
+  const live = alive && !sdk;
   const need = needsYou(s);
   const setKeysOpen = (v) => { setKeysOpenRaw(v); try { store().setItem(KEYS_OPEN_KEY, v ? '1' : '0'); } catch {} };
   const prev = useRef(null);
@@ -119,7 +121,7 @@ export function SessionScreen({ s, onBack, onGo, needIds, bump, scale }) {
   // 기다리는 요청·대기 글만 받는다(brief: 마지막 답·끝 줄 없이, 화면을 읽지 않는다)
   const fetchDetail = () => {
     clearTimeout(timer.current);
-    const run = () => { lastFetch.current = Date.now(); call('phone.session', { session: id, brief: true }).then((d) => { setDetail(d); putDeliveries(d.deliveries); }).catch(() => {}); };
+    const run = () => { lastFetch.current = Date.now(); call('phone.session', { session: id, ...(sdk ? {} : { brief: true }) }) /* P363: SDK 세션은 마지막 답까지 */.then((d) => { setDetail(d); putDeliveries(d.deliveries); }).catch(() => {}); };
     const wait = 1200 - (Date.now() - lastFetch.current);
     if (wait > 0) timer.current = setTimeout(run, wait); else run();
   };
@@ -165,6 +167,7 @@ export function SessionScreen({ s, onBack, onGo, needIds, bump, scale }) {
       </header>
       <div className="mt-ms-termarea" data-role="mp-termview">
         {live && <TermPane s={s} scale={scale} direct={direct} onDirectEnd={() => setDirect(false)} />}
+        {sdk && <SdkAnswer s={s} detail={detail} t={t} />}
         {s.state === 'sleeping' && <div className="mt-mp-cover mt-ms-cover" data-role="mp-asleep"><p>{t('phone.asleep')}</p><button type="button" className="mt-mp-btn pri" data-action="mp-wake" onClick={() => call('session.wake', { session: id }).catch((e) => toast(errText(e), 'error'))}>{s.waking ? t('phone.waking') : t('phone.wake')}</button></div>}
         {s.state === 'exited' && <div className="mt-mp-cover mt-ms-cover"><p>{t('phone.exited')}</p></div>}
         {btn && !overOpen && (
@@ -200,7 +203,20 @@ export function SessionScreen({ s, onBack, onGo, needIds, bump, scale }) {
         ))}</div>
       )}
       {live && <KeyBar need={need} open={keysOpen} setOpen={setKeysOpen} onKey={press} bump={bump} />}
-      {live && !direct && <InputRow s={s} />}
+      {(live || (sdk && alive)) && !direct && <InputRow s={s} />}
+    </div>
+  );
+}
+
+// P363: SDK 세션의 가운데: 마지막 답(phone.session 전체)과 오류. 터미널은 없다
+function SdkAnswer({ s, detail, t }) {
+  const ans = (detail && detail.lastAnswer) || s.lastAnswer || '';
+  const err = s.state === 'error' && s.error && s.error.message ? String(s.error.message) : (detail && detail.error && detail.error.message) || null;
+  return (
+    <div className="mt-ms-sdk" data-role="mp-sdk-answer">
+      <div className="mt-ms-sdk-head"><span className="mt-api-tag mt-sdk-tag">SDK</span><b>{t('sdkSession.lastAnswer')}</b></div>
+      {err && <div className="mt-ms-sdk-err" data-role="mp-sdk-error">{err.slice(0, 400)}</div>}
+      <div className="mt-ms-sdk-text">{ans ? String(ans).slice(0, 6000) : t('sdkSession.noAnswer')}</div>
     </div>
   );
 }

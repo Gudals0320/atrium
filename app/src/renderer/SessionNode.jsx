@@ -25,6 +25,8 @@ import { useT, t, errText, tMsg, tOr } from './lib/i18n.js';
 import { TerminalView } from './TerminalView.jsx';
 import { boardPlan } from './crash-watch.js'; // P86
 import { ChatView } from './ChatView.jsx';
+import { SdkFace } from './SdkView.jsx'; // P363: SDK 세션(터미널 없음)의 가까이 얼굴
+import { SdkTag } from './AuthRelay.jsx';
 import { NodeBoundary } from './ErrorBoundary.jsx';
 import { InterruptedBanner } from './SessionExtras.jsx';
 import { enterSession, markInteracted } from './touch.js';
@@ -92,7 +94,7 @@ function Origin({ s }) {
     {/* P25: 띄운 방법(런처 아이콘). 판이 띄운 Claude Code면 hook이 붙고, 직접 명령이면 hook 없이 셸에서 뜬다 */}
     {s.flavor && <span className="mt-badge kind flavor" data-kind={s.flavor} data-role="flavor-badge" title={t(s.hooked ? 'node.flavorHookedTitle' : 'node.flavorCommandTitle', { kind: kindOf(s.flavor).label })}>{kindOf(s.flavor).label}</span>}
     {s.kind === 'shell' && <span className="mt-badge kind shell" data-kind="shell" title={t('node.shellTitle')}>{t('node.shell')}</span>}
-    {s.billing === 'api' && <span className="mt-badge mt-api-tag node" data-role="api-badge" title={t('authRelay.tagTitle')}>API</span>}{/* P359: 판 중계기를 거쳐 API 키로 과금 */}
+    {s.billing === 'sdk' && <SdkTag className="mt-badge node" />}{/* P363: SDK 세션(claude -p, 판 중계기를 거쳐 API 키로 과금) */}
     {s.kind && s.kind !== 'claude' && s.kind !== 'shell' && <span className="mt-badge kind" data-kind={s.kind} title={t('node.kindTitle')}>{s.kind}</span>}
     {s.fromShell && <span className="mt-badge kind" data-role="from-shell" title={t('node.fromShellTitle')}>{t('node.fromShell')}</span>}
     {s.imported && <span className="mt-badge adopted" data-role="imported-badge" title={t('node.importedTitle', { title: s.imported.title || '', gen: s.imported.gen })}>{t('node.imported')}</span>}
@@ -603,7 +605,8 @@ function SessionNodeInner({ id, selected }) {
           {asleep && face !== 'icon' && <SleepFace s={s} w={n.w} h={n.h} far={face === 'far'} close={face === 'close'} />}
           {/* P124: 붙은 터미널은 얼굴이 요약·틀로 바뀌어도 판이 놓을 때까지(Canvas HOLD_MS) 숨겨 둔 채 남긴다. 휠로 배율이 단계 경계를 오갈 때마다
               xterm·WebGL을 새로 만들고 셸 기록을 다시 쓰던 것(한 번에 100ms 넘는 끊김)을 없앤다. 감싸개는 display: contents라 자리와 크기는 그대로다 */}
-          {!asleep && (attached ? <div className={`mt-term-slot${face === 'close' ? '' : ' hold'}`} data-role="term-slot" data-hold={face === 'close' ? undefined : '1'}><TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /></div> : face === 'close' ? (NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />) : null)}
+          {!asleep && s.billing === 'sdk' && face === 'close' && <SdkFace s={s} />}{/* P363: 터미널 대신 대화 보기와 입력칸 */}
+          {!asleep && s.billing !== 'sdk' && (attached ? <div className={`mt-term-slot${face === 'close' ? '' : ' hold'}`} data-role="term-slot" data-hold={face === 'close' ? undefined : '1'}><TerminalView sessionId={id} width={n.w} height={n.h} focusTick={focusTick} onActivate={() => markSeen(id)} onInput={() => markInteracted(id)} /></div> : face === 'close' ? (NO_BOARD_TERMS ? <ChatView s={s} /> : <CloseWaiting s={s} />) : null)}
           {!asleep && face === 'middle' && <ChatView s={s} />}
           {!asleep && face === 'far' && <FarFace s={s} w={n.w} h={n.h} open={brief && dist === 'term'} />}
           {face === 'icon' && <FrameFace s={s} tier={tier} w={n.w} h={n.h} />}

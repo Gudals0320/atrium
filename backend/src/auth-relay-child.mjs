@@ -5,7 +5,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
-import { matchPath, rewriteHeaders, UsageTap, keyOk } from './auth-relay-core.mjs';
+import { matchPath, rewriteHeaders, UsageTap, keyOk, entrypointOf } from './auth-relay-core.mjs';
 import { unprotect } from './dpapi.mjs';
 
 const say = (o) => { try { process.stdout.write(JSON.stringify(o) + '\n'); } catch {} };
@@ -35,7 +35,7 @@ async function main() {
     const t0 = Date.now();
     const m = matchPath(req.url, cfg.secret);
     if (!m.ok) { req.resume(); res.writeHead(m.status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ type: 'error', error: { type: 'relay_refused', message: m.why } })); say({ t: 'req', at: t0, method: req.method, status: m.status, refused: m.why }); return; }
-    const rec = { t: 'req', at: t0, method: req.method, path: m.path.slice(0, 120), session: m.session };
+    const rec = { t: 'req', at: t0, method: req.method, path: m.path.slice(0, 120), session: m.session, ep: entrypointOf(req.headers['user-agent']) }; // P363: entrypoint(cli | sdk-cli 등)만
     const tap = new UsageTap();
     const u = up.mod.request({ host: up.host, port: up.port, path: m.path, method: req.method, headers: rewriteHeaders(req.headers, key), agent }, (r) => {
       rec.status = r.statusCode;

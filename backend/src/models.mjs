@@ -7,7 +7,7 @@
 // 서로 다른 모델이 맞으면 띄우지 않고 후보를 돌려주고, 없으면 가까운 후보를 돌려준다. 모르는 이름으로 조용히 띄우지 않는다.
 import { HARNESSES, harnessOf } from './launchers.mjs';
 import { launcherOrch } from './orchestration.mjs'; // P296
-import { RELAY_PLACEHOLDER } from './auth-relay-core.mjs'; // P359: API 런처
+import { RELAY_PLACEHOLDER } from './auth-relay-core.mjs'; // P359: 옛 API 런처(P363: 목록에서 뺀다)
 
 // 짧은 별칭. opus·sonnet·haiku는 Claude Code가 아는 별칭이라 그대로 넘기고, fable은 전체 ID로 푼다
 export const CLAUDE_ALIASES = { fable: 'claude-fable-5-1' };
@@ -57,10 +57,12 @@ export function buildCatalog({ launchers = [], gateways = [], harnessModels = {}
   for (const l of launchers) {
     const h = harnessOf(l.harness);
     if (!AGENT_HARNESS(h)) continue;
+    if (l.unusable || (l.harness === 'claude' && l.env && Object.values(l.env).some((v) => String(v).includes(RELAY_PLACEHOLDER)))) continue; // P363: 쓸 수 없는 옛 API 런처
     const t = targetOfModel(h.id, l.model || '');
-    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: (l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL && !String(l.env.ANTHROPIC_BASE_URL).includes(RELAY_PLACEHOLDER) ? l.env.ANTHROPIC_BASE_URL : null), ...(l.harness === 'claude' && l.env && String(l.env.ANTHROPIC_BASE_URL || '').includes(RELAY_PLACEHOLDER) ? { billing: 'api' } : {}), connection: null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}`, startCommand: l.startCommand || '', orchestrates: launcherOrch(l, h.kind).orchestrates }); // P97: 실행 명령. P296: 자체 오케스트레이션
+    entries.push({ source: 'launcher', harness: h.id, kind: h.kind, launcher: l.name, launcherId: l.id, model: l.model || '', gateway: (l.harness === 'claude' && l.env && l.env.ANTHROPIC_BASE_URL && !String(l.env.ANTHROPIC_BASE_URL).includes(RELAY_PLACEHOLDER) ? l.env.ANTHROPIC_BASE_URL : null), ...(h.sdk ? { billing: 'sdk' } : {}), connection: null, keys: { exact: [l.name, l.id], exactModel: l.model ? [l.model] : [], alias: l.model ? [t.base] : [] }, ...t, words: [l.name, l.model, t.base].filter(Boolean).join(' '), command: `atrium child <이름> --launcher ${launcherRef(l)}`, startCommand: l.startCommand || '', orchestrates: launcherOrch(l, h.kind).orchestrates }); // P97: 실행 명령. P296: 자체 오케스트레이션
   }
   for (const h of Object.values(HARNESSES)) {
+    if (h.sdk) continue; // P363: SDK 하네스 모델은 런처로만(모델 이름으로 돈이 드는 길을 고르지 않는다)
     for (const m of harnessModels[h.id] || h.models || []) {
       const aliases = Object.entries(CLAUDE_ALIASES).filter(([, v]) => h.id === 'claude' && v === m).map(([k]) => k);
       entries.push({ source: 'harness', harness: h.id, kind: h.kind, launcher: null, model: m, gateway: null, keys: { exact: [], exactModel: [m], alias: aliases }, target: `${h.id}:${m.toLowerCase()}`, base: m, provider: h.id, variants: [], aliases, words: [m, ...aliases].join(' '), command: h.id === 'claude' ? `atrium child <이름> --model ${q(m)}` : `atrium child <이름> --kind ${h.kind} --model ${q(m)}` });
@@ -110,7 +112,7 @@ export function resolveModel(query, catalog, { kind = null } = {}) {
   const byName = entries.filter((e) => e.keys.exact.some((k) => k && k.toLowerCase() === lq));
   if (byName.length) return { ok: true, how: 'exact', entry: byName[0] };
   // P359: API 키 과금 런처는 런처 이름·ID로만 고른다(모델 이름으로 조용히 돈이 드는 길을 고르지 않는다)
-  return resolveByModel(raw, entries.filter((e) => e.billing !== 'api'), { lq, qv });
+  return resolveByModel(raw, entries.filter((e) => !e.billing), { lq, qv });
 }
 function resolveByModel(raw, entries, { lq, qv }) {
   const byModel = entries.filter((e) => e.keys.exactModel.some((k) => k.toLowerCase() === lq));
@@ -165,7 +167,7 @@ function lev(a, b) {
 
 // 한 줄 설명(atrium models, 후보 목록)
 export function describeEntry(e) {
-  if (e.source === 'launcher') return `런처 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness}${e.orchestrates ? ' · 자체 오케스트레이션(하위로 띄우면 너하고만 말하고 하위 세션을 만들지 않는다)' : ''}${e.startCommand ? ` · 실행 명령 ${e.startCommand}` : ''} · 모델 ${e.model || '(하네스 기본)'}${e.connection ? ` · 연결 ${e.connection}(${e.gateway})` : e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}${e.billing === 'api' ? ' · API 키 과금(판 중계기를 거친다, 사람이 설정 › 런처에 API 키를 넣어야 뜬다)' : ''}`;
+  if (e.source === 'launcher') return `런처 ${e.launcher} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness}${e.orchestrates ? ' · 자체 오케스트레이션(하위로 띄우면 너하고만 말하고 하위 세션을 만들지 않는다)' : ''}${e.startCommand ? ` · 실행 명령 ${e.startCommand}` : ''} · 모델 ${e.model || '(하네스 기본)'}${e.connection ? ` · 연결 ${e.connection}(${e.gateway})` : e.gateway ? ` · 게이트웨이 경유(${e.gateway})` : ''}${e.billing === 'sdk' ? ' · API 크레딧 과금(판이 claude -p로 돌리고 판 중계기를 거친다. 요금제 월 API 크레딧을 쓴다. 사람이 설정 › 런처에 API 키를 넣어야 뜬다. --model·--effort·--worktree 함께 쓸 수 있다)' : ''}`;
   if (e.source === 'harness') return `${HARNESSES[e.harness].label} 모델 ${e.model}${e.aliases && e.aliases.length ? `(별칭 ${e.aliases.join(', ')})` : ['opus', 'sonnet', 'haiku'].includes(e.model) ? '(Claude Code 별칭)' : ''}`;
   return `연결 ${e.connection || e.gateway}의 모델 ${e.label || e.model} · ${HARNESSES[e.harness] ? HARNESSES[e.harness].label : e.harness} · 런처 ${e.host}로 띄운다`;
 }
