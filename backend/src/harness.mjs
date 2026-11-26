@@ -10,6 +10,7 @@ import path from 'node:path';
 import { codexHomeOf } from './codex-models.mjs';
 import { REVIVE_RULE_SHORT, KNOW_RULE_PLAIN, KNOW_HINT_RULE } from './cli-contract.mjs'; // P360. P364: KNOW_RULE_PLAIN. P368: KNOW_HINT_RULE
 import { dshLaunchFiles } from './dsh.mjs';
+import { hasRiskyWord, dropRiskyWords } from './risky-words.mjs'; // P380: OmO 안내문에서 위험 낱말을 뺀다
 
 // 하네스와 상관없는 안내문(한 줄). 줄바꿈·큰따옴표 없이: Codex는 -c 값으로 받고, 판은 이것을 패널에 한 줄로 친다
 // P116: 일 시키기·기다리기·읽기는 판의 atrium 명령이다(터미널 백엔드와 상관없다). 터미널 명령을 직접 쓰라고 하지 않는다
@@ -148,8 +149,11 @@ export const ADAPTERS = {
     build(ctx) {
       const sid = ctx.sessionId;
       const thinking = thinkingIn(ctx.launcherArgs) == null ? omoEffortOf(ctx.effort) : null;
-      const args = ['--session-id', sid, ...(ctx.model ? ['--model', ctx.model] : []), ...(thinking ? ['--thinking', thinking] : []), ...(ctx.instructions ? ['--append-system-prompt', ctx.instructions.file] : []), ...(ctx.launcherArgs || [])];
-      return { args, env: {}, files: [], harnessSessionId: sid, resumed: !!ctx.resume };
+      // P380: 안내문에 위험 낱말이 있으면 바꾼 글을 이 세션의 파일로 따로 써서 넘긴다(risky-words.mjs). 없으면 공용 파일 그대로
+      const ins = ctx.instructions;
+      const safe = ins && hasRiskyWord(ins.text) && ctx.filesDir ? { file: path.join(ctx.filesDir, 'omo', `${sid}.md`), text: dropRiskyWords(ins.text) } : null;
+      const args = ['--session-id', sid, ...(ctx.model ? ['--model', ctx.model] : []), ...(thinking ? ['--thinking', thinking] : []), ...(ins ? ['--append-system-prompt', safe ? safe.file : ins.file] : []), ...(ctx.launcherArgs || [])];
+      return { args, env: {}, files: safe ? [safe] : [], harnessSessionId: sid, resumed: !!ctx.resume };
     },
     isBoardLine: (argv) => argv.includes('--session-id'),
   },

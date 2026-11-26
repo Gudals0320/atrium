@@ -1,0 +1,1 @@
+omo.svg: oh-my-openagent (Sustainable Use License 1.0) code-yeongyu/oh-my-openagent@bef88b7 packages/web/public/brand/omo-mark.svg, unchanged. License: app/THIRD_PARTY_NOTICES.txt

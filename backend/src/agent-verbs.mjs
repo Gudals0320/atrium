@@ -182,23 +182,24 @@ export class AgentVerbs {
     const plan = U ? U.plan(caller, t, { now: !!o.now }) : { kind: 'plain' };
     let made = null;
     const woke = this.asleep(t);
-    if (!made && plan.kind === 'unit') made = U.create(caller, t, text, 'prompt');
+    if (!made && plan.kind === 'unit') made = U.create(caller, t, text, o.raw ? 'raw' : 'prompt'); // P380: --raw면 머리 없는 일(일 연결은 그대로)
     if (made && made.held) return this.heldPrompt(caller, t, made, o, res, woke);
-    const held = !made && plan.kind === 'followup' && o.now ? U.steerHeld(plan.tryRow, text) : null; // P369: 스티어링이 대기열의 같은 일 머리 전달을 붙잡는다(일은 한 번만 들어간다)
-    const d = made ? made.d : held || b.queue.enqueue(t.sessionId, text, { ...(o.now ? { typeNow: true, aside: true } : {}), origin: { kind: 'agent', session: caller.sessionId } }); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
+    const held = !made && plan.kind === 'followup' && o.now && !o.raw ? U.steerHeld(plan.tryRow, text) : null; // P380: --raw는 머리 전달 뒤에 붙이지 않는다(맨 앞이어야 한다) // P369: 스티어링이 대기열의 같은 일 머리 전달을 붙잡는다(일은 한 번만 들어간다)
+    const d = made ? made.d : held || b.queue.enqueue(t.sessionId, text, { ...(o.now ? { typeNow: true, aside: true } : {}), ...(o.raw ? { raw: true } : {}), origin: { kind: 'agent', session: caller.sessionId } }); // B1 규칙(대기열이 줄바꿈을 LF로 맞춘다). 잠든 세션이면 대기열이 판의 깨우기를 부른다
     if (plan.kind === 'followup') U.noteFollowup(plan.tryRow, caller, d.deliveryId, { now: !!o.now });
     if (U && U.stops) U.stops.notePrompt(caller.sessionId, t.sessionId); // P281: 받는 쪽 대기열에 들어간 글(부모에게 묻고 쉬면 멈춤을 알리지 않는다)
     const unitOut = made ? { id: made.unit.id, kind: 'new', held: false } : plan.kind === 'followup' ? { id: plan.unit.id, kind: 'followup', ...(held ? { joined: true } : {}) } : null; // P369: joined = 대기열의 머리 전달에 붙였다
     const l = this.link(caller, t);
     // P156: 두 세션의 일 관계로 본 꼬리표(assign 위 → 하위 지시, report 하위 → 위 보고, share 동료끼리). 선·Thread가 보고와 공유를 가른다
     const tag = this.branch && this.branch.promptTagOf ? this.branch.promptTagOf(caller.sessionId, t.sessionId) : null;
-    b.linkEvent(l, 'prompt', text, { via: 'atrium', deliveryId: d.deliveryId, wait: !!o.wait, ...(o.now ? { now: true } : {}), ...(tag ? { tag } : {}), ...(unitOut ? { unitId: unitOut.id, unitKind: unitOut.kind } : {}) });
+    const rawRec = o.raw ? { raw: true, ...(made && U.recordHeaderOf ? { header: U.recordHeaderOf(made.unit) } : {}) } : {}; // P380: --raw. 넣지 않은 일 머리는 판 기록에만
+    b.linkEvent(l, 'prompt', text, { via: 'atrium', deliveryId: d.deliveryId, wait: !!o.wait, ...(o.now ? { now: true } : {}), ...rawRec, ...(tag ? { tag } : {}), ...(unitOut ? { unitId: unitOut.id, unitKind: unitOut.kind } : {}) });
     // 받는 쪽 상태(일하는 중, 끝남)는 이 글이 실제로 들어갈 때 이 지시의 기록에 붙인다(onDeliveryEnd). 대기열에 여럿이 쌓여도 들어간 순서대로 붙는다
     this.pendingLinks.set(d.deliveryId, { linkId: l.linkId, to: t.sessionId, text });
     this.noteSent(caller, t, d.deliveryId);
-    b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: d.deliveryId, chars: text.length, wait: !!o.wait, ...(o.now ? { now: true } : {}), woke });
+    b.store.addEvent(caller.sessionId, 'atrium_prompt', { target: t.name, sessionId: t.sessionId, deliveryId: d.deliveryId, chars: text.length, wait: !!o.wait, ...(o.now ? { now: true } : {}), ...(o.raw ? { raw: true } : {}), woke });
     if (woke && b.sleeper && b.sleeper.wakeFor) b.sleeper.wakeFor(t, `atrium:${caller.name}`).catch(() => {}); // 대기열도 깨우지만 여기서 먼저 부른다(같은 깨우기로 묶인다)
-    b.log(`atrium prompt ${caller.name} → ${t.name} (${d.deliveryId}${o.wait ? ', wait' : ''}${o.now ? ', now' : ''}${woke ? ', woke' : ''})`);
+    b.log(`atrium prompt ${caller.name} → ${t.name} (${d.deliveryId}${o.wait ? ', wait' : ''}${o.now ? ', now' : ''}${o.raw ? ', raw' : ''}${woke ? ', woke' : ''})`);
     const out = { ...this.head(t), deliveryId: d.deliveryId, woke, tag, unit: unitOut, next: verbLines(t.name) };
     if (o.wait) {
       const turn = await this.waitTurn(caller, t, { deliveryId: d.deliveryId, timeoutMs: o.timeoutMs, res });
