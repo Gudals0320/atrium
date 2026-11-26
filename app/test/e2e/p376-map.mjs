@@ -142,6 +142,12 @@ async function setup() {
 
 // 배열 = 열마다 띠 id 차례(맵 배치에서)
 const ARR = () => { const L = window.__mtTa.lay(); const cols = []; for (const b of [...L.bands].sort((p, q) => (p.col || 0) - (q.col || 0) || p.y - q.y)) (cols[b.col || 0] ||= []).push(b.id || 'none'); return JSON.stringify(cols); };
+// 어제 이전에만 쓴 폴더(Notes·Hub B): 그 띠의 세션을 사흘 전 활동으로. 배열을 정할 때 오늘 띠가 먼저, 그 뒤 구분 줄
+const OLD = ['g4', 'bg2'];
+const DAY = 24 * 60 * MIN;
+const oldify = (shape) => { const keys = new Set(shape.folders.filter((f) => OLD.includes(f.id)).flatMap((f) => f.members)); return { ...shape, sessions: shape.sessions.map((s) => (keys.has(s.workspace) ? { ...s, st: s.st === 'error' ? 'sleeping' : s.st, ago: 3 * DAY } : s)) }; };
+// 나중 활동: Notes의 notes-2가 지금 일한다(띠는 제자리, 기둥에 오늘 표시)
+const wake = (shape) => ({ ...shape, sessions: shape.sessions.map((s) => (s.name === 'notes-2' ? { ...s, st: 'working', ago: MIN } : s)) });
 const NEWWS = (shape) => ({ ...shape, folders: [...shape.folders, { id: 'gnew', name: 'Fresh', members: ['c:/work/fresh/.git'] }], workspaces: [...shape.workspaces, ws('c:/work/fresh/.git')], sessions: [...shape.sessions, ss('fresh-1', 'c:/work/fresh/.git', 'working', null, 1), ss('fresh-2', 'c:/work/fresh/.git', 'sleeping', 'fresh-1', 30)] });
 
 async function openMap(page, shape) {
@@ -171,8 +177,10 @@ async function shots() {
     await size(1920, 1080); await sleep(800);
     await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 60000 }); await sleep(2000);
     await page.evaluate(() => { localStorage.removeItem('atrium.sessionMap.plan'); localStorage.removeItem('atrium.sessionMap.aspect'); });
+    // 세션 맵은 창이 뜰 때 기억을 읽으므로 지운 뒤 다시 읽힌다
+    await page.reload(); await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 60000 }); await sleep(2000);
     if (await page.$('[data-role=sidebar]')) { await page.click('[data-role=top-left] [data-action=sidebar]').catch(() => {}); await sleep(600); }
-    const shape = BIG;
+    const shape = oldify(BIG);
     await openMap(page, shape);
     // 1) 배율 세 단계(멀리 0.18 · 중간 0.4 · 읽히는 0.85): 같은 배열
     for (const [tag, k] of [['far', 0.15], ['mid', 0.3], ['near', 0.6]]) {
@@ -182,6 +190,10 @@ async function shots() {
     const base = seen.far.arr;
     check('배율 0.15·0.3·0.6에서 열 나누기가 같다', seen.mid.arr === base && seen.near.arr === base, { far: seen.far.arr, mid: seen.mid.arr, near: seen.near.arr });
     check('여러 열 판', seen.far.ncol >= 2, seen.far.ncol);
+    const plan0 = JSON.parse(seen.far.plan || '{}');
+    const secs = await page.evaluate(() => window.__mtTa.lay().sections.map((s) => ({ col: s.col, before: s.before, day: s.day })));
+    check('구분 줄 하나, 오늘 띠 뒤 첫 이전 띠 위', secs.length === 1 && ['g4', 'bg2'].includes(plan0.split), { secs, split: plan0.split });
+    seen.secs = secs;
     // 2) 휠 = 커서 둘레 확대
     const before = await page.evaluate(() => window.__mtTa.view());
     const vp = await page.$eval('[data-role="ta-viewport"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width * 0.4, y: r.y + r.height * 0.5 }; });
@@ -221,6 +233,36 @@ async function shots() {
     const pre = JSON.parse(seen.pre), post = JSON.parse(seen.post);
     const kept = pre.every((c, i) => JSON.stringify((post[i] || []).filter((x) => x !== 'gnew')) === JSON.stringify(c));
     check('새 워크스페이스: 새 띠만 더해지고 기존 띠의 열·차례는 그대로', kept && post.flat().includes('gnew'), { pre, post, why: JSON.parse(seen.postPlan || '{}').why });
+    await closeMap(page);
+    // 6) 나중 활동: Notes가 오늘 일해도 띠는 제자리, 기둥에 작은 오늘 표시
+    await openMap(page, wake(NEWWS(shape)));
+    seen.woke = await page.evaluate(({ ARRs }) => eval(ARRs)(), { ARRs: '(' + ARR.toString() + ')' });
+    const marks = await page.evaluate(() => [...document.querySelectorAll('[data-role="ln-band"]')].filter((b) => b.querySelector('[data-role="ln-band-today"]')).map((b) => b.dataset.id));
+    check('나중 활동: 배열 그대로, Notes 기둥에 오늘 표시', seen.woke === seen.post && marks.includes('g4') && !marks.includes('bg2'), { woke: seen.woke, marks });
+    await page.evaluate(() => { const L = window.__mtTa.lay(), b = L.bands.find((x) => x.id === 'g4'); window.__mtTa.set({ k: 0.6, x: window.__mtTa.rail + 16 - (b.x || 0) * 0.6, y: window.__mtTa.top + 8 - (b.y - 160) * 0.6 }); }); await sleep(1800);
+    await page.evaluate(() => { const L = window.__mtTa.lay(), b = L.bands.find((x) => x.id === 'g4'); window.__mtTa.set({ k: 0.6, x: window.__mtTa.rail + 16 - (b.x || 0) * 0.6, y: window.__mtTa.top + 8 - (b.y - 160) * 0.6 }); }); await sleep(900);
+    const covers = await page.evaluate(() => { const m = document.querySelector('[data-role="ln-band"][data-id="g4"] [data-role="ln-band-today"]'); if (!m) return null; const r = m.getBoundingClientRect(); return [...document.querySelectorAll('[data-role="mission"] .mt-ta-slot')].some((c) => { const q = c.getBoundingClientRect(); return r.left < q.right && r.right > q.left && r.top < q.bottom && r.bottom > q.top; }); });
+    check('오늘 표시는 카드를 덮지 않는다', covers === false, covers);
+    await shot(page, '06-later-today-mark');
+    await closeMap(page);
+    // 7) 배열을 정한 날이 오늘이 아니면 구분 줄 이름표에 날짜
+    await page.evaluate(() => { const p = JSON.parse(localStorage.getItem('atrium.sessionMap.plan')); p.day -= 86400000; localStorage.setItem('atrium.sessionMap.plan', JSON.stringify(p)); });
+    await page.reload(); await page.waitForFunction(() => window.__mt && window.__mt.getState().boardLoaded, null, { timeout: 60000 }); await sleep(2000);
+    if (await page.$('[data-role=sidebar]')) { await page.click('[data-role=top-left] [data-action=sidebar]').catch(() => {}); await sleep(600); }
+    await openMap(page, wake(NEWWS(shape)));
+    const lab = await page.evaluate(() => { const s = document.querySelector('[data-role="ln-section"] .up'); return s ? s.textContent : null; });
+    check('지난 날 배열의 구분 줄은 "오늘(날짜 기준)"', /기준/.test(lab || ''), lab);
+    seen.dated = lab;
+    await page.evaluate(() => { const L = window.__mtTa.lay(), s = L.sections[0]; window.__mtTa.set({ k: 0.6, x: window.__mtTa.rail + 16 - s.x * 0.6, y: window.__mtTa.top + 8 - (s.y - 400) * 0.6 }); }); await sleep(1800);
+    await page.evaluate(() => { const L = window.__mtTa.lay(), s = L.sections[0]; window.__mtTa.set({ k: 0.6, x: window.__mtTa.rail + 16 - s.x * 0.6, y: window.__mtTa.top + 8 - (s.y - 400) * 0.6 }); }); await sleep(900);
+    await shot(page, '07-divider-dated');
+    // 영어 사전 글도 본다
+    call('settings.set', { key: 'language', value: 'en' }); await sleep(1500);
+    seen.datedEn = await page.evaluate(() => { const s = document.querySelector('[data-role="ln-section"] .up'); return s ? s.textContent : null; });
+    seen.markEn = await page.evaluate(() => { const m = document.querySelector('[data-role="ln-band-today"]'); return m ? m.textContent : null; });
+    check('영어: Today (as of …)·Today 표시', /as of/.test(seen.datedEn || '') && seen.markEn === 'Today', { dated: seen.datedEn, mark: seen.markEn });
+    await shot(page, '08-divider-dated-en');
+    call('settings.set', { key: 'language', value: 'ko' });
     await closeMap(page);
   } finally { await closeApp(app); }
   fs.writeFileSync(path.join(OUT, 'measure.json'), JSON.stringify(seen, null, 2));

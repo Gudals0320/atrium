@@ -140,12 +140,14 @@ const XIcon = ({ s = 20 }) => <svg width={s} height={s} viewBox="0 0 24 24" aria
 // 글자 키인가(명령줄로 보낼 것): 한 글자 키, 또는 IME 조합 시작(Process)
 const typedKey = (e) => !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'Process' || (e.key && e.key.length === 1));
 
+// P376: 기억한 배열의 구분 줄은 배열을 정한 날에 고정된다. 그날이 오늘이 아니면 "오늘(11/26 기준)"처럼 날짜를 붙인다
+const dayText = (ms) => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()}`; };
 // P202: 오늘·이전 이름표(세계 좌표). 머리(두 열) = 열 위 큰 이름표와 밑줄, 줄(한 열) = 가로 줄 위에 "오늘", 아래에 "이전". 움직임 없이 글과 줄만
 export function SectionMark({ s, px, t }) {
   const fs = Math.round(px * 1.15 * 10) / 10;
   if (s.mode === 'line') return (
     <div className="mt-sm-sec line" data-role="ln-section" data-kind="split" style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
-      <span className="up" style={{ fontSize: fs }}>{t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn" style={{ fontSize: fs }}>{t('mmSec.earlier')}</span>
+      <span className="up" style={{ fontSize: fs }}>{s.day && s.day !== dayStart() ? t('mmPlan.todayAsOf', { date: dayText(s.day) }) : t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn" style={{ fontSize: fs }}>{t('mmSec.earlier')}</span>
     </div>);
   return (
     <div className={`mt-sm-sec head ${s.kind}`} data-role="ln-section" data-kind={s.kind} data-col={s.col} style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
@@ -732,7 +734,7 @@ export function LineageMap() {
             {lay.bands.map((b) => (
               <div key={`b:${b.id || 'none'}`} className={`mt-sm-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} data-today={b.today ? '1' : undefined} data-col={b.col || 0} style={{ left: b.x || 0, top: b.y, height: b.h, width: lay.W }}>
                 <div className="mt-sm-spine" style={{ width: lay.spine }}>
-                  <span className="fk" style={{ fontSize: lay.px.kind }}>{b.loose ? t('mmLine.loose') : t('mmLine.folder')}</span>
+                  <span className="fk" style={{ fontSize: lay.px.kind }}>{b.loose ? t('mmLine.loose') : t('mmLine.folder')}{lay.planned && b.today ? <span className="ftd" data-role="ln-band-today">{t('mmPlan.todayMark')}</span> : null}</span>
                   <span className="fn" data-role="ln-band-name" style={{ fontSize: lay.px.name }}>{b.name}</span>
                   <span className="fs" data-role="ln-band-stat" style={{ fontSize: lay.px.stat }}><span>{t('mmTerr.workspaces', { n: b.nWs })}</span><span>{t('mmTerr.sessions', { n: b.sessions })}</span></span>
                   <span className="fbar" aria-hidden="true" style={{ height: lay.px.bar }}>{b.bar.map((c) => <i key={c.tier} className={`st-${ST[c.tier]}`} style={{ flexGrow: c.n }} />)}</span>

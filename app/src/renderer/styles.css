@@ -3335,3 +3335,6 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 
 /* P374: PC 세션 맵 카드의 작은 줄(상태·역할·하네스·모델·더 보기)을 13px로. 처음 화면 배율(MissionLineage.jsx OPEN_K 0.85)에서 화면 11px 이상(이름 15.5·지금 일 13.5는 그대로). 휴대폰 맵은 그대로 */
 .mt-sm[data-layout="lineage"] .mt-ta-full .cst, .mt-sm[data-layout="lineage"] .mt-ta-full .c2, .mt-sm[data-layout="lineage"] .mt-ta-full .crole, .mt-sm[data-layout="lineage"] .mt-ta-full .c4 { font-size: 13px; }
+
+/* P376: 세션 맵 폴더 기둥의 작은 "오늘" 표시(기억한 배열에서 오늘 활동한 띠. 띠는 제자리). 기둥 종류 글 줄 안이라 카드를 덮지 않는다. 움직임 없음 */
+.mt-sm-spine .fk .ftd { display: inline-block; margin-left: 0.5em; padding: 0 0.4em; border: 1px solid rgba(255, 252, 240, 0.32); border-radius: 4px; color: var(--ln-strong); font-size: 0.85em; line-height: 1.35; vertical-align: 0.05em; }

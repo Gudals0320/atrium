@@ -68,8 +68,42 @@ test('세션 상태·카드 높이(얇은 줄·꼬리표)가 바뀌어도 같다
     assert.equal(arr(lay(woke, plan, o)), want, JSON.stringify(Object.keys(o)));
     assert.equal(mapPlan(plan, woke.graph, base(woke, o)), plan, '상태로는 다시 정하지 않는다');
   }
-  // 오늘·이전 구분 줄은 기억한 배열에서는 없다(띠 차례가 상태 따라 바뀌지 않게)
+  // 오늘을 모르고 정한 배열에는 구분 줄이 없다
   assert.equal(lay(B, plan, { today: new Set(['d:/w/f6w0']) }).sections.length, 0);
+});
+
+test('오늘·이전 구분 줄(사람 2026-11-26 "남기기"): 정할 때 오늘 띠가 먼저, 줄은 첫 이전 띠 위. 나중 활동은 띠를 옮기지 않고 표시만', () => {
+  const today = new Set(['d:/w/f5w0', 'd:/w/f2w1']);
+  const now = new Date(2026, 10, 26, 15).getTime();
+  const plan = mapPlan(null, B.graph, base(B, { today, now }));
+  const flat = plan.cols.flat();
+  assert.deepEqual(flat.slice(0, 2), ['f2', 'f5'], '오늘 띠 먼저(이름순)');
+  assert.equal(plan.split, flat[2]);
+  assert.equal(plan.day, new Date(2026, 10, 26).getTime());
+  const L = lay(B, plan, { today });
+  assert.equal(L.sections.length, 1);
+  const sec = L.sections[0], first = L.bands.find((b) => (b.id == null ? '' : b.id) === plan.split);
+  assert.equal(sec.mode, 'line'); assert.equal(sec.day, plan.day);
+  assert.equal(sec.col, first.col); assert.ok(Math.abs(sec.y + sec.h - first.y) < 1e-6, '줄은 그 띠 바로 위');
+  assert.ok(L.planned);
+  // 다른 띠가 오늘 활동해도 배열·줄 자리는 그대로, 띠의 today 표시만 바뀐다
+  const later = new Set(['d:/w/f6w0']);
+  const L2 = lay(B, plan, { today: later });
+  assert.equal(arr(L2), arr(L));
+  assert.equal(mapPlan(plan, B.graph, base(B, { today: later })), plan);
+  assert.ok(Math.abs(L2.sections[0].y - sec.y) < 1e-6 && L2.sections[0].col === sec.col);
+  assert.deepEqual(L2.bands.filter((b) => b.today).map((b) => b.id), ['f6']);
+  // 줄 자리 띠가 사라지면 plan 차례로 다음 띠 위
+  const keys = new Set(B.groups.find((x) => x.id === plan.split).members);
+  const b2 = { ...B, graph: { nodes: B.graph.nodes.filter((n) => !keys.has(n.workspaceKey)), edges: B.graph.edges.filter((e) => !keys.has((B.graph.nodes.find((n) => n.id === e.to) || {}).workspaceKey)) } };
+  const L3 = lay(b2, plan, { today });
+  const next = flat.slice(flat.indexOf(plan.split) + 1).find((k) => L3.bands.some((b) => (b.id == null ? '' : b.id) === k));
+  const nb = L3.bands.find((b) => (b.id == null ? '' : b.id) === next);
+  assert.ok(Math.abs(L3.sections[0].y + L3.sections[0].h - nb.y) < 1e-6, '다음 띠 위');
+  // 새 띠를 넣기만 하면(insert) 줄은 그대로, 다시 나누면 오늘 먼저로 새로 정한다
+  const b3 = board({ extra: [{ name: 'nf', ws: 'd:/w/new0', folder: { id: 'fz', name: 'New folder' } }] });
+  const p3 = mapPlan(plan, b3.graph, base(b3, { today: new Set(['d:/w/new0']), now }));
+  assert.equal(p3.why, 'insert'); assert.equal(p3.split, plan.split); assert.equal(p3.day, plan.day);
 });
 
 test('새 워크스페이스(기존 폴더): 그 띠만 자라고 다른 띠의 열·차례는 그대로', () => {
@@ -149,4 +183,18 @@ test('창: 휠 = 커서 둘레 확대만(Ctrl·Shift 갈래 없음), 열 나누�
   assert.match(ml, /const PLAN_KEY = 'atrium\.sessionMap\.plan';/);
   assert.match(ml, /mapPlan\(prev, g2, baseOpts\)/);
   assert.match(ml, /columns: plan \? 1 : 'auto', plan/);
+  // 구분 줄 날짜와 기둥의 작은 오늘 표시(두 사전)
+  assert.match(ml, /s\.day && s\.day !== dayStart\(\) \? t\('mmPlan\.todayAsOf'/);
+  assert.match(ml, /lay\.planned && b\.today \? <span className="ftd" data-role="ln-band-today">\{t\('mmPlan\.todayMark'\)\}/);
+  const css = read('styles.css');
+  const blk = css.slice(css.indexOf('/* P376:'));
+  assert.match(blk, /\.mt-sm-spine \.fk \.ftd \{[^}]*font-size: 0\.85em/);
+  assert.ok(!/animation|transition/.test(blk));
+});
+
+test('사전: 두 사전에 오늘 표시와 날짜 붙은 구분 줄 이름표', async () => {
+  const { default: en } = await import('../src/renderer/locales/en.js');
+  const { default: ko } = await import('../src/renderer/locales/ko.js');
+  assert.equal(en.mmPlan.todayMark, 'Today'); assert.equal(ko.mmPlan.todayMark, '오늘');
+  assert.match(en.mmPlan.todayAsOf, /\{date\}/); assert.match(ko.mmPlan.todayAsOf, /\{date\} 기준/);
 });

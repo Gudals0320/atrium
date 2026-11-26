@@ -393,7 +393,7 @@ export function lineageLayout(graph, opts = {}) {
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   const BW = two ? DX + W : phone ? nPages * W + (nPages - 1) * PHONE.PGAP : ncolPC > 1 ? ncolPC * W + (ncolPC - 1) * COLS2.GAP : W;
   const BH = two || ncolPC > 1 || usePlan ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
-  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : ncolPC, colDx: ncolPC > 1 ? W + COLS2.GAP : DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
+  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : ncolPC, colDx: ncolPC > 1 ? W + COLS2.GAP : DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, planned: usePlan, ...(phone ? { phone: true, pages: nPages } : {}) };
 
   // ---- P260: 줄 안 쌓기(PC·휴대폰 같은 규칙). 시작 칸 뿌리의 나무 → 다른 워크스페이스에서 온 것(1단계 칸) → 솔로(시작 칸, 차례 = 만든 차례).
   //   나무 사이는 GY*2(동료 뿌리끼리는 PGY), 솔로끼리는 GY. 쌓은 것이 없으면 null, 있으면 마지막 카드 아래 끝 y ----
@@ -445,6 +445,16 @@ export function lineageLayout(graph, opts = {}) {
       parts[best].push(i); used.add(i);
     }
     for (const i of parts.flat()) measure.units[i] = { ...measure.units[i], lead: L.BANDGAP, sep: false };
+    // P376: 오늘·이전 구분 줄 = plan.split 띠 위(없으면 plan 차례로 그다음 있는 띠 위). 띠는 옮기지 않는다
+    const flat = cols.flat(), si = plan.split != null ? flat.indexOf(plan.split) : -1;
+    const di = si < 0 ? null : flat.slice(si).map((k) => at.get(k)).find((i) => i != null);
+    if (di != null) {
+      const b = bands[di], row = rows.find((r) => (r.band || null) === (b.id || null));
+      if (row) {
+        measure.units[di] = { ...measure.units[di], lead: SEC.SEP, sep: true };
+        sections.push({ kind: 'split', mode: 'line', x: 0, y: 0, w: W, h: SEC.SEP, col: 0, before: row.key, day: plan.day ?? null });
+      }
+    }
     flowParts(parts);
     parts.forEach((p) => p.forEach((i, j) => { bands[i].odd = j % 2 === 1; }));
     let n = parts.length;
@@ -574,12 +584,14 @@ export function mapBands(graph, { vgroups = [], names = null, noFolder = 'No fol
   const tree = missionTree(graph);
   const present = [...new Set([...tree.nodes.map((n) => n.workspaceKey || ''), ...(keepKeys || []).filter(Boolean)])];
   const nameOf = (key) => (names && names.get(key)) || (key ? keyName(key) : '');
-  return groupsOf(present, { vgroups, nameOf, noFolder, today }).map((g) => ({ key: bandKey(g.id), ws: g.keys }));
+  return groupsOf(present, { vgroups, nameOf, noFolder, today }).map((g) => ({ key: bandKey(g.id), ws: g.keys, today: !!g.today }));
 }
 
 // P376: 배열 고정(사용자 2026-11-26: "배열은 고정. 새 워크스페이스가 생길 때에만 정렬을 점검하고 고친다").
 //   열 나누기(어느 띠가 어느 열 몇 번째)를 한 번 정해 기기에 기억하고(MissionLineage.jsx localStorage atrium.sessionMap.plan), 배율·창 크기·세션 상태·카드 높이로는 바꾸지 않는다.
-//   plan = { v, cols: [[띠 열쇠…]…], ws: [이 배열이 아는 워크스페이스 키…], aspect }.
+//   plan = { v, cols: [[띠 열쇠…]…], ws: [이 배열이 아는 워크스페이스 키…], aspect, split, day }.
+//   오늘·이전 구분 줄(사람 2026-11-26 "오늘·이전 구분 줄은 남기기"): 배열을 정할 때(처음·다시 나눔·force) 띠를 오늘 먼저로 놓고 첫 이전 띠(split)와 그날(day, 자정 ms)을 기억한다.
+//   줄은 그 띠 위에 그리고 띠를 옮기지 않는다(그 띠가 사라지면 plan 차례로 다음 띠 위). 나중에 오늘 활동한 띠는 제자리에서 기둥의 작은 "오늘" 표시로 보인다(창)
 //   - 처음(기억 없음·형식이 다름·목표 비 열쇠가 바뀜)이나 force(손 정리): 폴더 차례(오늘 먼저)를 목표 비에 가장 가까운 열 수로 나눈다(pickColumns·splitUnits)
 //   - 새 워크스페이스(ws에 없는 키)나 plan에 없는 띠가 생기면: 새 띠는 가장 짧은 열 끝에 넣고(기존 띠는 움직이지 않는다), 판 비가 목표 비에서
 //     DRIFT배보다 더 어긋나고 다시 나누면 나아질 때만 지금 차례 그대로 다시 나눈다
@@ -605,6 +617,12 @@ function splitPlan(order, m, view, aspect) {
   const n = pickColumns({ units, W: m.W, cgap: m.cgap }, view, { aspect });
   return splitUnits(units, n).map((p) => p.map((i) => order[i]));
 }
+// 오늘 먼저 차례에서 구분 줄 자리(첫 이전 띠)와 그날. 오늘 띠나 이전 띠가 없으면 줄 없음
+function splitOf(order, isToday, opts) {
+  const i = order.findIndex((k) => !isToday.get(k));
+  const split = i > 0 ? order[i] : null;
+  return { split, day: split == null ? null : dayStart(opts.now ?? Date.now()) };
+}
 export function mapPlan(prev, graph, opts = {}, { force = false } = {}) {
   const { view = null, aspect = SHEET.ASPECT } = opts;
   const bands = mapBands(graph, opts);
@@ -618,18 +636,22 @@ export function mapPlan(prev, graph, opts = {}, { force = false } = {}) {
     const cols = prev.cols.map((c) => c.slice());
     const colH = (c) => c.filter((k) => m.units.has(k)).reduce((s, k, j) => s + m.units.get(k).h + (j ? m.units.get(k).lead : 0), 0);
     for (const b of missing) { let best = 0; cols.forEach((c, i) => { if (colH(c) < colH(cols[best]) - 1e-9) best = i; }); cols[best].push(b.key); }
-    let out = cols, why = 'insert';
+    let out = cols, why = 'insert', split = prev.split ?? null, day = prev.day ?? null;
     const want = sheetAspect(aspect, view);
     const now = planMiss(cols, m, want);
     if (now > Math.log(PLAN.DRIFT)) {
-      const order = [...prev.cols.flat(), ...missing.map((b) => b.key)].filter((k) => m.units.has(k)); // 지금 배열 차례 + 새 띠
+      // 지금 배열 차례 + 새 띠를 오늘 먼저로(각 무리 안은 그 차례 그대로)
+      const isToday = new Map(bands.map((b) => [b.key, b.today]));
+      const order0 = [...new Set([...prev.cols.flat(), ...missing.map((b) => b.key)])].filter((k) => m.units.has(k));
+      const order = [...order0.filter((k) => isToday.get(k)), ...order0.filter((k) => !isToday.get(k))];
       const re = splitPlan(order, m, view, aspect);
-      if (planMiss(re, m, want) < now - 1e-9) { out = re; why = 'resplit'; }
+      if (planMiss(re, m, want) < now - 1e-9) { out = re; why = 'resplit'; ({ split, day } = splitOf(order, isToday, opts)); }
     }
-    return { v: PLAN.V, cols: out, ws: [...new Set([...prev.ws, ...wsNow])].slice(-PLAN.MAXWS), aspect, why };
+    return { v: PLAN.V, cols: out, ws: [...new Set([...prev.ws, ...wsNow])].slice(-PLAN.MAXWS), aspect, split, day, why };
   }
   const m = planUnits(graph, opts);
-  return { v: PLAN.V, cols: splitPlan(bands.map((b) => b.key), m, view, aspect), ws: wsNow.slice(-PLAN.MAXWS), aspect, why: force ? 'force' : 'new' };
+  const order = bands.map((b) => b.key);
+  return { v: PLAN.V, cols: splitPlan(order, m, view, aspect), ws: wsNow.slice(-PLAN.MAXWS), aspect, ...splitOf(order, new Map(bands.map((b) => [b.key, b.today])), opts), why: force ? 'force' : 'new' };
 }
 
 // 이 PC 시각 자정(ms)
