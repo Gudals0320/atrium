@@ -17,6 +17,9 @@ export function steerBlock(s) {
   return s.hooked === false ? 'no_hook' : null;
 }
 
+// P379: 휴대폰 스티어링 단추를 눌렀는데 그 세션이 스티어링을 받지 않을 때의 짧은 글. 보내기는 막지 않는다(대기열로 일이 끝난 뒤 들어간다)
+export const steerOffText = (t, why) => t('p379.phoneSteerOff', { why: t(`cmdSteer.why_${why}`) });
+
 // recipients: lib/cmd-input.js recipients()의 답, sessions: 판의 세션 요약 → { can: 이름[], cannot: { name, why }[] }
 //   @all은 판의 에이전트 세션 모두. 없는 이름·셸은 세지 않는다(보내기가 거절한다)
 export function steerTargets(recipients, sessions) {

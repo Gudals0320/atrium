@@ -17,7 +17,7 @@ import { useT, errText } from './lib/i18n.js';
 import { STATE_LABEL, deliveryText, shellStateText } from './lib/labels.js';
 import { toneOf, needsYou, isDone, choiceButtons, PINS_KEY, togglePin, readList, detailStale, KEY_MAIN, KEY_MORE, KEY_GLYPH, KEY_WIDE, keyId, isNumKey, KEYS_OPEN_KEY, readFlag, isLive, overlayButton, overlayPages, clampPage } from './lib/mobile.js';
 import { keyQueue, sendPlan, nextNeed } from './lib/phone.js';
-import { steerBlock } from './lib/steer.js';
+import { steerBlock, steerOffText } from './lib/steer.js';
 import { SessionMuteButton } from './PhonePush.jsx';
 import { useVoice, VoiceButton, VoiceInterim } from './Voice.jsx';
 import { markInteracted, enterSession } from './touch.js';
@@ -271,7 +271,8 @@ function InputRow({ s }) {
           placeholder={s.kind === 'shell' ? t('phone.inputShell') : steer && !why ? t('cmdHead.phoneSteerOn') : t('phone.inputAgent')}
           onChange={(e) => { setText(e.target.value); grow(e.target); }}
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
-        {s.kind !== 'shell' && <button type="button" className={'mt-mp-round' + (steer && !why ? ' on' : '')} data-action="mp-steer" aria-pressed={steer && !why} aria-label={t('cmdSteer.label')} title={why ? t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) }) : t('cmdSteer.phoneTitle')} onPointerDown={(e) => e.preventDefault()} onClick={() => { if (why) toast(t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) })); else setSteer((v) => !v); }}><Ic d={I.bolt} /></button>}
+        {/* P379: 스티어링을 받지 않는 세션(자체 오케스트레이션 등)이면 단추를 흐리게 두고, 누르면 켜지 않고 "일이 끝난 뒤 들어간다"를 짧게 보인다. 보내기는 대기열 그대로 */}
+        {s.kind !== 'shell' && <button type="button" className={'mt-mp-round mt-mp-steer' + (steer && !why ? ' on' : '')} data-action="mp-steer" aria-pressed={steer && !why} aria-disabled={why ? true : undefined} data-off={why || undefined} aria-label={t('cmdSteer.label')} title={why ? steerOffText(t, why) : t('cmdSteer.phoneTitle')} onPointerDown={(e) => e.preventDefault()} onClick={() => { if (why) toast(steerOffText(t, why)); else setSteer((v) => !v); }}><Ic d={I.bolt} /></button>}
         <button type="submit" className="mt-mp-round send" data-action="mp-send" disabled={busy || (!text.trim() && !voice.active)} aria-label={t('phone.send')}><Ic d={I.up} /></button>
       </form>
     </>

@@ -30,7 +30,7 @@ import { checkLabel } from './lib/session-name.js'; // P97: 새 세션 이름 �
 import { BRAND_WORDMARK } from './lib/icons.jsx';
 import { setDraftSource, takeSavedDraft } from './shell-update.js'; // P282: 판 업데이트로 다시 불러올 때 보내지 않은 글
 import { phoneList, toneOf, KEY_ROW, keyBytes, touchWheelDelta, screenBox, kbOpenOf, sendPlan, nextNeed, isPhoneDevice, LAYOUT_KEY, needsYou, PAD_KEYS, keyQueue, padKeyOf, padOpen } from './lib/phone.js';
-import { steerBlock } from './lib/steer.js'; // P248: 스티어링 선택
+import { steerBlock, steerOffText } from './lib/steer.js'; // P248: 스티어링 선택. P379: 못 받는 세션의 짧은 까닭
 import { pwaState, onPwa, isStandalone, isIOS, promptInstall } from './lib/pwa.js';
 import { clampPhoneScale, PHONE_SCALE_DEFAULT } from './lib/scale.js'; // P83: 휴대폰 글자는 40%까지
 import { LIST_PREF } from './lib/touch-board.js'; // P76: 목록 단추(태블릿 보드에는 보이지 않는다)
@@ -456,8 +456,8 @@ function PhoneSession({ s, onBack, onGo }) {
           {/* P274: 스티어링은 글자 단추 대신 둥근 아이콘 토글(글 칸 폭) */}
           {s.kind !== 'shell' && (() => { const why = steerBlock(s); return (
             <button type="button" className={`mt-ph-steer${steer && !why ? ' on' : ''}`} data-action="phone-steer" aria-pressed={steer && !why} aria-disabled={why ? true : undefined} data-off={why ? '1' : undefined}
-              title={why ? t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) }) : t('cmdSteer.phoneTitle')} onPointerDown={(e) => e.preventDefault()}
-              onClick={() => { if (why) toast(t('cmdSteer.off', { why: t(`cmdSteer.why_${why}`) })); else setSteer((v) => !v); }} aria-label={t('cmdSteer.label')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg></button>
+              title={why ? steerOffText(t, why) : t('cmdSteer.phoneTitle')} onPointerDown={(e) => e.preventDefault()}
+              onClick={() => { if (why) toast(steerOffText(t, why)); else setSteer((v) => !v); }} aria-label={t('cmdSteer.label')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg></button>
           ); })()}
           <button type="submit" className="mt-ph-send" data-action="phone-send" disabled={busy || (!text.trim() && !voice.active)} aria-label={t('phone.send')}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
