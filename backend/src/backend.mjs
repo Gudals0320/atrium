@@ -36,6 +36,7 @@ import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './work
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
 import { ResourceMonitor, childProcesses, tableReader } from './resources.mjs';
 import { ResourceGuard, transitOf } from './resource-guard.mjs'; // P341: 폭주 감시·우선순위 낮추기
+import { ResourceTrend } from './resource-trend.mjs'; // P370: 메모리 알약 펼침의 추이(메모리에만)
 import { ProcControl } from './proc-control.mjs'; // P341: 일시정지·끄기 도우미
 import { UsageBook, writeStatusLineScript, writeStatusLineShim } from './usage.mjs'; // P211: 구독 사용량
 import { AuthRelay } from './auth-relay.mjs'; // P359: 판 중계기(API 키 과금). P363: SDK 세션이 쓴다
@@ -466,6 +467,9 @@ export class Backend {
     this.guard = new ResourceGuard(this, { monitor: this.resources, proc: this.proc, settings: () => (this.features && this.features.settings ? this.features.settings.get() : {}) });
     this.resources.nextDelay = () => this.guard.nextDelay();
     this.resources.after.push(async (snap, mon) => { await this.guard.step(snap, mon); snap.guard = this.guard.status(); });
+    // P370: 추이 고리(30초 칸 60개, 메모리에만). 폭주 감시 뒤라 줄의 guard로 경보 표시를 고른다. 잠재우기 표시에는 누가 재웠는지(by)
+    this.trend = new ResourceTrend({ extra: (sid) => { const s = this.sessions.get(sid); return s && s.rt && s.rt.sleep && s.rt.sleep.by ? { by: s.rt.sleep.by } : null; } });
+    this.resources.after.push((snap) => this.trend.add(snap));
     Object.assign(this.api.handlers, this.guard.handlers());
     if (!process.env.NODE_TEST_CONTEXT) this.proc.ensure().catch(() => {}); // 도우미 빌드(글이 바뀌었을 때만). 단위 시험 판에서는 누를 때 빌드한다
     { const set0 = this.api.handlers['settings.set']; if (set0) this.api.handlers['settings.set'] = async (p, c) => { const r = await set0(p, c); try { this.guard.onSettings(); } catch {} return r; }; } // 우선순위 끔 → 곧바로 되돌린다
@@ -2592,6 +2596,7 @@ export class Backend {
       'agent.kinds': (p = {}) => this.adapter.agentKinds({ fresh: !!(p && p.fresh) }), // P205: 창이 틀을 열 때 fresh(다시 찾기)
       // 자원(D1)
       'resources.get': async (p) => (p.fresh ? this.resources.sample() : this.resources.last),
+      'resources.trend': () => (this.trend ? this.trend.view() : null), // P370: 펼침을 열 때·열린 동안만
       // P6a: 단일 캔버스(검색, 붙여 묶기, 풀기, 정리, 크기 단계, 영역 옮기기)
       ...canvasHandlers(this),
       ...groupHandlers(this), // P44: 워크스페이스 가상 그룹

@@ -9,6 +9,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GuardBadge } from './Guard.jsx'; // P341: 메모리 알약 줄의 폭주 표시
 import { resOrder } from './lib/guard.js'; // P348: 메모리 알약 펼침의 세션 목록 차례
+import { ResTrend } from './ResTrend.jsx'; // P370: 펼침 맨 위의 추이 그림(열린 동안만 받는다)
 import { useStore, getState, openDialog, toast, wsName, setMissionOpen, setSpotlight, markAllSeen } from './store.js';
 import { QuickName } from './QuickName.jsx'; // P97: 레일 빠른 생성의 이름 칸
 import { favoriteLaunchers, launcherIcon, launcherMark, launcherTooltip } from './lib/launchers.js'; // P33: 레일 = 즐겨찾기 호출자
@@ -281,6 +282,7 @@ function ResourcePill({ maxControllers }) {
       {open && (
         <div className="mt-dropdown" data-role="resources-list">
           <div className="mt-dropdown-head"><span>{t('sleep.memHead')} · {fmtMB(r.sessionsMB)}</span>{r.intervalMs ? <span className="dim mt-res-every" data-role="res-every" title={t('p348.everyTitle', { ms: r.readMs ?? r.ms })}>{t('p348.every', { s: Math.round(r.intervalMs / 1000) })}</span> : null}</div>
+          <ResTrend cores={cores} />
           {/* P348: 세션 목록을 판 전체·PC 전체 값 위에, 폭주·무거움 먼저, CPU·메모리 큰 순(측정마다 다시 그린다) */}
           <div className="mt-res-top" data-role="res-top">
             {order.map((x) => (
