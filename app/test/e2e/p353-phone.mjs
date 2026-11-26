@@ -91,12 +91,12 @@ async function setupBoard() {
   if (!have.has('asker')) await spawn({ cwd: F, name: 'asker', model: 'haiku', prompt: 'Create a folder named p353-x in the current directory using the mkdir shell command.', ...(leadId ? { parentSessionId: leadId } : {}) });
   if (!have.has('helper')) await spawn({ cwd: F, name: 'helper', model: 'haiku', prompt: 'Write a two line poem about rivers. Do not use tools.', ...(leadId ? { parentSessionId: leadId } : {}) });
   await until(() => { const a = byName('asker'); return a && a.state === 'waiting'; }, 180000, 3000).catch(() => log('권한 질문 기다림 넘김'));
-  // 셸 하나는 오래 도는 명령, 셸 둘은 할 일 카드(atrium ask, 판이 준 셸 env)
+  // 셸 하나는 오래 도는 명령
   try { atrium('input', 'sh0', 'ping -n 100000 127.0.0.1\r'); } catch (e) { log('ping ' + e.message.slice(0, 120)); }
-  for (const [n, q] of [['sh1', 'Merge the parser branch now?'], ['sh2', 'Ship the phone page to dev today?'], ['sh3', 'Keep the old map behind a button?']]) {
-    try { atrium('input', n, 'atrium ask "' + q + '" --option yes --option no --no-wait\r'); } catch (e) { log('ask ' + e.message.slice(0, 120)); }
-    await sleep(1500);
-  }
+  // 할 일 카드 셋: P372부터 리드 haiku 신원으로(lib/board-agent.mjs). 옛 길(셸 칸에 atrium ask)은 셸이 판 하위 명령을 못 써 카드가 0장이었다(P355)
+  { const { boardAgent } = await import('./lib/board-agent.mjs'); const ag = boardAgent({ env: ENV });
+    for (const q of ['Merge the parser branch now?', 'Ship the phone page to dev today?', 'Keep the old map behind a button?']) if (!(call('decision.list').cards || []).some((c) => c.question === q)) await ag.ask('lead', q, { options: ['yes', 'no'] });
+    await ag.expectCards(3); }
   await sleep(3000);
   const l = list();
   const cards = call('decision.list').cards || [];

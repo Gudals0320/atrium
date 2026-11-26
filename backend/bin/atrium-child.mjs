@@ -21,7 +21,7 @@
 //       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] [--no-wait | --wait] | --done <번호> | --list [--json]   (P292: 사용자 몫. P295: 보내는 때)
 //       atrium revive <이름|ID> [--json] · atrium fork <이름|ID> [--launcher 런처] [--name 새 이름] [--model m] [--effort e] [--peer] [--json]   (P360: 되살리기·갈라 열기, 사람이 시킬 때만)
 //       atrium plan [show|list|new|goal|metric|ms|focus|item|check|owner|status|import|export|log] … [--plan <이름|번호>] [--json]   (P304: 리포별 목표·마일스톤 레인. 사용법 atrium help plan)
-//       atrium know "<물음>" [-k N] [--kind 종류] [--before 시각|커밋] [--json] | know open <포인터> [--context n] | know unit <PNNN> | know build [--full] | know --usage [--since 날짜|7d]   (P364: 작업 지식 찾기)
+//       atrium know "<물음>" [-k N] [--kind 종류] [--before 시각|커밋] [--self] [--json] | know open <포인터> [--context n] | know unit <PNNN> | know build [--full] | know --usage [--since 날짜|7d]   (P364: 작업 지식 찾기)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -100,11 +100,13 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium plan list · atrium plan new "<이름>" · atrium plan [show] [--plan <이름|번호>]
       이 리포의 목표·마일스톤 레인(한 리포에 여럿, 레인마다 관리자 세션). 고치라는 지시가 없으면 남의 레인은 읽기만 한다.
       사람 몫 항목은 item <코드> "<글>" --who user(사람의 할 일 목록에 뜬다). 하위 낱말과 예: atrium help plan
-  atrium know "<물음>" [-k N] [--kind doc|log|record|review|code|db] [--before <시각|커밋>]
+  atrium know "<물음>" [-k N] [--kind doc|log|record|review|code|db] [--before <시각|커밋>] [--self]
       작업 지식 찾기(P364). 이 워크스페이스(리포)의 지우지 않은 원문(문서, docs/log·experiments·.atrium/records 기록, 코드 주석, 판의 일 spec·done 보고·결정·할 일 카드)을
       전문 검색(trigram BM25, 두 글자 이하 낱말은 부분 문자열)해 상위 N개(기본 5)의 위치(경로:줄-줄 또는 db:<표>/<행>)·날짜·단위 번호·종류와 짧은 발췌를 돌려준다. 첫 줄은 돌려준 글자 수.
       시작할 때 건드릴 부분을 한 번 찾고 막히면 다시 찾는다. 위치를 찾으면 필요한 파일만 연다. 하위에게 맡기기 전에는 그 일이 건드릴 부분을 1~3번 찾아 지시의 힌트로 적는다. 처음 물을 때 색인을 짓고 그 뒤에는 바뀐 것만 고친다.
       --before는 그 시각(또는 커밋) 뒤에 생긴 원천을 뺀다(그 뒤에 고친 원천은 지금 글이라 "뒤에 바뀜" 표시). 걷어낸 기능의 것이면 "걷어냄", 대체된 결정이면 "대체됨 → 지금: …"(저장소의 .atrium/know.json 선언)
+      결과 하나는 한 파일에서 맞은 낱말이 가장 몰린 절(제목 경계)이고, 발췌 앞 L<줄>은 맞은 줄이다. 같은 파일의 다른 맞은 절은 "다른 절", 같은 글의 다른 자리(기록 사본 등)는 "같은 글"로 붙는다.
+      네 단위(세션 이름·지금 일의 PNNN)의 작업 파일·기록·판 일·done은 이미 가진 글이라 뺀다. --self면 넣는다
   atrium know open <포인터> [--context n]   원문(색인에 든 원천만, 사람 대화 인용은 가림)
   atrium know unit <PNNN>       그 단위의 작업 파일·기록·검토·판 일(spec·done 보고)·코드 주석·커밋을 순위와 상관없이
   atrium know build [--full]    색인 다시 짓기(--full은 처음부터) · atrium know --usage [--since <날짜|7d>]  사용 집계(세션·날짜별 호출 수와 글자 수)
@@ -119,7 +121,7 @@ ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
 const MULTI = new Set(['option', 'cmd', 'record']); // P284: ask --option 여럿. P292: todo --cmd 여럿. P334: done --record 여럿
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list', 'check', 'tell', 'full', 'usage']); // P364: know build --full, know --usage // P292: todo --check·--tell // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list', 'check', 'tell', 'full', 'usage', 'self']); // P371: know --self // P364: know build --full, know --usage // P292: todo --check·--tell // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
   const j = process.env.ATRIUM_ARGV_JSON; const f = process.env.ATRIUM_ARGV_FILE;
@@ -500,7 +502,7 @@ async function unitVerb(cmd) {
 }
 // ---------- P182: atrium guide ----------
 // ---------- P364: atrium know ----------
-// atrium know "<물음>" [-k N] [--kind 종류] [--before 시각|커밋] | open <포인터> [--context n] | unit <PNNN> | build [--full] | --usage [--since 날짜|7d]
+// atrium know "<물음>" [-k N] [--kind 종류] [--before 시각|커밋] [--self] | open <포인터> [--context n] | unit <PNNN> | build [--full] | --usage [--since 날짜|7d]
 // 보드가 그대로 찍을 글(out)을 돌려준다(첫 줄에 돌려준 글자 수, --json이면 JSON 한 줄)
 async function knowVerb() {
   let k = null; const words = [];
@@ -516,7 +518,7 @@ async function knowVerb() {
     const q = filtered.join(' ').trim();
     if (!q) fail('물음을 준다: atrium know "<물음>" [-k N] [--kind doc|log|record|review|code|db] [--before 시각|커밋] · know open <포인터> · know unit <PNNN> · know build [--full] · know --usage', 2);
     if (k != null && !(Number(k) >= 1)) fail('-k는 1 이상의 수다', 2);
-    body = { action: 'search', q, ...(k != null ? { k: Number(k) } : {}), ...(flags.kind ? { kind: flags.kind } : {}) };
+    body = { action: 'search', q, ...(k != null ? { k: Number(k) } : {}), ...(flags.kind ? { kind: flags.kind } : {}), ...(flags.self ? { self: true } : {}) };
   }
   if (body.action !== 'usage' && flags.before) body.before = flags.before;
   if (flags.json) body.json = true;
