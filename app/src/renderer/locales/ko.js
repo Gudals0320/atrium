@@ -3466,4 +3466,9 @@ export default {
     legend: { suspect: '폭주 의심', heavy: '무거움', sleep: '잠재움' },
     aria: '최근 {min}분: 메모리 {mem}(최고 {memPeak}), CPU {cpu}(최고 {cpuPeak}), 표시 {n}개',
   },
+  // P373: 설정 › 런처의 부가 연결 절(일반 하네스 런처 목록 아래 따로)
+  p373: {
+    extraTitle: '부가 연결',
+    extraNote: '일반 에이전트 하네스 밖의 연결입니다. API 키로 과금되는 SDK 세션과, 더는 시작할 수 없는 옛 API 런처가 여기에 있습니다.',
+  },
 };

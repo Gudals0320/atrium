@@ -9,6 +9,9 @@ export const isApiSession = (s) => !!(s && s.billing === 'api');
 export const isSdkSession = (s) => !!(s && s.billing === 'sdk');
 export const isSdkLauncher = (l) => !!(l && l.harness === 'claude-sdk');
 export const isUnusableLauncher = (l) => !!(l && (l.unusable === 'authRelay' || isApiLauncher(l)));
+// P373: 설정 › 런처의 "부가 연결" 절(일반 하네스 목록 아래 따로): SDK 런처와 쓸 수 없음으로 남은 옛 API 런처. 순서는 받은 그대로 나눈다
+export const isExtraLauncher = (l) => isSdkLauncher(l) || isUnusableLauncher(l);
+export const splitLaunchers = (rows) => ({ main: (rows || []).filter((l) => !isExtraLauncher(l)), extra: (rows || []).filter(isExtraLauncher) });
 // P363: 판 노드 입력칸에서 Enter로 보낼 글(끝 공백만 뗀다, 빈 글은 null)
 export const sdkDraft = (v) => { const s = String(v || '').replace(/\s+$/, ''); return s.trim() ? s : null; };
 // 상태 줄: [열쇠, 값] 목록(창 사전 authRelay.*)
