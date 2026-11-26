@@ -201,6 +201,10 @@ test('P383 화면 입력 칸: omo는 "❯" 기호를 뗀 입력 칸으로 본다
   assert.equal(promptOnScreen(empty, 'check the spelling', 'omo').box, 'empty');
   assert.equal(promptOnScreen(ours, 'check the spelling', 'omo').box, 'ours');
   assert.equal(promptOnScreen(['x', rule, '❯ my own draft', rule].join('\n'), 'check the spelling', 'omo').box, 'other');
+  // 일하는 중: 윗줄에 상태 글이 박힌다(실측 omo 5.1.83)
+  const working = ['tool output', '── • Running eval (10s • esc to interrupt) ' + '─'.repeat(60), '❯', rule, 'C:\\x • task', '(OmO Native) running · activity: eval (outstanding: 1)'].join('\n');
+  assert.equal(promptOnScreen(working, 'check the spelling', 'omo').box, 'empty');
+  assert.equal(promptOnScreen(working.replace('\n❯\n', '\n❯ half typed\n'), 'check the spelling', 'omo').box, 'other');
 });
 
 // ---------- 상태: 실패한 턴은 error, 다음 working에 내린다 ----------
