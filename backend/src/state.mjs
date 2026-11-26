@@ -265,6 +265,16 @@ export function applyAgentReleased(rt, now = Date.now(), { termStopping = false,
   rt.exit = { kind, reason: reason || null, at: now, ...(exitCode != null ? { code: exitCode } : {}), ...(requested ? { requested: true } : {}), ...(kind === 'trust_declined' && before !== 'trust_wait' ? { guessed: true } : {}) }; // P337: 신뢰 질문을 보지 못하고 짐작한 신뢰 거부
 }
 
+// P378: 잘못 둔 끝남(exited)을 거둔다. 터미널에 같은 에이전트가 살아 있다(같은 세션의 hook이나 터미널 working이 왔고 판이 터미널에서 확인했다).
+//   끝남 전의 기록(hook 수, 턴, 마지막 답)은 그대로 둔다. 터미널 상태는 부른 쪽이 맞춘다 → 거둔 끝남 | null
+export function applyExitRevoked(rt, now = Date.now()) {
+  const was = rt && rt.exit;
+  if (!was) return null;
+  rt.exit = null; rt.sessionEnd = null; rt.exitRequested = false;
+  rt.term.present = true; rt.phase = 'running'; rt.lastActivityAt = now;
+  return was;
+}
+
 // P337: 띄우자마자(hook 하나 없이) 끝난 에이전트의 마지막 화면에서 오류 문장 한 줄을 찾는다(claude -w의 "Cannot create worktree: … is a symlink" 등).
 //   오류 낱말(error, cannot, failed, fatal, not found, denied, invalid)이 든 줄 가운데 마지막 것. 셸 프롬프트·빈 줄·상자 테두리는 건너뛴다. 없으면 null
 const ERR_WORD = /\b(error|errors|cannot|can't|could not|couldn't|failed|failure|fatal|not found|denied|invalid|unable)\b/i;
