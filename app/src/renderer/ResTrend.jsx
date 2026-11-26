@@ -7,13 +7,15 @@ import { api } from './api.js';
 import { useT, fmtTime as fmtT } from './lib/i18n.js';
 import { fmtMB } from './sleep.js';
 import { fmtPct } from './lib/p255.js';
-import { trendModel, nearestPoint, marksNear, markLine } from './lib/trend.js';
+import { trendModel, nearestPoint, marksNear, markLine, markClass, legendKinds, orDash } from './lib/trend.js';
 
 export const TREND_REFRESH_MS = 10_000; // 열린 동안 다시 받는 간격(칸은 30초, 마지막 칸이 차 가는 것을 보이게)
 const W = 372, H = 34, LANE = 14;
 const fmt = { mem: fmtMB, pct: fmtPct };
 const fmtTime = (at) => fmtT(at, { hour: '2-digit', minute: '2-digit' });
-const markColor = (k) => (k.type === 'sleep' ? 'var(--st-sleeping)' : k.kind === 'suspect' ? 'var(--bad)' : 'var(--warn)');
+const COLOR = { sleep: 'var(--st-sleeping)', suspect: 'var(--bad)', heavy: 'var(--warn)' };
+const markColor = (k) => COLOR[markClass(k)];
+const mb = (v) => orDash(v, fmtMB), pct = (v) => orDash(v, fmtPct); // 모르는 값은 줄표
 
 function Plot({ lane, model, hoverX, role }) {
   const sys = lane.sys;
@@ -78,39 +80,39 @@ export function ResTrend({ cores = 1 }) {
     setHover({ px: model.x(p.at), i, marks: near });
   };
   const hp = hover ? model.points[hover.i] : null;
-  const kinds = ['suspect', 'heavy', 'sleep'].filter((k) => model.marks.some((m) => (m.type === 'sleep' ? 'sleep' : m.kind) === k));
+  const kinds = legendKinds(model.marks);
   const tipLeft = hover ? (hover.px > W / 2 ? null : `calc(${(hover.px / W) * 100}% + 10px)`) : null;
   const tipRight = hover && hover.px > W / 2 ? `calc(${100 - (hover.px / W) * 100}% + 10px)` : null; // 가는 선을 가리지 않게 옆으로
   return (
     <div className="mt-trend" data-role="res-trend" data-points={model.points.length} data-marks={model.marks.length}>
       <div className="mt-trend-head" data-role="res-trend-mem-head">
         <span className="mt-trend-name">{t('p370.mem')}</span>
-        <b className="mono">{fmtMB(model.mem.now)}</b>
+        <b className="mono">{mb(model.mem.now)}</b>
         {model.mem.peak != null ? <span className="dim" title={model.mem.peakAt ? fmtTime(model.mem.peakAt) : undefined}>{t('p370.peak', { v: fmtMB(model.mem.peak) })}</span> : null}
         {model.sysMemPct != null ? <span className="dim mt-trend-right" data-role="res-trend-pcmem" title={t('p370.pcMemTitle', { total: model.totalMemMB ? fmtMB(model.totalMemMB) : '?' })}>{t('p370.pc', { v: fmtPct(model.sysMemPct) })}</span> : null}
       </div>
-      <div ref={box} className="mt-trend-box" tabIndex={0} role="img" aria-label={t('p370.aria', { min: mins, mem: fmtMB(model.mem.now), memPeak: fmtMB(model.mem.peak), cpu: fmtPct(model.cpu.now), cpuPeak: fmtPct(model.cpu.peak), n: model.marks.length })}
+      <div ref={box} className="mt-trend-box" tabIndex={0} role="img" aria-label={t('p370.aria', { min: mins, mem: mb(model.mem.now), memPeak: mb(model.mem.peak), cpu: pct(model.cpu.now), cpuPeak: pct(model.cpu.peak), n: model.marks.length })}
         onPointerMove={onMove} onPointerLeave={() => setHover(null)} onKeyDown={onKey} onBlur={() => setHover(null)} data-role="res-trend-box">
         <Plot lane={model.mem} model={model} hoverX={hover ? hover.px : null} role="res-trend-mem" />
         <div className="mt-trend-head" data-role="res-trend-cpu-head">
           <span className="mt-trend-name" title={t('p370.cpuTitle')}>{t('p370.cpu')}</span>
-          <b className="mono">{fmtPct(model.cpu.now)}</b>
+          <b className="mono">{pct(model.cpu.now)}</b>
           {model.cpu.peak != null ? <span className="dim" title={model.cpu.peakAt ? fmtTime(model.cpu.peakAt) : undefined}>{t('p370.peak', { v: fmtPct(model.cpu.peak) })}</span> : null}
           {model.cpu.sys.now != null ? <span className="dim mt-trend-right" data-role="res-trend-pccpu" title={t('p370.pcCpuTitle')}><i className="mt-trend-key sys" aria-hidden="true" />{t('p370.pc', { v: fmtPct(model.cpu.sys.now) })}</span> : null}
         </div>
         <Plot lane={model.cpu} model={model} hoverX={hover ? hover.px : null} role="res-trend-cpu" />
         <svg className="mt-trend-lane" viewBox={`0 0 ${W} ${LANE}`} width="100%" height={LANE} preserveAspectRatio="none" data-role="res-trend-lane" aria-hidden="true">
           {model.marks.map((k, i) => (
-            <circle key={i} className={`mt-trend-mark ${k.type === 'sleep' ? 'sleep' : k.kind}`} cx={k.x} cy={LANE / 2} r="4" data-role="res-trend-mark" data-type={k.type} data-kind={k.kind || undefined} data-name={k.name} data-at={k.at} />
+            <circle key={i} className={`mt-trend-mark ${markClass(k)}`} cx={k.x} cy={LANE / 2} r="4" data-role="res-trend-mark" data-type={k.type} data-kind={k.kind || undefined} data-name={k.name} data-at={k.at} />
           ))}
           {hover ? <line className="mt-trend-cross" x1={hover.px} x2={hover.px} y1="0" y2={LANE} /> : null}
         </svg>
         {hp ? (
           <div className="mt-trend-tip" data-role="res-trend-tip" style={{ left: tipLeft ?? undefined, right: tipRight ?? undefined }}>
             <div className="dim">{fmtTime(hp.at)}{hp.n ? <span> · {t('p370.tipAvg', { n: hp.n })}</span> : null}</div>
-            <div><b className="mono">{fmtMB(hp.memMB)}</b> <span className="dim">{t('p370.mem')}</span></div>
-            <div><b className="mono">{fmtPct(hp.cpuPct)}</b> <span className="dim">{t('p370.tipCpu', { max: fmtPct(hp.cpuMax), pc: fmtPct(hp.sysCpuPct) })}</span></div>
-            {hover.marks.map((k, i) => { const l = markLine(k, fmt, cores); const what = (l.what || []).map((w) => t(`p370.what.${w}`)).join(' + '); return <div key={i} className="mt-trend-tipmark" data-role="res-trend-tipmark"><i className={`mt-trend-key ${k.type === 'sleep' ? 'sleep' : k.kind}`} aria-hidden="true" />{fmtTime(k.at)} {t(l.key, { ...l.vars, what: what || '?' })}</div>; })}
+            <div><b className="mono">{mb(hp.memMB)}</b> <span className="dim">{t('p370.mem')}</span></div>
+            <div><b className="mono">{pct(hp.cpuPct)}</b> <span className="dim">{t('p370.tipCpu', { max: pct(hp.cpuMax), pc: pct(hp.sysCpuPct) })}</span></div>
+            {hover.marks.map((k, i) => { const l = markLine(k, fmt, cores); const what = (l.what || []).map((w) => t(`p370.what.${w}`)).join(' + '); return <div key={i} className="mt-trend-tipmark" data-role="res-trend-tipmark"><i className={`mt-trend-key ${markClass(k)}`} aria-hidden="true" />{fmtTime(k.at)} {t(l.key, { ...l.vars, what: what || '?' })}</div>; })}
           </div>
         ) : null}
       </div>

@@ -1,7 +1,7 @@
 // P370 창 단위 시험: 메모리 알약 펼침 추이 그림의 모형(빈 고리, 값 하나, 끊긴 구간, 눈금, 가리킴, 표시 글), 사전 열쇠
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { niceMax, runsOf, statOf, trendModel, nearestPoint, marksNear, markLine } from '../src/renderer/lib/trend.js';
+import { niceMax, runsOf, statOf, trendModel, nearestPoint, marksNear, markLine, markClass, legendKinds, orDash } from '../src/renderer/lib/trend.js';
 import ko from '../src/renderer/locales/ko.js';
 import en from '../src/renderer/locales/en.js';
 
@@ -69,6 +69,35 @@ test('표시: 창 안의 것만, 시간 차례, x는 그림 안. 가리킴은 �
   assert.deepEqual(marksNear(m, m.marks[1].x + 3).map((k) => k.name), ['s']);
   assert.deepEqual(marksNear(m, 200 - 100), []);
   assert.equal(nearestPoint(trendModel(data([])), 10), -1);
+});
+
+test('폭주 의심(빨강) 표시: 모형을 지나 점 종류 suspect, 범례 맨 앞, 가리킴 글은 폭주 의심 열쇠(실측에서는 만들지 못해 여기서 본다)', () => {
+  const marks = [
+    { at: T0 + 40 * B, type: 'alert', kind: 'heavy', name: 'h', reasons: ['cpu'], cpuPct: 20, memMB: 200 },
+    { at: T0 + 20 * B, type: 'alert', kind: 'suspect', name: 'r1', reasons: ['grow'], cpuPct: 0.5, memMB: 3500 },
+    { at: T0 + 30 * B, type: 'sleep', name: 'z', memMB: 400, by: 'auto' },
+  ];
+  const m = trendModel(data(Array.from({ length: 60 }, (_, i) => pt(i, 1000)), marks));
+  assert.deepEqual(m.marks.map(markClass), ['suspect', 'sleep', 'heavy']);
+  assert.deepEqual(legendKinds(m.marks), ['suspect', 'heavy', 'sleep']);
+  assert.deepEqual(legendKinds(m.marks.filter((k) => k.kind !== 'suspect')), ['heavy', 'sleep']);
+  const near = marksNear(m, m.marks[0].x);
+  assert.equal(near[0].name, 'r1');
+  const l = markLine(near[0], { mem: (x) => `${x}MB`, pct: (x) => `${x}%` }, 4);
+  assert.equal(l.key, 'p370.markSuspect');
+  assert.deepEqual(l.what, ['grow']);
+  assert.equal(markClass({ type: 'alert', kind: 'suspect' }), 'suspect');
+  assert.equal(markClass({ type: 'alert' }), 'heavy');
+});
+
+test('모르는 값은 물음표 대신 줄표(다시 켠 직후 CPU는 앞 측정이 없어 모른다)', () => {
+  assert.equal(orDash(null, (v) => `${v}%`), '—');
+  assert.equal(orDash(undefined, (v) => `${v}%`), '—');
+  assert.equal(orDash(0, (v) => `${v}%`), '0%');
+  const m = trendModel(data([pt(59, 486, null, { cpuMax: null, sysCpuPct: null })]));
+  assert.equal(m.empty, false);
+  assert.equal(m.cpu.now, null);
+  assert.equal(orDash(m.cpu.now, (v) => `${v}%`), '—');
 });
 
 test('표시 글: 사전 열쇠가 두 사전에 있고 값을 채운다(코어 하나 대비 CPU)', () => {

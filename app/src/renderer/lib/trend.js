@@ -82,6 +82,13 @@ export function nearestPoint(model, px) {
 export function marksNear(model, px, radius = 8) {
   return model.marks.filter((k) => Math.abs(k.x - px) <= radius).sort((a, b) => Math.abs(a.x - px) - Math.abs(b.x - px));
 }
+// 표시의 종류(점 색·범례 열쇠): suspect(빨강) | heavy(노랑) | sleep(빈 고리). 순수 함수
+export const markClass = (k) => (k && k.type === 'sleep' ? 'sleep' : k && k.kind === 'suspect' ? 'suspect' : 'heavy');
+// 범례: 그림에 있는 종류만, 정해진 차례(폭주 의심 → 무거움 → 잠재움). 순수 함수
+export const legendKinds = (marks) => ['suspect', 'heavy', 'sleep'].filter((c) => (marks || []).some((m) => markClass(m) === c));
+// 값 글: 아직 모르면(첫 측정 전, CPU는 앞 측정이 있어야 잰다) 물음표 대신 줄표. 순수 함수
+export const orDash = (v, f) => (typeof v === 'number' && Number.isFinite(v) ? f(v) : '—');
+
 // 표시 → 사전 열쇠와 값(가리킴 풀이 한 줄). fmt: { mem, pct }. cores: 줄의 CPU를 코어 하나 대비로(목록·배지와 같은 잣대). 순수 함수
 export function markLine(k, fmt, cores = 1) {
   if (k.type === 'sleep') return { key: k.by === 'hand' ? 'p370.markSleepHand' : 'p370.markSleep', vars: { name: k.name, mem: k.memMB != null ? fmt.mem(k.memMB) : '?' } };
