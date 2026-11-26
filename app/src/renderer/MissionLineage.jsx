@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, tagScale, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, tagScale, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes, SHEET } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -44,7 +44,7 @@ const RAIL = 0; // P153 r9: 목차 레일은 없앴다(앱 사이드바를 같�
 const BOTTOM = 112; // 아래 명령줄 자리
 const PAD = 16;
 const OPEN_MAX = 0.85; // 처음 화면(폭 맞춤) 배율 상한
-const READ_K = 0.26; // 멀리 타일 이름 11.5px·상태 10px(화면)가 지켜지는 배율 하한(폭 맞춤이 이보다 작으면 이 배율로 왼쪽 위에서)
+const OPEN_K = 0.85; // P374: 처음 화면 배율 = 카드 글(이름·상태·모델 줄·지금 일)이 화면 11px 이상인 배율(styles.css P374가 작은 줄을 13px로). 판이 보기 칸보다 크면 끌어서 본다
 const DOT_GAP = 92, DOT_R = 1.8, DOT_MIN_GAP = 28; // 판 배경 점 격자(Canvas.jsx DOT_GAP, 점 지름 3.6)와 같다. 멀리서는 솎는다
 const ATTN_MAX = 4;
 // P347: 요약 열 바닥 범례(선 종류 → 사전 열쇠). 견본은 맵 선과 같은 모양(.mt-ta-edge.k-*)
@@ -52,6 +52,9 @@ const LEGEND = [['spawn', 'mmLegend.spawn'], ['role', 'mmLegend.role'], ['prompt
 // P178·P179: 오른쪽 상태 요약 열(옛 열 지도 요약 열, SummaryColumn.jsx). 열려 있으면 맞춤·가운데 맞추기가 그 폭을 비워 둔다. 접힘은 이 기기(창)에 기억한다
 const SUM_W = 288, SUM_GAP = 12; // P179: 옛 요약 열 폭
 const SUM_KEY = 'atrium.sessionMap.summary';
+// P374: 판 목표 비(lib/mission-lineage.js SHEET.ASPECT). 숨은 조정 열쇠(시험·비교용): 'view' 또는 수(예 1.3333). 없거나 틀리면 SHEET.ASPECT
+const ASPECT_KEY = 'atrium.sessionMap.aspect';
+const loadAspect = () => { try { const v = localStorage.getItem(ASPECT_KEY); if (v === 'view') return 'view'; const n = Number(v); return v && n > 0.3 && n < 5 ? n : SHEET.ASPECT; } catch { return SHEET.ASPECT; } };
 // 정한 적이 없으면 넓은 창(1280px 이상)에서만 처음부터 연다(좁은 창·태블릿 세로에서는 카드 자리가 먼저)
 const SUM_WIDE = 1280;
 const loadSumOpen = () => { const wide = typeof window === 'undefined' || window.innerWidth >= SUM_WIDE; try { const v = localStorage.getItem(SUM_KEY); return v == null ? wide : v !== '0'; } catch { return wide; } };
@@ -70,10 +73,8 @@ export function ProgList({ f, t, now }) {
 }
 // 상태 색 클래스(시안 st-*): 등급 → 색
 const KINDS = ['spawn', 'role', 'prompt', 'cross'];
-// P153 r11: 깊이 접기를 편 카드(맵 노드 id)는 창에 기억한다(다시 열어도 그 가지만 펴져 있다)
-const EXP_KEY = 'atrium.sessionMap.expanded';
-const loadExpanded = () => { try { const a = JSON.parse(localStorage.getItem(EXP_KEY) || '[]'); return new Set(Array.isArray(a) ? a.slice(0, 200) : []); } catch { return new Set(); } };
-const saveExpanded = (s) => { try { localStorage.setItem(EXP_KEY, JSON.stringify([...s].slice(-200))); } catch { /* 기억 못 해도 지금 화면은 된다 */ } };
+// P374: 깊이 접기는 없앴다(모든 단계를 늘 보인다). 예전에 편 가지 기억(atrium.sessionMap.expanded)은 한 번 지운다
+try { if (typeof localStorage !== 'undefined') localStorage.removeItem('atrium.sessionMap.expanded'); } catch { /* 지우지 못해도 쓰지 않는다 */ }
 // P153 r12: 놓자마자 보이는 관계(판 답을 기다리는 동안, applyRelationStub = P156 그래프 모양)는 두 세션 쌍마다 하나
 // P276: merger 선(merger → head 줄기)과 합치는 하위로 가는 나무 선의 클래스·끝 점(휴대폰 맵도 쓴다)
 export const mergeEdgeCls = (e) => `mt-ta-edge k-merge st-${e.state || 'queued'}${e.state === 'merging' ? ' active' : ''}${e.idle ? ' idle' : ''}`;
@@ -174,17 +175,17 @@ export function LineageMap() {
   const moveTimer = useRef(0), glideTimer = useRef(0);
   const justDragged = useRef(false);
   const layRef = useRef(null), sizeRef = useRef(null);
-  const [expanded, setExpanded] = useState(loadExpanded); // 깊이 접기를 편 카드
   const [pending, setPending] = useState([]); // 놓자마자 보이는 관계(판 답을 기다리는 동안). [{ a, b, relation, ok }]
   const [reloadN, setReloadN] = useState(0);
   // P178: 이름표 배율 계단(lib/mission-lineage.js labelStep). 움직임이 멈춘 뒤에만 바꾸고(배치를 다시 센다), 바뀌면 보던 카드가 화면 같은 자리에 남게 보기를 옮긴다
   const [lstep, setLstep] = useState(1);
   const lstepRef = useRef(1), anchorRef = useRef(null), pendingView = useRef(null);
   const [sumOpen, setSumOpen] = useState(loadSumOpen);
+  const [aspect, setAspect] = useState(loadAspect); // P374: 판 목표 비(열 때마다 다시 읽는다)
+  useEffect(() => { if (open) setAspect(loadAspect()); }, [open]);
   useEffect(() => { if (open) setSumOpen(loadSumOpen()); }, [open]); // 열 때마다 이 기기의 기억(없으면 창 폭)을 다시 읽는다
   const sumRef = useRef(sumOpen);
   sumRef.current = sumOpen;
-  const onFold = useCallback((id) => setExpanded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); saveExpanded(n); return n; }), []);
 
   // P210: 그래프는 그래프에 닿는 세션 값(graphKey: 이름·상태·소속·관계·마지막 지시 등, 활동 시각 빼고)·연결·전달·루프가 바뀔 때만 다시 읽는다.
   //   바뀜이 잇따라도 미뤄지기만 하지 않게 첫 바뀜에서 300ms 뒤 한 번 읽고 그 사이 바뀜은 같이 담는다(전에는 바뀔 때마다 다시 미뤄 바쁜 동안 읽지 않았다).
@@ -240,7 +241,7 @@ export function LineageMap() {
     return graph.nodes.filter((n) => n.kind === 'session').map((n) => { const k = (todoCount(decisions, n.sessionId, n.sessionId && pl ? planCountFor(pl, n.sessionId) : 0) > 0 ? 1 : 0) + (tiers.get(n.id) === 'review' ? 1 : 0); return k ? `${n.id}\t${k}` : null; }).filter(Boolean).join('\n');
   }, [graph, decisions, plans, tiers]);
   const tagRows = useMemo(() => new Map(tagKey ? tagKey.split('\n').map((x) => { const [id, k] = x.split('\t'); return [id, Number(k)]; }) : []), [tagKey]);
-  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), expanded, spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, mergers, tags: tagRows }), [vgroups, tiers, names, t, expanded, today, fitKey, mergers, tagRows]); // eslint-disable-line react-hooks/exhaustive-deps
+  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, aspect, mergers, tags: tagRows }), [vgroups, tiers, names, t, today, fitKey, aspect, mergers, tagRows]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
   const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
   const lay = lay0;
@@ -335,13 +336,28 @@ export function LineageMap() {
   };
   // 맞춤: 세계 전체를 레일 오른쪽·위 줄과 칸 머리 아래·명령줄 위 칸에
   const fitOf = (L, s) => { const f = fitView(L.bounds, s.w - RAIL - sumW(), s.h, { top: TOPH, bottom: BOTTOM, pad: PAD }); return { ...f, x: f.x + RAIL }; };
-  // 처음 연 화면: 폭 맞춤(위에서부터, 아래는 끌어서 본다). 전체가 그보다 크게 들어가면 맞춤. 폭 맞춤이 READ_K보다 작으면 READ_K로 왼쪽 위에서
+  // P374: 처음 연 화면 = 카드가 읽히는 배율(OPEN_K, 사용자 2026-11-26: 맞추려고 줄이지 않는다). 판 전체가 그보다 크게 들어가면 맞춤.
+  //   아니면 OPEN_K로 응답 필요 카드(없으면 오류 카드)를 가운데에, 둘 다 없으면 일하는 카드가 가장 많은 띠(없으면 첫 띠)의 왼쪽 위를 보기 칸 왼쪽 위에.
+  //   판 가장자리 밖이 보이지 않게 보기를 판 안으로 당긴다(판이 보기 칸보다 작은 쪽은 그대로). 맞춤 단추는 판 전체(fitOf)
   const openOf = (L, s) => {
     const f = fitOf(L, s);
-    const kw = Math.min(OPEN_MAX, (s.w - RAIL - sumW() - PAD * 2) / L.bounds.w);
-    if (f.k >= kw) return f;
-    const k = Math.max(READ_K, kw);
-    return { k, x: RAIL + PAD - L.bounds.x * k, y: TOPH + 8 - L.bounds.y * k };
+    if (f.k >= OPEN_K) return f;
+    const k = OPEN_K, vw = s.w - RAIL - sumW(), tr = tiersRef.current || new Map();
+    const into = (v) => {
+      const b = L.bounds, x0 = RAIL + PAD - b.x * k, x1 = RAIL + vw - PAD - (b.x + b.w) * k, y0 = TOPH + 8 - b.y * k, y1 = s.h - BOTTOM - PAD - (b.y + b.h) * k;
+      return { k, x: x1 < x0 ? Math.min(x0, Math.max(x1, v.x)) : v.x, y: y1 < y0 ? Math.min(y0, Math.max(y1, v.y)) : v.y };
+    };
+    const hot = ['turn', 'alert'].map((t) => L.order.find((id) => tr.get(id) === t)).find(Boolean);
+    if (hot) {
+      // 세로는 그 카드를 가운데로, 가로는 그 띠 왼쪽(폴더·워크스페이스 이름)부터 보이게. 카드가 오른쪽 밖으로 나가면 카드를 가운데로
+      const b = L.cards.get(hot), c = centerOn(b.x + b.w / 2, b.y + b.h / 2, k, vw, s.h, { top: TOPH, bottom: BOTTOM });
+      const row = L.rows.find((r) => r.key === b.ws), bx = row ? row.ox || 0 : 0, x = RAIL + PAD - bx * k;
+      return into({ ...c, x: x + (b.x + b.w) * k <= RAIL + vw - PAD ? x : c.x + RAIL });
+    }
+    const busy = (band) => [...L.cards.values()].filter((c) => tr.get(c.node.id) === 'work' && L.rows.some((r) => r.key === c.ws && (r.band || null) === (band.id || null))).length;
+    const band = L.bands.reduce((a, b) => (busy(b) > busy(a) ? b : a), L.bands[0]);
+    if (!band) return into({ k, x: RAIL + PAD - L.bounds.x * k, y: TOPH + 8 - L.bounds.y * k });
+    return into({ k, x: RAIL + PAD - (band.x || 0) * k, y: TOPH + 8 - band.y * k });
   };
   const fit = useCallback((glide = true) => settle(fitOf, { glide }), [paint]); // eslint-disable-line react-hooks/exhaustive-deps
   const zoomCenter = useCallback((k2) => { const s = sizeRef.current, v = view.current; if (s && v) paint(zoomAt(v, (s.w - sumW() + RAIL) / 2, (s.h + TOPH - BOTTOM) / 2, k2), { glide: true }); }, [paint]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -585,12 +601,16 @@ export function LineageMap() {
       if (g && g.mode === 'card') { endCard(e.type === 'pointerup'); return; }
       if (!pts.size) { g = null; el.classList.remove('dragging'); } else begin();
     };
+    // P374: 휠은 판을 끈다(세로, Shift+휠·가로 휠 = 가로). Ctrl·⌘+휠(터치패드 오므리기 포함)은 전처럼 확대·축소
     const wheel = (e) => {
       if (e.target.closest('.mt-ta-hud')) return;
       e.preventDefault();
       const v = view.current; if (!v) return;
-      const p = local(e);
-      paint(zoomAt(v, p.x, p.y, wheelK(v.k, e.deltaY, e.deltaMode)));
+      if (e.ctrlKey || e.metaKey) { const p = local(e); paint(zoomAt(v, p.x, p.y, wheelK(v.k, e.deltaY, e.deltaMode))); return; }
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      let dx = e.deltaX * unit, dy = e.deltaY * unit;
+      if (e.shiftKey && !dx) { dx = dy; dy = 0; }
+      paint(panBy(v, -dx, -dy));
     };
     const click = (e) => { if (justDragged.current) { e.stopPropagation(); e.preventDefault(); justDragged.current = false; } };
     const esc = (e) => { if (e.key === 'Escape' && g && g.mode === 'row') { e.preventDefault(); e.stopPropagation(); pts.clear(); endRow(false); } else if (e.key === 'Escape' && g && g.mode === 'card') { e.preventDefault(); e.stopPropagation(); pts.clear(); endCard(false); } };
@@ -737,7 +757,7 @@ export function LineageMap() {
               })}
             </svg>
             {lay.edges.filter((e) => e.label).map((e) => <span key={`l:${e.id}`} className={`mt-ta-elab k-${e.cross ? 'cross' : e.rel}`} data-role="ta-edge-label" style={{ left: e.label.x, top: e.label.y }}>{edgeText(e)}</span>)}
-            {shown.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} unfold={b.depth >= LINE.FOLD && expanded.has(id) && (lay.tree.kids.get(id) || []).length > 0} onFold={onFold} todo />; })}
+            {shown.map((id) => { const b = lay.cards.get(id); return <Card key={id} id={id} b={b} f={factsOf(id)} tier={tiers.get(id)} lead={leads.has(id)} tagged={tagOf(id)} onTag={tag} onOpen={go} onHover={onHover} t={t} todo />; })}
             {/* P153 r11: Alt+카드 끌기 때 놓을 자리(하위로·동료로·독립). 끄는 동안 DOM에 바로 쓴다 */}
             <div className="mt-sm-drop" data-role="ln-drop" hidden><span className="lb" /></div>
           </div>

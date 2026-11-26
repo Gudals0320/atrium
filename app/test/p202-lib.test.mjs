@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lineageLayout, nameCmp, dayStart, msToMidnight, sessionToday, todayWorkspaces, folderOrder, pickColumns, relationDrop, COLS2 } from '../src/renderer/lib/mission-lineage.js';
+import { lineageLayout, nameCmp, dayStart, msToMidnight, sessionToday, todayWorkspaces, folderOrder, pickColumns, relationDrop, COLS2, splitUnits, colHeight, SHEET, sheetAspect } from '../src/renderer/lib/mission-lineage.js';
 import { stepCard } from '../src/renderer/lib/mission-terr.js';
 import en from '../src/renderer/locales/en.js';
 import ko from '../src/renderer/locales/ko.js';
@@ -106,7 +106,8 @@ test('오늘 칸이나 이전 칸이 없으면 구분 줄도 없다', () => {
   const all = new Set(G.nodes.map((n) => n.workspaceKey));
   const L = lay({ today: all });
   assert.equal(L.sections.length, 0);
-  assert.equal(lay({ today: all, columns: 2 }).ncol, 1, '칸이 하나면 두 열도 없다');
+  assert.equal(lay({ today: all, columns: 2 }).ncol, 2, 'P374: 열 흘리기는 오늘·이전과 상관없다');
+  assert.equal(lay({ today: all, columns: 2 }).sections.length, 0);
   assert.equal(lay({ today: new Set() }).bands.at(-1).id, null, '폴더 없음은 맨 끝');
 });
 test('사이드바 손 차례(order)와 사이드바 폴더 차례는 맵 차례에 쓰지 않는다', () => {
@@ -114,75 +115,85 @@ test('사이드바 손 차례(order)와 사이드바 폴더 차례는 맵 차례
   assert.deepEqual(a.rows.map((r) => r.key), b.rows.map((r) => r.key));
 });
 
-test('pickColumns: 두 열 맞춤 배율이 한 열보다 GAIN배 넘게 크면 2', () => {
-  const m = { W: 2000, today: 3000, earlier: 3000, h: 6110, head: 96 };
-  assert.equal(pickColumns(m, { w: 1600, h: 900 }), 2, '긴 판, 넓은 창');
-  assert.equal(pickColumns(m, { w: 600, h: 1600 }), 1, '좁고 긴 창: 폭이 모자라 한 열');
-  assert.equal(pickColumns({ ...m, today: 0 }, { w: 1600, h: 900 }), 1, '오늘 칸이 없으면 한 열');
-  assert.equal(pickColumns(m, null), 1);
-  // 경계: 두 열 k2 = k1 × GAIN 바로 위·아래
-  const short = { W: 2000, today: 500, earlier: 500, h: 1110, head: 96 };
-  assert.equal(pickColumns(short, { w: 1600, h: 900 }), 1, '짧은 판은 폭 맞춤이라 두 열 이득이 없다');
-  assert.equal(COLS2.GAIN, 1.15);
+// ---- P374: 폴더 띠를 n열로 흘리기(오늘·이전 두 열을 대신함) ----
+const U = (hs) => hs.map((h, i) => ({ h, lead: i ? 36 : 0, sep: false }));
+test('P374 splitUnits: 차례를 지키며 가장 긴 열이 가장 짧게', () => {
+  assert.deepEqual(splitUnits(U([1000, 1000, 1000, 1000]), 2), [[0, 1], [2, 3]]);
+  assert.deepEqual(splitUnits(U([3000, 500, 500, 500]), 2), [[0], [1, 2, 3]]);
+  assert.deepEqual(splitUnits(U([100]), 3), [[0]]);
+  assert.equal(colHeight(U([100, 200]), [0, 1]), 336, '열 안 띠 사이 틈');
+  assert.equal(colHeight(U([100, 200]), [1]), 200, '열 맨 위 띠의 틈은 버린다');
+  assert.equal(colHeight([{ h: 100, lead: 0 }, { h: 200, lead: 110, sep: true }], [1]), 310, '오늘·이전 구분 줄은 열 맨 위에서도 남는다');
 });
-
-test('두 열 배치: 왼쪽 오늘, 오른쪽 이전, 카드가 겹치지 않고 열 머리 이름표·칸 머리가 열마다', () => {
+test('P374 pickColumns: 판 비(폭/높이)가 목표 비에 가장 가까운 열 수, 목표는 수 또는 보이는 칸 비(4:3~16:9)', () => {
+  const m = { W: 2000, cgap: 200, units: U([1000, 1000, 1000, 1000, 1000, 1000]) };
+  // 한 열 2000×6180(0.32), 두 열 4200×3072(1.37), 세 열 6400×2036(3.1)
+  assert.equal(pickColumns(m, null, { aspect: 4 / 3 }), 2);
+  assert.equal(pickColumns(m, null, { aspect: 3 }), 3);
+  assert.equal(pickColumns(m, null, { aspect: 0.3 }), 1);
+  assert.equal(sheetAspect('view', { w: 1600, h: 900 }), 16 / 9);
+  assert.equal(sheetAspect('view', { w: 1000, h: 1000 }), 4 / 3, '좁은 칸도 4:3 아래로 내리지 않는다');
+  assert.equal(sheetAspect('view', { w: 4000, h: 900 }), 16 / 9);
+  assert.equal(sheetAspect('view', null), SHEET.MIN);
+  assert.equal(sheetAspect(1.5), 1.5);
+  assert.equal(pickColumns({ ...m, units: U([1000]) }, { w: 4500, h: 900 }), 1, '띠 하나는 한 열');
+  assert.equal(pickColumns({ W: 2000, cgap: 200, units: U([200, 200]) }, { w: 1600, h: 900 }), 1, '이미 넓적한 판은 한 열');
+  assert.equal(SHEET.ASPECT, 'view'); assert.ok(SHEET.MIN === 4 / 3 && SHEET.MAX === 16 / 9);
+});
+test('P374 열 흘리기: 띠는 열을 가로지르지 않고 차례대로 왼쪽 열 → 오른쪽 열, 카드가 겹치지 않는다', () => {
+  const one = lay({ columns: 1 });
   const L = lay({ columns: 2 });
   assert.equal(L.ncol, 2);
   assert.equal(L.colDx, L.W + COLS2.GAP);
-  assert.deepEqual(L.sections.map((s) => [s.kind, s.mode, s.x]), [['today', 'head', 0], ['earlier', 'head', L.colDx]]);
-  for (const b of L.bands) assert.equal(b.x, b.today ? 0 : L.colDx, `${b.name} 열`);
-  const top = L.sections[0].h;
-  assert.equal(Math.min(...L.bands.filter((b) => b.today).map((b) => b.y)), top, '왼쪽 열은 머리 아래부터');
-  assert.equal(Math.min(...L.bands.filter((b) => !b.today).map((b) => b.y)), top, '오른쪽 열도 머리 아래부터');
-  for (const r of L.rows) { const b = L.bands.find((x) => x.id === r.band); assert.ok(r.x >= b.x && r.x + r.w <= b.x + L.W + 0.01, `${r.key} 줄은 자기 열 띠 안`); assert.equal(r.ox, b.x); }
+  assert.deepEqual(L.bands.map((b) => b.id), one.bands.map((b) => b.id), '띠 차례는 한 열과 같다');
+  const colOf = L.bands.map((b) => b.col);
+  assert.deepEqual(colOf, colOf.slice().sort((a, b) => a - b), '왼쪽 열 띠가 모두 먼저');
+  for (const b of L.bands) assert.equal(b.x, b.col * L.colDx);
+  for (const c of [0, 1]) { const bs = L.bands.filter((b) => b.col === c); assert.ok(Math.min(...bs.map((b) => b.y)) <= L.measure.sep + 0.01, `${c}열은 위에서부터`); }
+  for (const r of L.rows) { const b = L.bands.find((x) => (x.id || null) === (r.band || null)); assert.ok(r.y >= b.y - 0.01 && r.y + r.h <= b.y + b.h + 0.01 && r.ox === b.x, `${r.key} 줄은 자기 띠 안`); }
   const cards = [...L.cards.values()];
   for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) assert.ok(!overlap(cards[i], cards[j]), `${cards[i].node.name}×${cards[j].node.name}`);
   for (const c of cards) { const r = L.rows.find((x) => x.key === c.ws); assert.ok(c.x >= r.ox && c.x + c.w <= r.ox + L.W && c.y >= r.y && c.y + c.h <= r.y + r.h + 0.01, `${c.node.name}는 자기 줄 안`); }
-  // 같은 칸은 열이 달라도 같은 자리(오른쪽 열 = 왼쪽 열 + colDx)
+  // 카드 자리 = 한 열 자리 + 그 띠의 옮김(같은 칸 규칙)
+  for (const [id, c] of L.cards) { const c1 = one.cards.get(id), b = L.bands.find((x) => x.id === L.rows.find((r) => r.key === c.ws).band), b1 = one.bands.find((x) => x.id === b.id); assert.equal(c.x - b.x, c1.x, id); assert.ok(Math.abs((c.y - b.y) - (c1.y - b1.y)) < 0.01, id); }
   const lv0 = L.cols.filter((c) => c.key === 'lv' && c.level === 0);
   assert.deepEqual(lv0.map((c) => c.c), [0, 1]);
-  assert.equal(lv0[1].x - lv0[0].x, L.colDx);
-  assert.equal(L.cards.get('s:a10-lead').x, lv0[1].x, '오른쪽 열 시작 칸');
-  assert.equal(L.cards.get('s:z-lead').x, lv0[0].x, '왼쪽 열 시작 칸');
   assert.equal(L.bounds.w, L.W * 2 + COLS2.GAP);
   assert.equal(L.bounds.h, Math.max(...L.bands.map((b) => b.y + b.h)));
+  assert.ok(L.bounds.h < one.bounds.h * 0.75, '더 짧다');
+  // 오늘·이전 구분 줄은 이전 첫 띠와 함께 옮긴다
+  const s = L.sections[0], first = L.bands.find((b) => !b.today);
+  assert.equal(s.mode, 'line'); assert.equal(s.x, first.x); assert.ok(s.y + s.h <= first.y + 0.01 && s.y >= first.y - L.measure.sep - 80);
+  assert.ok(!L.sections.some((x) => x.mode === 'head'), 'PC는 오늘·이전 열 머리가 없다');
 });
-test('두 열 ↑↓ 차례: 왼쪽 열 위에서 아래, 그다음 오른쪽 열', () => {
+test('P374 열 흘리기 ↑↓ 차례: 왼쪽 열 위에서 아래, 그다음 오른쪽 열', () => {
   const L = lay({ columns: 2 });
   const col = (id) => (L.cards.get(id).x >= L.colDx ? 1 : 0);
   const cs = L.order.map(col);
   assert.deepEqual(cs, cs.slice().sort((a, b) => a - b), '왼쪽 열 카드가 모두 먼저');
   const firstRight = L.order.find((id) => col(id) === 1), lastLeft = [...L.order].reverse().find((id) => col(id) === 0);
   assert.equal(stepCard(L.order, lastLeft, 1), firstRight);
-  assert.equal(stepCard(L.order, firstRight, -1), lastLeft);
-  // 줄 차례 = 띠 차례
-  const rowsOrder = [...new Set(L.order.map((id) => L.cards.get(id).ws))];
-  assert.deepEqual(rowsOrder, L.rows.filter((r) => [...L.cards.values()].some((c) => c.ws === r.key)).map((r) => r.key));
 });
-test('두 열: 열 사이를 건너는 선(다른 워크스페이스 하위)도 그린다, Alt 끌기 판정은 오른쪽 열에서도 맞다', () => {
+test('P374 열 흘리기: 열 사이를 건너는 선도 그린다, Alt 끌기 판정은 오른쪽 열에서도 맞다', () => {
   const L = lay({ columns: 2 });
   const e = L.edges.find((x) => x.from === 's:z-lead' && x.to === 's:b1-x');
   assert.ok(e && e.cross && e.pts.length >= 2, '열 사이 선');
-  // 오른쪽 열 빈 시작 칸에 놓기 = 독립
-  const r = L.rows.find((x) => x.key === 'd:/w/k1');
+  const r = L.rows.find((x) => x.col === 1);
   const lv0 = L.cols.find((c) => c.key === 'lv' && c.level === 0 && c.c === 1).x;
-  const bottom = Math.max(...[...L.cards.values()].filter((c) => c.ws === r.key).map((c) => c.y + c.h));
+  const bottom = Math.max(r.y + 20, ...[...L.cards.values()].filter((c) => c.ws === r.key).map((c) => c.y + c.h));
   const d = relationDrop(L, 's:b1-x', lv0 + 20, Math.min(r.y + r.h - 10, bottom + 60));
   assert.ok(!d || d.row === r.key, '줄은 오른쪽 열 줄');
-  // 왼쪽 열 같은 높이에 놓으면 왼쪽 열 줄
-  const ly = L.rows.find((x) => x.col === 0 && x.y <= r.y + 5 && x.y + x.h >= r.y + 5);
-  if (ly) { const d2 = relationDrop(L, 's:b1-x', L.cols.find((c) => c.key === 'lv' && c.level === 0 && c.c === 0).x + 20, r.y + 5); assert.ok(!d2 || d2.row !== r.key); }
 });
-test('auto: 넓고 낮은 보기 칸이면 두 열, 좁은 칸이면 한 열(두 열 판단은 맞춤 배율 비교)', () => {
+test('P374 auto: 판 비가 목표 비(기본 = 보이는 칸 비)에 가깝게 여러 열', () => {
   const one = lay({ columns: 1 });
   const m = one.measure;
-  assert.ok(m.today > 0 && m.earlier > 0 && m.h === one.bounds.h);
-  const wide = { w: Math.round(m.W * 2.6), h: Math.round(Math.max(m.today, m.earlier) * 0.9) };
+  assert.equal(m.units.length, one.bands.length);
+  const wide = { w: 1600, h: 900 };
   assert.equal(lay({ columns: 'auto', view: wide }).ncol, pickColumns(m, wide));
-  assert.equal(pickColumns(m, wide), 2);
-  assert.equal(lay({ columns: 'auto', view: { w: 500, h: 4000 } }).ncol, 1);
-  assert.equal(lay({ columns: 'auto', view: null }).ncol, 1);
+  assert.ok(pickColumns(m, wide) >= 2, '긴 판은 여러 열');
+  assert.equal(lay({ columns: 'auto', view: wide, aspect: 0.2 }).ncol, 1, '목표가 아주 길쭉하면 한 열');
+  const L = lay({ columns: 'auto', view: wide }), r = L.bounds.w / L.bounds.h;
+  assert.ok(r > 1 && r < 3, '판 비 ' + r.toFixed(2));
 });
 
 test('휴대폰: 한 열 그대로, 차례는 같은 규칙, 오늘과 이전 사이 구분 이름표', () => {
@@ -212,7 +223,7 @@ test('문구·화면: 두 사전에 오늘·이전, 맵은 사이드바 손 차�
     assert.ok(!/lineageLayout\([^)]*\border\b/.test(src.replace(/\n/g, ' ').match(/useMemo\(\(\) => \(\{[^]*?\}\)/)?.[0] || ''), '맵 배치 옵션에 order 없음');
     assert.ok(/msToMidnight\(\)/.test(src) && /todayWorkspaces\(/.test(src), '자정 다시 세기·오늘 판단');
   }
-  assert.ok(/columns: 'auto'/.test(ml), 'PC는 두 열 자동');
+  assert.ok(/columns: 'auto'/.test(ml), 'PC는 열 수 자동(P374: 띠 흘리기)');
   const css = fs.readFileSync(path.join(SRC, 'styles.css'), 'utf8');
   const sec = css.slice(css.indexOf('/* P202: 세션 맵 오늘·이전 이름표'));
   assert.ok(sec.length > 10 && !/animation|transition/.test(sec), '이름표는 움직임에 기대지 않는다');

@@ -41,14 +41,15 @@ test('글: "백그라운드 2"와 종류별 수', () => {
   assert.equal(bgText(null, tOf(ko)), '');
 });
 
-test('뒤 일이 있는 세션은 얇은 줄(P163)로 줄이지 않는다(PC)', () => {
+test('뒤 일이 있는 세션은 얇은 줄(P163)로 줄이지 않는다(휴대폰. P374: PC는 얇은 줄이 없다)', () => {
   const A = 'd:/work/app/.git';
   let seq = 0;
   const node = (n, parent = null, o = {}) => ({ id: `s:${n}`, kind: 'session', sessionId: `x-${n}`, name: n, workspaceKey: A, state: 'ready', parentId: parent ? `s:${parent}` : null, createdAt: 100 + seq++, ...o });
   const nodes = [node('lead'), node('w1', 'lead', { state: 'sleeping' }), node('w2', 'lead', { state: 'sleeping', background: BG }), node('w3', 'lead', { state: 'sleeping' })];
   const edges = nodes.filter((n) => n.parentId).map((n) => ({ from: n.parentId, to: n.id, kind: 'spawn', count: 1 }));
-  const l = lineageLayout({ nodes, edges }, { order: [A] });
+  const l = lineageLayout({ nodes, edges }, { order: [A], phone: true });
   assert.deepEqual([...l.cards].filter(([, c]) => c.thin).map(([id]) => id).sort(), ['s:w1', 's:w3']);
+  assert.deepEqual([...lineageLayout({ nodes, edges }, { order: [A] }).cards].filter(([, c]) => c.thin), [], 'P374: PC는 모두 카드');
 });
 
 test('창 연결: PC 카드·멀리 타일·미리 보기, 두 사전, 움직임 없음', () => {

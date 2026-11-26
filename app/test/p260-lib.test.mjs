@@ -60,9 +60,9 @@ test('P260 두 열 판단은 새 폭(measure.W)으로: 넓고 낮은 창은 두 
   const today = new Set([A]);
   const one = lineageLayout(G, { ...OPT, order: undefined, vgroups: [{ id: 'g1', name: 'one', members: [A] }, { id: 'g2', name: 'two', members: [B] }], today, columns: 1 });
   assert.equal(one.measure.W, one.W);
-  const k1 = pickColumns(one.measure, { w: 3200, h: 700 }), k2 = pickColumns(one.measure, { w: 700, h: 1800 });
+  const k1 = pickColumns(one.measure, null, { aspect: 4 }), k2 = pickColumns(one.measure, null, { aspect: 0.2 });
   assert.equal(k1, 2); assert.equal(k2, 1);
-  const two = lineageLayout(G, { ...OPT, order: undefined, vgroups: [{ id: 'g1', name: 'one', members: [A] }, { id: 'g2', name: 'two', members: [B] }], today, columns: 'auto', view: { w: 3200, h: 700 } });
+  const two = lineageLayout(G, { ...OPT, order: undefined, vgroups: [{ id: 'g1', name: 'one', members: [A] }, { id: 'g2', name: 'two', members: [B] }], today, columns: 'auto', view: { w: 3200, h: 700 }, aspect: 4 });
   assert.equal(two.ncol, 2);
   const bs = two.cards.get('s:bs');
   assert.equal(bs.x, two.cols.find((x) => x.c === 1 && x.level === 0).x, '오른쪽 열 솔로도 그 열 시작 칸');

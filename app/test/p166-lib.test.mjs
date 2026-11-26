@@ -39,11 +39,11 @@ test('PC 결과는 phone 선택지를 넣어도 바뀌지 않는다(phone: false
   assert.ok(a.spine >= LINE.SPINE && a.cols.every((c) => c.key === 'lv') && a.divs === undefined); // P260: 칸 머리·솔로 칸·구분선 없음
 });
 
-test('휴대폰도 같은 판정: 같은 카드, 같은 깊이, 같은 얇은 줄, 같은 선(나무·동료·다른 워크스페이스)', () => {
+test('휴대폰도 같은 판정: 같은 카드, 같은 깊이, 같은 선(나무·동료·다른 워크스페이스). P374: 얇은 줄은 휴대폰만', () => {
   const g = board();
   const pc = lineageLayout(g, opt), ph = lineageLayout(g, { ...opt, phone: true });
   assert.deepEqual([...ph.cards.keys()].sort(), [...pc.cards.keys()].sort());
-  for (const [id, c] of pc.cards) { const d = ph.cards.get(id); assert.equal(d.depth, c.depth, id); assert.equal(!!d.thin, !!c.thin, id); assert.equal(d.ws, c.ws, id); }
+  for (const [id, c] of pc.cards) { const d = ph.cards.get(id); assert.equal(d.depth, c.depth, id); assert.ok(!c.thin, id); assert.equal(d.ws, c.ws, id); }
   const kinds = (l) => l.edges.map((e) => `${e.from}>${e.to}:${e.peer ? 'peer' : e.cross ? 'cross' : e.lineage ? 'lin' : e.rel}`).sort();
   assert.deepEqual(kinds(ph), kinds(pc));
   assert.ok(ph.cards.get('s:w2').thin, '하위 7개 중 절전은 얇은 줄');

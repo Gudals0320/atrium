@@ -36,9 +36,9 @@ const gapAbove = (L, id) => { const b = L.cards.get(id); let f = -Infinity; for 
 test('배치: 꼬리표가 있는 카드 위를 tagRoom만큼 비우고 그 아래를 함께 내린다(없으면 그대로)', () => {
   const base = lineageLayout(graph, { label: 0.42 });
   const tagged = lineageLayout(graph, { label: 0.42, tags: new Map([['s:c', 2]]) });
-  assert.ok(base.cards.get('s:c').thin, '얇은 줄로 본다');
-  assert.ok(gapAbove(base, 's:c') < tagRoom(2, 0.42, true));
-  assert.ok(gapAbove(tagged, 's:c') >= tagRoom(2, 0.42, true), String(gapAbove(tagged, 's:c')));
+  assert.ok(!base.cards.get('s:c').thin, 'P374: PC는 얇은 줄 없이 카드');
+  assert.ok(gapAbove(base, 's:c') < tagRoom(2, 0.42, false));
+  assert.ok(gapAbove(tagged, 's:c') >= tagRoom(2, 0.42, false), String(gapAbove(tagged, 's:c')));
   for (const id of ['s:d', 's:e']) assert.ok(gapAbove(tagged, id) === gapAbove(base, id), id + ' 아래 줄 사이는 그대로');
   assert.equal(tagged.cards.get('s:a').y, base.cards.get('s:a').y, '위는 그대로');
   assert.ok(tagged.bounds.h > base.bounds.h, '줄이 늘어난다');

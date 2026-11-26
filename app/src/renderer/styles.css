@@ -3332,3 +3332,6 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-ln-extra { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--panel-line); }
 .mt-ln-extra-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 0 6px 4px; }
 .mt-ln-extra-head .mt-set-sub { margin: 0; padding: 0; border: 0; }
+
+/* P374: PC 세션 맵 카드의 작은 줄(상태·역할·하네스·모델·더 보기)을 13px로. 처음 화면 배율(MissionLineage.jsx OPEN_K 0.85)에서 화면 11px 이상(이름 15.5·지금 일 13.5는 그대로). 휴대폰 맵은 그대로 */
+.mt-sm[data-layout="lineage"] .mt-ta-full .cst, .mt-sm[data-layout="lineage"] .mt-ta-full .c2, .mt-sm[data-layout="lineage"] .mt-ta-full .crole, .mt-sm[data-layout="lineage"] .mt-ta-full .c4 { font-size: 13px; }

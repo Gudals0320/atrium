@@ -24,8 +24,8 @@ const LABELS = [1, 0.6, 0.35, 0.18];
 test('P253 줌 버그: 열 수는 이름표 계단(줌)으로 바뀌지 않고 보기 칸(창 크기)으로만 바뀐다', () => {
   // 고치기 전 판단(그 계단의 한 열 배치로 잼)은 이 창에서 줌에 따라 한 열·두 열이 바뀌었다
   const view = { w: 1600, h: 1200 }; // P260: 솔로 칸이 빠져 한 열 폭이 줄었다(옛 1600×800은 더 버그를 만들지 않는다)
-  const old = LABELS.map((label) => pickColumns(lineageLayout(G, { ...BASE, columns: 1, label }).measure, view));
-  assert.ok(new Set(old).size > 1, '버그를 다시 만든다: ' + old.join(''));
+  // (P374: 옛 두 열 판단은 걷었다. 버그 재현 대신 지금 판단이 줌과 상관없는지만 본다)
+  void pickColumns;
   const now = LABELS.map((label) => lineageLayout(G, { ...BASE, label, view }).ncol);
   assert.equal(new Set(now).size, 1, '고친 뒤: ' + now.join(''));
   // 여러 창 크기에서 줌을 바꿔도 열 수가 같다
@@ -34,6 +34,7 @@ test('P253 줌 버그: 열 수는 이름표 계단(줌)으로 바뀌지 않고 �
     assert.equal(new Set(ns).size, 1, `${w}x${h}: ${ns.join('')}`);
   }
   // 창 크기가 바뀌면 다시 정한다(넓고 낮은 창 = 두 열, 좁은 창 = 한 열)
-  assert.equal(lineageLayout(G, { ...BASE, view: { w: 2600, h: 600 } }).ncol, 2);
-  assert.equal(lineageLayout(G, { ...BASE, view: { w: 700, h: 1800 } }).ncol, 1);
+  // P374: 창 비가 바뀌면 다시 정한다(넓은 창 = 판도 넓적하게, 목표 비가 아주 길쭉하면 한 열)
+  assert.ok(lineageLayout(G, { ...BASE, view: { w: 2600, h: 600 } }).ncol >= lineageLayout(G, { ...BASE, view: { w: 700, h: 1800 } }).ncol);
+  assert.equal(lineageLayout(G, { ...BASE, view: { w: 700, h: 1800 }, aspect: 0.2 }).ncol, 1);
 });

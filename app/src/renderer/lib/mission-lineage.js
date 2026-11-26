@@ -69,14 +69,16 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // spineText(nWs, nSessions) → [윗줄, 아랫줄](P157: 기둥 폭을 셀 때 수 글도 넣는다. 창은 지금 언어 글을 준다)
 // P166: phone = 휴대폰 세로 배치(PHONE 위 설명). view = 맵이 보이는 칸 { w, h }(주면 그 비율에 맞춰 단을 나눈다), pages = 단 수를 정해서(그림 비교·시험용)
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
-//   columns = 1 | 2 | 'auto'(PC만: view = 맞춤 칸 { w, h }에서 두 열 맞춤 배율이 한 열보다 COLS2.GAIN배 넘게 크면 두 열). → sections(오늘·이전 이름표 자리), ncol, colDx, measure
+//   columns = 1 | n | 'auto'(PC만, P374: 폴더 띠를 n열로 흘린다. auto = 판 비가 목표 비 aspect(SHEET.ASPECT, view = 보이는 칸 { w, h })에 가장 가까운 열 수, pickColumns). → sections(오늘·이전 구분 줄 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
   const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, keepKeys = null, mergers = null, tags = null } = opts; // P335: tags = 카드 id → 꼬리표 수(1~2, PC만). P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
   if (!phone && columns === 'auto') {
     // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
     //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
+    // P374: 열은 오늘·이전 둘이 아니라 폴더 띠를 n열로 흘린다(pickColumns: 판 비가 목표 비 SHEET.ASPECT에 가장 가까운 열 수)
     const one = lineageLayout(graph, { ...opts, columns: 1, routing: false, label: 1 });
-    if (pickColumns(one.measure, view) === 2) return lineageLayout(graph, { ...opts, columns: 2 });
+    const n = pickColumns(one.measure, view, opts.aspect != null ? { aspect: opts.aspect } : {});
+    if (n > 1) return lineageLayout(graph, { ...opts, columns: n });
     return routing || label !== 1 ? lineageLayout(graph, { ...opts, columns: 1 }) : one;
   }
   const tree = missionTree(graph);
@@ -84,6 +86,8 @@ export function lineageLayout(graph, opts = {}) {
   const sidOf = new Map(tree.nodes.map((n) => [n.sessionId, n.id]));
   const L = { ...LINE, CW: mapCardW(graph, tree) };
   if (phone) { L.CW = Math.min(PHONE.CW_MAX, Math.max(PHONE.CW_MIN, Math.round(L.CW * PHONE.CW_K))); L.GX = PHONE.GX; L.FOLD = PHONE.FOLD; }
+  // P374: PC 세션 맵은 접지 않는다(사용자 2026-11-26: 모든 정보를 늘 보인다). 깊이 접기(FOLD)와 절전 하위 얇은 줄(THINMIN)을 끈다. 휴대폰 맵은 그대로
+  else { L.FOLD = Infinity; L.THINMIN = Infinity; }
   const tierOf = (id) => (tiers && tiers.has(id) ? tiers.get(id) : nodeTier(byId.get(id)));
   const wsOf = (id) => (byId.get(id) || {}).workspaceKey || '';
   const nameOf = (key) => (names && names.get(key)) || (key ? keyName(key) : '');
@@ -108,7 +112,9 @@ export function lineageLayout(graph, opts = {}) {
   const nToday = groups.filter((g) => g.today).length;
   const split = nToday > 0 && nToday < groups.length; // 오늘 칸과 이전 칸이 둘 다 있다
   // P280: 휴대폰도 columns: 2면 PC처럼 오늘 칸 오른쪽에 이전 칸(열마다 위 머리). 휴대폰 두 열은 단 나누기를 하지 않는다(PhoneMap.jsx는 늘 2를 준다)
-  const two = split && columns === 2;
+  // P374: PC는 오늘·이전 두 열 대신 폴더 띠를 n열로 흘린다(flowCols, 아래). 오늘·이전은 한 줄 구분 줄로 남는다
+  const two = phone && split && columns === 2;
+  const nflow = !phone && Number.isInteger(columns) && columns > 1 ? columns : 1;
 
   // P157: 기둥 폭은 가장 긴 폴더 이름에 맞춘다. 워크스페이스 머리부터 오른쪽은 늘어난 만큼 민다
   const stats = spineText ? groups.flatMap((g) => spineText(g.keys.length, tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).length)) : [];
@@ -284,6 +290,11 @@ export function lineageLayout(graph, opts = {}) {
   });
   if (split) measure.earlier = y - secTop; else if (nToday) measure.today = y - secTop; else measure.earlier = y - secTop;
   measure.h = y;
+  // P374: 열 흘리기 단위 = 폴더 띠(앞 틈 lead: 띠 사이 BANDGAP 또는 오늘·이전 구분 줄 SEP). 열 맨 위에 오면 BANDGAP은 버리고 구분 줄은 남긴다
+  measure.units = phone ? [] : bands.map((b, i) => { const lead = i ? b.y - (bands[i - 1].y + bands[i - 1].h) : 0; return { h: b.h, lead, sep: !!sections.find((s) => s.mode === 'line' && rows.some((r) => r.key === s.before && (r.band || null) === (b.id || null))) }; });
+  measure.cgap = COLS2.GAP;
+  let ncolPC = 1;
+  if (nflow > 1 && bands.length > 1) ncolPC = flowCols(nflow);
   // P166: 휴대폰은 보이는 칸 비율에 맞춰 줄들을 단(page)으로 나눌 수 있다(신문처럼 위 → 아래, 왼 → 오른)
   let nPages = 1;
   if (phone && !two) { nPages = flowPages(); y = Math.max(1, ...bands.map((b) => b.y + b.h)); }
@@ -382,12 +393,12 @@ export function lineageLayout(graph, opts = {}) {
   // 칸 x: 시작(0) · 1단계 · 2단계 · …(보이는 가장 깊은 단계까지). P260: 화면에 칸 머리를 그리지 않는다(놓기 판정 relationDrop·줄 머리 잡이 폭이 읽는다)
   const cols0 = COL.map((x, i) => ({ key: 'lv', level: i, x }));
   // P202: 두 열이면 열마다 둔다(c = 열 번호)
-  const cols = two ? [...cols0.map((c) => ({ ...c, c: 0 })), ...cols0.map((c) => ({ ...c, x: c.x + DX, c: 1 }))] : cols0.map((c) => ({ ...c, c: 0 }));
+  const cols = two ? [...cols0.map((c) => ({ ...c, c: 0 })), ...cols0.map((c) => ({ ...c, x: c.x + DX, c: 1 }))] : Array.from({ length: ncolPC }, (_, ci2) => cols0.map((c) => ({ ...c, x: c.x + ci2 * (W + COLS2.GAP), c: ci2 }))).flat(); // P374: 흘린 열마다
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
-  const BW = two ? DX + W : phone ? nPages * W + (nPages - 1) * PHONE.PGAP : W;
-  const BH = two ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
-  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : 1, colDx: DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
+  const BW = two ? DX + W : phone ? nPages * W + (nPages - 1) * PHONE.PGAP : ncolPC > 1 ? ncolPC * W + (ncolPC - 1) * COLS2.GAP : W;
+  const BH = two || ncolPC > 1 ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
+  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : ncolPC, colDx: ncolPC > 1 ? W + COLS2.GAP : DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
 
   // ---- P260: 줄 안 쌓기(PC·휴대폰 같은 규칙). 시작 칸 뿌리의 나무 → 다른 워크스페이스에서 온 것(1단계 칸) → 솔로(시작 칸, 차례 = 만든 차례).
   //   나무 사이는 GY*2(동료 뿌리끼리는 PGY), 솔로끼리는 GY. 쌓은 것이 없으면 null, 있으면 마지막 카드 아래 끝 y ----
@@ -418,6 +429,31 @@ export function lineageLayout(graph, opts = {}) {
       if (dy > 0) { const y0 = b.y; for (const [, o] of bs) if (o.y >= y0) o.y += dy; total += dy; }
     }
     return total;
+  }
+
+  // ---- P374: PC 열 흘리기. 폴더 띠(앞 구분 줄 포함)를 차례대로 n열에 나눠(가장 긴 열이 가장 짧게, splitUnits) 옮긴다. 띠는 열을 가로지르지 않는다.
+  //   열 c의 x = c × (W + COLS2.GAP). 띠·줄·카드·구분 줄을 함께 옮긴다(선은 이 뒤에 센다). 쓴 열 수를 돌려준다 ----
+  function flowCols(n) {
+    const parts = splitUnits(measure.units, n);
+    if (parts.length < 2) return 1;
+    const old = bands.map((b) => ({ y: b.y }));
+    parts.forEach((idx, c) => {
+      const dx = c * (W + COLS2.GAP);
+      let cy = 0;
+      idx.forEach((i, j) => {
+        const u = measure.units[i], b = bands[i];
+        const top = cy + (j === 0 ? (u.sep ? u.lead : 0) : u.lead);
+        const dy = top - old[i].y;
+        const keys = new Set(rows.filter((r) => (r.band || null) === (b.id || null)).map((r) => r.key));
+        for (const r of rows) if (keys.has(r.key)) { r.y += dy; r.x += dx; r.ox = dx; r.col = c; }
+        for (const cd of cards.values()) if (keys.has(cd.ws)) { cd.x += dx; cd.y += dy; }
+        const sec = u.sep && sections.find((s) => s.mode === 'line' && keys.has(s.before));
+        if (sec) { sec.x = dx; sec.y = top - u.lead; sec.col = c; }
+        b.y += dy; b.x = dx; b.col = c;
+        cy = b.y + b.h;
+      });
+    });
+    return parts.length;
   }
 
   // ---- P166: 휴대폰 줄 하나(머리 = 위 띠, 그 아래 쌓음). 줄 높이를 돌려준다 ----
@@ -526,15 +562,47 @@ export function folderOrder(groups, today = null) {
   const cmp = (a, b) => (b.today - a.today) || ((a.id == null) - (b.id == null)) || nameCmp(a.name, b.name) || nameCmp(a.id, b.id);
   return (groups || []).map((g) => ({ ...g, today: isToday(g) })).sort(cmp);
 }
-// 두 열 판단: 한 열 배치의 칸 높이(measure: W, today, earlier, h, sep, head)로 맞춤 배율을 견준다.
-// 두 열(왼쪽 오늘, 오른쪽 이전, 폭 2W + GAP, 높이 머리 + 긴 칸)의 맞춤 배율이 한 열보다 GAIN배 넘게 크면 2. 오늘·이전 칸이 둘 다 있어야 한다
-// GAIN 1.15: 1.1 아래 차이는 눈에 띄지 않고 열이 둘로 갈려 읽는 차례만 바뀐다. 한 열이 두 열보다 15% 넘게 작아질 때(긴 판을 넓은 창에서 볼 때)만 나눈다
-export const COLS2 = { GAIN: 1.15, GAP: 200, HD: 96, SEP: 110, PAD: 16 };
-export function pickColumns(m, view, gain = COLS2.GAIN) {
-  if (!m || !m.today || !m.earlier || !view || !(view.w > 0) || !(view.h > 0)) return 1;
-  const fitK = (w, h) => Math.min((view.w - COLS2.PAD * 2) / w, (view.h - COLS2.PAD * 2) / h);
-  const k1 = fitK(m.W, m.h), k2 = fitK(m.W * 2 + COLS2.GAP, (m.head || COLS2.HD) + Math.max(m.today, m.earlier));
-  return k2 > k1 * gain ? 2 : 1;
+// P374: 열 판단(사용자 2026-11-26: 접지 않고 줄이지 않는다. 카드는 읽히는 배율 그대로, 맵은 길쭉한 띠 대신 끌어서 보는 2D 판).
+//   한 열 배치의 띠 단위(measure.units, W)를 n열(1~MAXCOLS)로 흘렸을 때 판 전체의 가로세로 비(폭/높이)가 목표 비에 가장 가까운 열 수(로그 비 차이, 같으면 적은 열).
+//   목표 비 SHEET.ASPECT: 수(예 4/3)면 그 비, 'view'면 보이는 칸의 비를 MIN(4:3)~MAX(16:9) 안으로 좁힌 것(보기 칸이 없으면 MIN). 한 열이 이미 목표보다 넓적하면 한 열
+//   열 수는 그래프와 보기 칸(창 크기)·목표 비로만 정해지고 배율(이름표 계단)과 상관없다(P253)
+export const SHEET = { ASPECT: 'view', MIN: 4 / 3, MAX: 16 / 9, MAXCOLS: 8 };
+export const COLS2 = { GAP: 200, HD: 96, SEP: 110, PAD: 16 };
+export function sheetAspect(aspect = SHEET.ASPECT, view = null) {
+  if (typeof aspect === 'number' && aspect > 0) return aspect;
+  if (!view || !(view.w > 0) || !(view.h > 0)) return SHEET.MIN;
+  return Math.min(SHEET.MAX, Math.max(SHEET.MIN, view.w / view.h));
+}
+export function pickColumns(m, view, { aspect = SHEET.ASPECT, max = SHEET.MAXCOLS } = {}) {
+  if (!m || !m.units || m.units.length < 2) return 1;
+  const want = sheetAspect(aspect, view);
+  let best = null;
+  for (let n = 1; n <= Math.min(max, m.units.length); n++) {
+    const parts = splitUnits(m.units, n);
+    if (parts.length !== n) continue;
+    const w = n * m.W + (n - 1) * (m.cgap || COLS2.GAP), h = Math.max(...parts.map((p) => colHeight(m.units, p)));
+    const d = Math.abs(Math.log((w / h) / want));
+    if (!best || d < best.d - 1e-9) best = { n, d };
+  }
+  return best ? best.n : 1;
+}
+// P374: 띠 단위들(차례 그대로)을 n열 이하로 나눈 묶음(단위 번호 배열들). 가장 긴 열의 높이가 가장 작게(작은 판이라 모두 따져 본다: 단위 30 · 열 4 안)
+export function colHeight(units, idx) { return idx.reduce((s, i, j) => s + units[i].h + (j === 0 ? (units[i].sep ? units[i].lead : 0) : units[i].lead), 0); }
+export function splitUnits(units, n) {
+  const u = units.length;
+  if (n <= 1 || u < 2) return [units.map((_, i) => i)];
+  n = Math.min(n, u);
+  const range = (a, b) => Array.from({ length: b - a }, (_, i) => a + i);
+  // best[k][i] = 앞 i개 단위를 k열로 나눌 때 가장 긴 열(가장 작게), cut[k][i] = 마지막 열의 시작
+  const best = Array.from({ length: n + 1 }, () => new Array(u + 1).fill(Infinity)), cut = Array.from({ length: n + 1 }, () => new Array(u + 1).fill(0));
+  best[0][0] = 0;
+  for (let k = 1; k <= n; k++) for (let i = 1; i <= u; i++) for (let j = k - 1; j < i; j++) {
+    const v = Math.max(best[k - 1][j], colHeight(units, range(j, i)));
+    if (v < best[k][i] - 1e-9) { best[k][i] = v; cut[k][i] = j; }
+  }
+  const out = [];
+  for (let k = n, i = u; k > 0; k--) { const j = cut[k][i]; out.unshift(range(j, i)); i = j; }
+  return out.filter((p) => p.length);
 }
 
 // P159: 같은 칸에 위아래로 붙은 동료 카드 사이 선. 양끝은 각 카드의 가로 가운데(u 아래 변 → d 위 변, 틈 g).

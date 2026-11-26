@@ -110,7 +110,7 @@ test('창·세션 맵 코드: 초점을 옮기지 않고(자동 초점 없음), 
   assert.match(pop, /<DecisionRow key=\{it\.key\} d=\{it\.d\}/);
   assert.match(pop, /<PlanCardRow key=\{it\.key\} c=\{it\.c\}/);
   const ml = fs.readFileSync(new URL('../src/renderer/MissionLineage.jsx', import.meta.url), 'utf8');
-  assert.match(ml, /onFold=\{onFold\} todo \/>/); // PC 세션 맵 카드
+  assert.match(ml, /onTag=\{tag\} onOpen=\{go\} onHover=\{onHover\} t=\{t\} todo \/>/); // PC 세션 맵 카드(P374: 접기 칩 없음)
   assert.match(ml, /commandDraft\.dispatchEvent\(new CustomEvent\('tag', \{ detail: b\.node\.name \}\)\);\r?\n  \}, \[\]\);/); // 태그는 지금 그대로(초점을 옮기지 않는 tag 사건)
   const pm = fs.readFileSync(new URL('../src/renderer/PhoneMap.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(pm, /<Card [^\n]*\btodo\b/); // 휴대폰 맵은 그대로

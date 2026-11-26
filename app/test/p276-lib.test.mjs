@@ -97,11 +97,12 @@ test('P276 head가 맵에 없거나 다른 워크스페이스면 지금처럼 �
   assert.ok(!l.edges.some((e) => e.merger));
   const l2 = lay([['mg']], mapMergers(view([job('p1', 'gone', 'mg')])));
   assert.ok(l2.cards.get('s:mg').solo && l2.cards.get('s:mg').merger);
-  // 접힌 가지 안 head(깊이 접기 아래)면 솔로 끝으로
+  // P374: PC는 깊은 가지도 접지 않으니 깊은 head(5단계) 위에도 얹는다
   const deep = [['r'], ['d1', 'r'], ['d2', 'd1'], ['d3', 'd2'], ['d4', 'd3'], ['d5', 'd4'], ['d6', 'd5'], ['mg']];
   const l3 = lay(deep, mapMergers(view([job('d6', 'd5', 'mg')])));
-  assert.ok(!l3.cards.has('s:d5'));
-  assert.ok(l3.cards.get('s:mg').solo);
+  assert.ok(l3.cards.has('s:d5') && l3.cards.has('s:d6'));
+  assert.ok(!l3.cards.get('s:mg').solo);
+  assert.equal(l3.cards.get('s:mg').x, l3.cards.get('s:d5').x, 'head 위 같은 칸');
   overlap(l3);
 });
 
