@@ -55,7 +55,8 @@ test('카드에 마우스를 올리면 미리 보기 하나만(브라우저 풍�
   assert.ok(!/\btitle=/.test(card), '카드에 title이 없다');
   assert.match(card, /aria-label=/);
   const head = src.slice(src.indexOf('className="mt-sm-head"'), src.indexOf('className="wsc"'));
-  assert.ok(!/\btitle=/.test(head), '줄 머리에 옮기기 풍선이 없다');
+  // P377: 자리에 안 드는 긴 이름(말줄임)만 이름 전체를 title로 보인다. 옮기기 풍선은 없다
+  assert.ok(!/\btitle=/.test(head.replace(/title=\{r\.key && \(lay\.heads\.get\(r\.key\) \|\| \{\}\)\.cut \? r\.name : undefined\}/, '')), '줄 머리에 옮기기 풍선이 없다');
   assert.match(head, /mt-sm-althint/);
   assert.equal((src.match(/<Peek /g) || []).length, 1, '미리 보기 그리는 곳은 하나');
 });

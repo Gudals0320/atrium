@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, tagScale, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes, SHEET, mapPlan } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, LABEL, labelFit, LINE, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes, SHEET, mapPlan } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P377: LABEL·labelFit(이름표 자리 고정, 글은 매 프레임 연속) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -147,11 +147,11 @@ export function SectionMark({ s, px, t }) {
   const fs = Math.round(px * 1.15 * 10) / 10;
   if (s.mode === 'line') return (
     <div className="mt-sm-sec line" data-role="ln-section" data-kind="split" style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
-      <span className="up" style={{ fontSize: fs }}>{s.day && s.day !== dayStart() ? t('mmPlan.todayAsOf', { date: dayText(s.day) }) : t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn" style={{ fontSize: fs }}>{t('mmSec.earlier')}</span>
+      <span className="up" data-lq="sec" style={{ fontSize: fs }}>{s.day && s.day !== dayStart() ? t('mmPlan.todayAsOf', { date: dayText(s.day) }) : t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn" data-lq="sec" style={{ fontSize: fs }}>{t('mmSec.earlier')}</span>
     </div>);
   return (
     <div className={`mt-sm-sec head ${s.kind}`} data-role="ln-section" data-kind={s.kind} data-col={s.col} style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
-      <span style={{ fontSize: fs * 1.25 }}>{t(s.kind === 'today' ? 'mmSec.today' : 'mmSec.earlier')}</span>
+      <span data-lq="sec" style={{ fontSize: fs * 1.25 }}>{t(s.kind === 'today' ? 'mmSec.today' : 'mmSec.earlier')}</span>
     </div>);
 }
 
@@ -183,9 +183,9 @@ export function LineageMap() {
   const layRef = useRef(null), sizeRef = useRef(null);
   const [pending, setPending] = useState([]); // 놓자마자 보이는 관계(판 답을 기다리는 동안). [{ a, b, relation, ok }]
   const [reloadN, setReloadN] = useState(0);
-  // P178: 이름표 배율 계단(lib/mission-lineage.js labelStep). 움직임이 멈춘 뒤에만 바꾸고(배치를 다시 센다), 바뀌면 보던 카드가 화면 같은 자리에 남게 보기를 옮긴다
-  const [lstep, setLstep] = useState(1);
-  const lstepRef = useRef(1), anchorRef = useRef(null), pendingView = useRef(null);
+  // P377: 이름표(폴더 기둥·줄 머리·구분 줄 글)와 카드 꼬리표의 자리는 배율과 상관없이 고정(LABEL.ROOM 계단의 글 크기, 배치가 한 번 센다).
+  //   글은 paint가 매 프레임 그 자리 안에서 transform으로 맞춘다(lib/mission-lineage.js labelFit). 예전 P178 계단(멈춘 뒤 바꾸고 배치를 다시 세며 보기를 옮김)은 없다
+  const lqRef = useRef({ els: [], fit: null });
   const [sumOpen, setSumOpen] = useState(loadSumOpen);
   const [aspect, setAspect] = useState(loadAspect); // P374: 판 목표 비(열 때마다 다시 읽는다)
   useEffect(() => { if (open) setAspect(loadAspect()); }, [open]);
@@ -260,13 +260,10 @@ export function LineageMap() {
   }, [g2, baseOpts]); // eslint-disable-line react-hooks/exhaustive-deps
   const layOpts = useMemo(() => ({ ...baseOpts, columns: plan ? 1 : 'auto', plan }), [baseOpts, plan]);
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
-  const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
+  const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: LABEL.ROOM })) : null)), [g2, layOpts]);
   const lay = lay0;
-  // P335: 꼬리표 무리 배수(--tk, CSS .mt-sm-tags)는 배치의 이름표 계단(lay.label)을 따른다. 배치가 비운 자리와 같은 배수
-  useLayoutEffect(() => { const w = worldRef.current; if (w && lay) { const v = String(tagScale(lay.label)); if (w.style.getPropertyValue('--tk') !== v) w.style.setProperty('--tk', v); } }, [lay]);
-  // P178: 맞춤 보기를 셀 때 다른 계단의 배치(선 길 찾기 없이, 크기만)
-  const layForRef = useRef(null);
-  layForRef.current = (st) => (g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: st, routing: false })) : null);
+  // P377: 이름표·꼬리표 무리 요소를 배치가 그려질 때마다 모으고 지금 배율로 맞춘다(아래 보기 쓰기 효과보다 먼저 돈다)
+  useLayoutEffect(() => { const root = rootRef.current; lqRef.current = { els: root && lay ? [...root.querySelectorAll('[data-lq], .mt-sm-tags')] : [], fit: null }; if (view.current) fitLabels(view.current.k); }, [lay]); // eslint-disable-line react-hooks/exhaustive-deps
   const roles = useMemo(() => (g2 && lay ? roleModel(g2, { tiers, tree: lay.tree }) : new Map()), [g2, lay, tiers]);
   layRef.current = lay;
   sizeRef.current = vsize;
@@ -290,8 +287,9 @@ export function LineageMap() {
     const w = worldRef.current, root = rootRef.current;
     const lv = levelOf(v.k);
     if (w) {
-      if (glide) { w.classList.add('glide'); clearTimeout(glideTimer.current); glideTimer.current = setTimeout(() => { w.classList.remove('glide'); checkStep(); }, 480); } else w.classList.remove('glide');
+      if (glide) { w.classList.add('glide'); clearTimeout(glideTimer.current); glideTimer.current = setTimeout(() => { w.classList.remove('glide'); }, 480); } else w.classList.remove('glide');
       w.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
+      fitLabels(v.k); // P377: 이름표 글은 매 프레임 자리 안에서 연속으로
       if (!w.classList.contains(`lv-${lv}`)) { w.classList.remove('lv-far', 'lv-mid', 'lv-near'); w.classList.add(`lv-${lv}`); }
       if (root && root.dataset.level !== lv) root.dataset.level = lv;
     }
@@ -309,48 +307,27 @@ export function LineageMap() {
     const setIk = () => { const ww = worldRef.current, kk = view.current && view.current.k; if (!ww || !kk || levelOf(kk) !== 'far') return; const ik = (1 / kk).toFixed(3); if (ww.style.getPropertyValue('--ik') !== ik) ww.style.setProperty('--ik', ik); };
     if (w && lv === 'far' && (glide || !w.style.getPropertyValue('--ik'))) setIk();
     if (pctRef.current) pctRef.current.textContent = `${Math.round(v.k * 100)}%`;
-    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); checkStep(); }, 160); } // P349: 움직이는 동안 빛 고리는 CSS가 숨긴다(styles.css P349, 예전 P210 holdLights)
+    if (root && !glide) { if (root.dataset.moving !== '1') root.dataset.moving = '1'; clearTimeout(moveTimer.current); moveTimer.current = setTimeout(() => { delete root.dataset.moving; setIk(); }, 160); } // P349: 움직이는 동안 빛 고리는 CSS가 숨긴다(styles.css P349, 예전 P210 holdLights)
     if (placeRef.current) placeRef.current(glide); // P331: 미니 창이 카드를 따라간다
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // P178: 움직임이 멈춘 뒤 이름표 계단이 바뀌었으면 배치를 다시 센다. 화면 가운데에 가장 가까운 카드를 닻으로 남겨, 새 배치에서도 그 카드가 같은 화면 자리에 있게 한다
-  function checkStep() {
-    const v = view.current, L = layRef.current, s = sizeRef.current;
-    if (!v || !L) return;
-    const st = labelStep(v.k);
-    if (st === lstepRef.current) return;
-    const cx = s ? (s.w - sumW()) / 2 : 0, cy = s ? (s.h + TOPH - BOTTOM) / 2 : 0;
-    let best = null;
-    for (const [id, b] of L.cards) { const sx = b.x * v.k + v.x, sy = b.y * v.k + v.y, d = Math.hypot(sx + b.w * v.k / 2 - cx, sy + b.h * v.k / 2 - cy); if (!best || d < best.d) best = { id, sx, sy, d }; }
-    anchorRef.current = best ? { id: best.id, sx: best.sx, sy: best.sy } : null;
-    lstepRef.current = st;
-    setLstep(st);
+  // P377: 배율 k의 이름표 배수를 모은 요소에 쓴다(DOM에 바로, 배수가 같으면 건너뜀). 기둥·줄 머리 = transform scale + 자리 폭(data-w)/배수의 폭(작게 보일수록 이름이 더 들어간다),
+  //   구분 줄 글 = scale만, 꼬리표 무리 = 그 요소의 --tk(세계에 쓰면 카드 전부의 스타일을 다시 센다)
+  function fitLabels(k) {
+    const q = lqRef.current, f = labelFit(k);
+    if (q.fit && q.fit.spine === f.spine && q.fit.head === f.head && q.fit.tag === f.tag) return;
+    q.fit = f;
+    for (const el of q.els) {
+      const kind = el.dataset.lq;
+      if (!kind) { el.style.setProperty('--tk', String(f.tag)); continue; }
+      const r = kind === 'head' ? f.head : f.spine;
+      el.style.transform = `scale(${r})`;
+      if (el.dataset.w) el.style.width = `${Math.round((Number(el.dataset.w) / r) * 10) / 10}px`;
+    }
   }
   // 오른쪽 요약 칸이 차지하는 폭(접혀 있으면 0)
   const sumW = () => (sumRef.current ? SUM_W + SUM_GAP : 0);
-  // P178: 보기를 정하는 함수 mk(배치, 칸 크기)를 이름표 계단과 맞을 때까지(몇 번) 다시 센다. 계단이 바뀌면 새 배치가 그려진 뒤 그 보기를 쓴다
-  const settle = (mk, opts) => {
-    const s = sizeRef.current;
-    let st = lstepRef.current, L = layRef.current;
-    if (!L || !s) return;
-    let v = mk(L, s);
-    const seen = new Set([st]);
-    for (let i = 0; i < 6; i++) {
-      const st2 = labelStep(v.k);
-      if (st2 === st) break;
-      // 두 계단 사이를 오가면(좁은 창: 글이 커지면 맞춤이 작아지고, 작아지면 글이 커진다) 글이 더 큰(작은 계단) 쪽에 머문다
-      const next = seen.has(st2) ? Math.min(st, st2) : st2;
-      seen.add(next);
-      if (next === st) break;
-      const L2 = layForRef.current(next); if (!L2) break;
-      st = next; L = L2; v = mk(L, s);
-    }
-    // 보기 배율이 이 계단 밖이면 계단 안(가장 큰 배율)으로 줄인다. 그래야 멈춘 뒤 계단을 다시 바꾸지 않는다(배치가 그대로라 내용은 더 작게 들어간다)
-    if (labelStep(v.k) !== st && st < 1) {
-      const kk = st * Math.sqrt(1.1) * 0.995;
-      if (v.k > kk) v = zoomAt(v, v.x + L.bounds.x * v.k, v.y + L.bounds.y * v.k, kk);
-    }
-    if (st !== lstepRef.current) { pendingView.current = { v, opts }; anchorRef.current = null; lstepRef.current = st; setLstep(st); } else paint(v, opts);
-  };
+  // 보기를 정하는 함수 mk(배치, 칸 크기)로 한 번에 정한다(P377: 이름표 자리가 배율과 상관없어 다시 셀 것이 없다)
+  const settle = (mk, opts) => { const s = sizeRef.current, L = layRef.current; if (!L || !s) return; paint(mk(L, s), opts); };
   // 맞춤: 세계 전체를 레일 오른쪽·위 줄과 칸 머리 아래·명령줄 위 칸에
   const fitOf = (L, s) => { const f = fitView(L.bounds, s.w - RAIL - sumW(), s.h, { top: TOPH, bottom: BOTTOM, pad: PAD }); return { ...f, x: f.x + RAIL }; };
   // P374: 처음 연 화면 = 카드가 읽히는 배율(OPEN_K, 사용자 2026-11-26: 맞추려고 줄이지 않는다). 판 전체가 그보다 크게 들어가면 맞춤.
@@ -420,13 +397,7 @@ export function LineageMap() {
   useLayoutEffect(() => {
     if (!open || !lay || !vsize) return;
     if (!fitted.current) { fitted.current = true; settle(openOf); }
-    else if (pendingView.current) { const p = pendingView.current; pendingView.current = null; paint(p.v, p.opts); }
-    else if (anchorRef.current && view.current) {
-      // P178: 이름표 계단이 바뀌어 배치가 달라졌다. 닻 카드가 같은 화면 자리에 남게 옮긴다
-      const a = anchorRef.current, b = lay.cards.get(a.id), v = view.current;
-      anchorRef.current = null;
-      paint(b ? { k: v.k, x: a.sx - b.x * v.k, y: a.sy - b.y * v.k } : v);
-    } else if (view.current) paint(view.current);
+    else if (view.current) paint(view.current);
   }, [open, lay, vsize, paint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 미리 보기: 카드 위에 HOVER_MS 머물면(또는 초점) 카드 옆에. 오른쪽에 자리가 없으면 왼쪽
@@ -702,7 +673,7 @@ export function LineageMap() {
     return () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('click', onClick, true); };
   }, [todoOn]);
   useLayoutEffect(() => { if (todoOn && placeRef.current) placeRef.current(); }, [todoOn, lay, vsize, sumOpen]);
-  window.__mtTa = { view: () => (view.current ? { ...view.current } : null), fit: () => fit(false), flyTo, lay: () => layRef.current, set: (v) => paint(v), tags: () => tags, rail: RAIL, top: TOPH, label: () => lstepRef.current, sumW }; // 시험이 읽는다
+  window.__mtTa = { view: () => (view.current ? { ...view.current } : null), fit: () => fit(false), flyTo, lay: () => layRef.current, set: (v) => paint(v), tags: () => tags, rail: RAIL, top: TOPH, label: () => LABEL.ROOM, lfit: () => lqRef.current.fit, sumW }; // 시험이 읽는다
 
   if (!open) return null;
   const ids = lay ? lay.order : [];
@@ -734,10 +705,13 @@ export function LineageMap() {
             {lay.bands.map((b) => (
               <div key={`b:${b.id || 'none'}`} className={`mt-sm-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} data-today={b.today ? '1' : undefined} data-col={b.col || 0} style={{ left: b.x || 0, top: b.y, height: b.h, width: lay.W }}>
                 <div className="mt-sm-spine" style={{ width: lay.spine }}>
+                  {/* P377: 기둥 글 덩어리. 자리 크기(lay.px)로 그리고 paint가 배율마다 transform으로 줄인다(fitLabels) */}
+                  <div className="mt-sm-lq" data-lq="spine" data-w={lay.spine - 32} style={{ gap: lay.sgap }}>
                   <span className="fk" style={{ fontSize: lay.px.kind }}>{b.loose ? t('mmLine.loose') : t('mmLine.folder')}{lay.planned && b.today ? <span className="ftd" data-role="ln-band-today">{t('mmPlan.todayMark')}</span> : null}</span>
-                  <span className="fn" data-role="ln-band-name" style={{ fontSize: lay.px.name }}>{b.name}</span>
+                  <span className="fn" data-role="ln-band-name" title={lay.cutBands.has(b.name) ? b.name : undefined} style={{ fontSize: lay.px.name }}>{b.name}</span>
                   <span className="fs" data-role="ln-band-stat" style={{ fontSize: lay.px.stat }}><span>{t('mmTerr.workspaces', { n: b.nWs })}</span><span>{t('mmTerr.sessions', { n: b.sessions })}</span></span>
                   <span className="fbar" aria-hidden="true" style={{ height: lay.px.bar }}>{b.bar.map((c) => <i key={c.tier} className={`st-${ST[c.tier]}`} style={{ flexGrow: c.n }} />)}</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -745,8 +719,8 @@ export function LineageMap() {
               <div key={`r:${r.key || '-'}`} className={`mt-sm-row${r.first ? ' first' : ''}`} data-role="ta-isle" data-key={r.key} style={{ left: r.x, top: r.y, width: r.w, height: r.h }}>
                 {r.key ? <div className="mt-sm-grab" data-key={r.key} data-role="ln-row-grab" style={{ width: Math.max(LINE.HEADW, col0 + (r.ox || 0) - r.x - 40) }} /> : null}
                 {/* P157: 옮기기 안내는 풍선(title)이 아니라 Alt를 누른 동안에만 보이는 작은 글(.mt-sm-althint) */}
-                <div className="mt-sm-head" data-key={r.key} data-role="ta-isle-head" style={{ width: lay.headW, gap: (lay.heads.get(r.key) || {}).gap }}>
-                  <span className="wsn" style={{ fontSize: lay.px.ws }}><FolderIcon /><span data-role="ta-isle-name">{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
+                <div className="mt-sm-head" data-key={r.key} data-role="ta-isle-head" data-lq="head" data-w={lay.headW} style={{ gap: (lay.heads.get(r.key) || {}).gap }}>
+                  <span className="wsn" style={{ fontSize: lay.px.ws }}><FolderIcon /><span data-role="ta-isle-name" title={r.key && (lay.heads.get(r.key) || {}).cut ? r.name : undefined}>{r.key ? r.name : t('mmapGroup.noWorkspace')}</span></span>
                   {r.key ? <span className="mt-sm-althint" data-role="ln-alt-hint" style={{ fontSize: lay.px.hint }}>{t('mmLine.altMoveHint')}</span> : null}
                   <span className="wsc" style={{ gap: (lay.heads.get(r.key) || {}).cgap }}>{r.chips.map((c) => <span key={c.tier} className={`st-${ST[c.tier]}`} data-tier={c.tier} style={{ fontSize: lay.px.chip }}><i /><b>{c.n}</b> {t(`mmTerr.chip.${c.tier}`)}</span>)}</span>
                 </div>

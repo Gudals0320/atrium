@@ -46,10 +46,10 @@ test('배치: 꼬리표가 있는 카드 위를 tagRoom만큼 비우고 그 아�
   assert.deepEqual([...none.cards.values()].map((b) => b.y), [...base.cards.values()].map((b) => b.y));
 });
 
-test('창: 맵이 카드마다 꼬리표 수를 배치에 주고, 무리 배수 --tk를 배치 계단에서 쓴다', () => {
+test('창: 맵이 카드마다 꼬리표 수를 배치에 주고, 무리 배수 --tk는 P377부터 매 프레임 무리 요소에 바로(labelFit.tag)', () => {
   assert.match(jsx, /mergers, tags: tagRows \}\), \[[^\]]*tagRows\]\)/);
-  assert.match(jsx, /setProperty\('--tk', v\)/);
-  assert.match(jsx, /tagScale\(lay\.label\)/);
+  assert.match(jsx, /el\.style\.setProperty\('--tk', String\(f\.tag\)\)/);
+  assert.match(jsx, /querySelectorAll\('\[data-lq\], \.mt-sm-tags'\)/);
 });
 
 test('CSS: 세로 무리(작업 완료 아래, 할 일 위, 오른쪽 끝 맞춤), 얇은 줄은 테두리 위', () => {

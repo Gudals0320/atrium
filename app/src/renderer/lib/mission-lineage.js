@@ -34,13 +34,23 @@ export function spineWidth(names = [], stats = [], px = SPINE_PX) {
 // P178: 폴더 기둥 글(이름·종류·수·상태 막대)과 워크스페이스 줄 머리 글(이름·상태 알약·Alt 안내)은 배율이 작아져도 화면에서 거의 같은 크기로 읽힌다.
 // 세계 글 크기 = max(바탕 크기, 화면 목표 / 배율 계단). 배율 계단(lib/faces.js zoomStep, 1.1배마다)으로만 바뀌어 끌기·확대 중 매 프레임 다시 그리지 않는다.
 // 계단이 ON 이상이면(모든 글이 바탕 크기) 1(바뀜 없음). MIN = 글이 더 커지지 않는 계단(18%보다 멀면 글도 배율과 함께 작아진다: 좁은 창에서 이름표가 카드 자리를 다 먹지 않게)
-export const LABEL = { ON: 0.88, MIN: 0.18, SCREEN: { name: 15, kind: 10.5, stat: 11.5, ws: 14.5, chip: 11, hint: 10.5, bar: 4 }, BASE: { name: 22, kind: 12, stat: 13.5, ws: 18, chip: 12.5, hint: 12, bar: 6 } };
+// P377: ROOM = 이름표 자리를 잡는 계단(사람 결정 2026-11-26: 0.30). PC 세션 맵은 늘 이 계단의 글 크기로 기둥·줄 머리·띠 최소 높이를 잡고(배율과 상관없이 고정),
+//   글은 매 프레임 그 자리 안에서 transform으로 줄인다(labelFit). SPINEMAX·HEADMAX = 자리 계단(label < 1)에서 기둥·줄 머리 폭 상한(세계 px, 넘는 긴 이름은 말줄임)
+export const LABEL = { ON: 0.88, MIN: 0.18, ROOM: 0.3, SPINEMAX: 760, HEADMAX: 960, SCREEN: { name: 15, kind: 10.5, stat: 11.5, ws: 14.5, chip: 11, hint: 10.5, bar: 4 }, BASE: { name: 22, kind: 12, stat: 13.5, ws: 18, chip: 12.5, hint: 12, bar: 6 } };
 export const labelStep = (k) => { const s = zoomStep(k); return s >= LABEL.ON ? 1 : Math.max(LABEL.MIN, s); };
 // 배율 계단 s → 세계 글 크기(px, 소수 한 자리)
 export function labelPx(s = 1) {
   const out = {};
   for (const k of Object.keys(LABEL.BASE)) out[k] = Math.round(Math.max(LABEL.BASE[k], LABEL.SCREEN[k] / (s > 0 ? s : 1)) * 10) / 10;
   return out;
+}
+// P377: 배율 k에서 이름표 덩어리(기둥 = 폴더 이름 기준, 줄 머리 = 워크스페이스 이름 기준)를 자리 크기(labelPx(ROOM))에서 줄이는 배수(≤ 1)와 꼬리표 배수.
+//   화면 글 = k × 목표 × clamp(바탕/목표, 1/k, 1/ROOM): 가까이는 바탕 크기(폴더 이름 22), 그 아래 ROOM까지 화면 목표(15) 그대로, ROOM보다 멀면 배율과 함께 작아진다.
+//   셋 다 k에 대해 줄지 않는다(확대하면 화면 글이 커지기만 한다). 꼬리표는 tagScale(k)를 자리 배수 tagScale(ROOM)에서 멈춘다(자리 tagRoom(n, ROOM)과 같다)
+export const labelGrow = (k, key) => { const z = k > 0 ? k : 1; return Math.min(1 / LABEL.ROOM, Math.max(LABEL.BASE[key] / LABEL.SCREEN[key], 1 / z)); };
+export function labelFit(k) {
+  const r = (key) => Math.round(labelGrow(k, key) * LABEL.ROOM * 10000) / 10000;
+  return { spine: r('name'), head: r('ws'), tag: Math.round(Math.min(tagScale(k), tagScale(LABEL.ROOM)) * 1000) / 1000 };
 }
 // P335: PC 세션 맵 카드 오른쪽 위 꼬리표 무리(할 일 배지 위, 작업 완료 꼬리표 아래 = 위 테두리에 걸침, MissionLineage.jsx Card .mt-sm-tags).
 // 바탕(배율 계단 1) 꼬리표 높이 H·글 FONT(px), 둘 사이 GAP. 배율이 작아지면 이름표처럼 화면 글 SCREEN px를 지키게 키우되(tagScale) CAP배까지만
@@ -53,16 +63,16 @@ export const tagRoom = (n, s = 1, thin = false) => (n > 0 ? Math.ceil(tagScale(s
 
 // 줄 머리 상태 알약 한 개의 폭(글 + 점·틈·안 여백, em은 알약 글 크기)과 줄 머리 높이(위 여백 22 + 이름 줄 + 틈 + 알약 줄들)
 const chipW = (text, px) => glyphW(text, px) + px * 2.3;
-export function headBox(name, chips, px, minW = LINE.HEADW) {
+export function headBox(name, chips, px, minW = LINE.HEADW, maxW = Infinity, chipCh = 24) {
   const ws = px.ws, cp = px.chip, gap = Math.max(9, ws * 0.45), cgap = Math.max(5, cp * 0.4);
   const nameW = ws * 1.5 + glyphW(name, ws) * 1.04;
   const ws2 = chips.map((c) => chipW(c, cp));
   // 알약 줄은 이름 폭 또는 알약 글 24자 폭까지만 넓히고, 넘치면 다음 줄로(알약이 많아도 카드를 멀리 밀지 않게)
-  const w = Math.ceil(Math.max(minW, nameW, Math.min(ws2.reduce((a, b, i) => a + b + (i ? cgap : 0), 0), Math.max(nameW, cp * 24))));
+  const w = Math.max(minW, Math.min(maxW, Math.ceil(Math.max(minW, nameW, Math.min(ws2.reduce((a, b, i) => a + b + (i ? cgap : 0), 0), Math.max(nameW, cp * chipCh)))))); // P377: maxW 넘는 이름은 말줄임, 자리 계단은 알약 줄을 12자 폭에서 접는다(가까이 빈 폭을 줄인다)
   let lines = ws2.length ? 1 : 0, x = 0;
   for (const cw of ws2) { if (x && x + cgap + cw > w) { lines++; x = cw; } else x += (x ? cgap : 0) + cw; }
   const h = Math.ceil(22 + ws * 1.3 + (lines ? gap + lines * cp * 1.6 + (lines - 1) * cgap : 0));
-  return { w, h, gap, cgap };
+  return { w, h, gap, cgap, cut: nameW > w + 0.5 }; // P377: cut = 자리 계단에서 이름이 자리에 안 든다(말줄임, 창은 그때만 title)
 }
 
 // expanded: 깊이 접기를 편 카드 id들(Set). FOLD 단계보다 깊은 가지는 접는다
@@ -113,13 +123,16 @@ export function lineageLayout(graph, opts = {}) {
   // P157: 기둥 폭은 가장 긴 폴더 이름에 맞춘다. 워크스페이스 머리부터 오른쪽은 늘어난 만큼 민다
   const stats = spineText ? groups.flatMap((g) => spineText(g.keys.length, tree.nodes.filter((n) => g.keys.includes(wsOf(n.id))).length)) : [];
   // P178: 글이 커지면 기둥도 넓어진다(옛 멀리 단계 글 32·24px보다 좁아지지는 않는다). 줄 머리 폭·높이와 띠 최소 높이도 글을 따른다
-  L.SPINE = phone ? 0 : spineWidth(groups.map((g) => g.name), stats, { NAME: Math.max(SPINE_PX.NAME, px.name), STAT: Math.max(SPINE_PX.STAT, px.stat) });
+  // P377: 자리 계단(label < 1)에서는 기둥·줄 머리 폭에 상한(LABEL.SPINEMAX·HEADMAX)을 둔다. 기둥 글 줄 사이(sgap)도 글을 따른다
+  const room = !phone && label < 1;
+  const sgap = Math.max(7, Math.round(px.kind * 0.5));
+  L.SPINE = phone ? 0 : Math.max(LINE.SPINE, Math.min(room ? LABEL.SPINEMAX : Infinity, spineWidth(groups.map((g) => g.name), stats, { NAME: Math.max(SPINE_PX.NAME, px.name), STAT: Math.max(SPINE_PX.STAT, px.stat) })));
   L.HEADX = phone ? PHONE.PADX : LINE.HEADX + (L.SPINE - LINE.SPINE);
-  L.BANDMIN = Math.max(LINE.BANDMIN, Math.ceil(52 + px.kind * 1.3 + px.name * 1.2 + px.stat * 2.6 + 2 + 7 * 3 + 6 + px.bar + 24));
+  L.BANDMIN = Math.max(LINE.BANDMIN, Math.ceil(52 + px.kind * 1.3 + px.name * 1.2 + px.stat * 2.6 + 2 + sgap * 3 + 6 + px.bar + 24));
   // P202: 오늘·이전 이름표 자리. 두 열은 열마다 위 머리(SECH), 한 열은 두 칸 사이 구분 줄 칸(SEP, 줄 위아래에 이름표 한 줄씩). 글은 기둥 이름 글 크기를 따른다
   const SEC = phone ? { SECH: PHONE.SECH, SEP: PHONE.SEP } : { SECH: Math.ceil(Math.max(COLS2.HD, px.name * 2.2 + 36)), SEP: Math.ceil(Math.max(COLS2.SEP, px.name * 3.4 + 40)) };
   const heads = new Map();
-  if (!phone) for (const g of groups) for (const key of g.keys) heads.set(key, headBox(key ? nameOf(key) : '', chipCounts(tree.nodes.filter((n) => wsOf(n.id) === key).map((n) => tierOf(n.id))).map(chipStr), px));
+  if (!phone) for (const g of groups) for (const key of g.keys) heads.set(key, headBox(key ? nameOf(key) : '', chipCounts(tree.nodes.filter((n) => wsOf(n.id) === key).map((n) => tierOf(n.id))).map(chipStr), px, LINE.HEADW, room ? LABEL.HEADMAX : Infinity, room ? 12 : 24));
   L.HEADW2 = Math.max(LINE.HEADW, ...[...heads.values()].map((h) => h.w));
   // P198: 띠 세션은 나무 밖. 부모가 띠에 있는 세션은 나무 뿌리(띠 가장자리에서 옅은 선)
   const parentIn = (id) => { const p = tree.parent.get(id); return p && wsOf(p) === wsOf(id) ? p : null; };
@@ -393,7 +406,7 @@ export function lineageLayout(graph, opts = {}) {
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   const BW = two ? DX + W : phone ? nPages * W + (nPages - 1) * PHONE.PGAP : ncolPC > 1 ? ncolPC * W + (ncolPC - 1) * COLS2.GAP : W;
   const BH = two || ncolPC > 1 || usePlan ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
-  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : ncolPC, colDx: ncolPC > 1 ? W + COLS2.GAP : DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, planned: usePlan, ...(phone ? { phone: true, pages: nPages } : {}) };
+  return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : ncolPC, colDx: ncolPC > 1 ? W + COLS2.GAP : DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, sgap, cutBands: new Set(phone ? [] : groups.filter((g) => glyphW(g.name, px.name) * 1.06 + SPINE_PX.PAD > L.SPINE + 0.5).map((g) => g.name)), headW: L.HEADW2 || LINE.HEADW, heads, planned: usePlan, ...(phone ? { phone: true, pages: nPages } : {}) };
 
   // ---- P260: 줄 안 쌓기(PC·휴대폰 같은 규칙). 시작 칸 뿌리의 나무 → 다른 워크스페이스에서 온 것(1단계 칸) → 솔로(시작 칸, 차례 = 만든 차례).
   //   나무 사이는 GY*2(동료 뿌리끼리는 PGY), 솔로끼리는 GY. 쌓은 것이 없으면 null, 있으면 마지막 카드 아래 끝 y ----
