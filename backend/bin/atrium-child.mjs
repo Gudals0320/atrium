@@ -57,7 +57,9 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       --effort는 Codex면 -c model_reasoning_effort로 옮겨 런처 인자의 같은 값을 덮는다(low, medium, high, xhigh 등). Hermes면 준비된 뒤 보드가 /reasoning <값>을 넣는다(--tui가 --reasoning을 받지 않는다. 런처 인자의 --reasoning이 있으면 그 값을 따른다). omo면 --thinking으로 넘긴다(off, minimal, low, medium, high, xhigh, max. 런처 인자의 --thinking이 있으면 그 값을 따른다). 노력 수준을 받지 않는 종류면 무시했다고 알린다.
       --kind codex(다른 종류)는 보드 레일의 그 종류 런처 설정(추가 인자·모델, --model이 모델만 덮는다)으로 띄우고, 너의 승인 방식을 그 종류의 승인 인자로 옮긴다.
       준비될 때까지 기다린 뒤 워커 이름과 일 맡기기·읽기 명령을 돌려준다. --prompt로 맡겼으면 턴을 끝낸다(보고는 보드가 가져다준다). 수와 깊이에 상한은 없다.
-      --worktree는 claude -w로 워크트리를 만든다. 신뢰를 받지 않은 저장소면 신뢰 질문에서 멈추고(needs_trust) 사람에게 할 한 문장을 돌려준다.
+      --worktree <이름>은 브랜치 worktree-<이름>의 워크트리에서 띄운다. Claude Code는 claude -w가 만들고(자리는 Claude Code·사용자 hook이 정한다), 다른 종류(omo, codex 등)는 보드가 git worktree add로
+      <리포>/.claude/worktrees/<이름>에 만든 뒤 그 폴더에서 띄운다(그 브랜치의 워크트리가 이미 있으면 다시 쓴다). 신뢰를 받지 않은 저장소·폴더면 신뢰 질문에서 멈추고(needs_trust) 사람에게 할 한 문장을 돌려준다.
+      omo(OMO)는 체크아웃된 브랜치에 파동 워크트리를 직접 합친다. 코드를 고치는 일은 --worktree로 띄운다(주 체크아웃에서 띄우면 보드가 경고한다).
       --head는 너의 워커가 아니라 따로 일을 이끄는 세션(헤드)으로 띄운다. 첫 요청 뒤 보드가 부모 관계를 뗀다. 그 뒤로 일을 시키거나 기다리지 않는다(--worktree와 함께 쓰지 않는다).
   atrium relate <이름> sub|peer|none|auto
       나와 그 세션의 관계를 바꾼다: 그 세션이 나의 sub(하위), peer(동료), none(독립: 서로 보고하거나 맡기지 않음), auto(자동: 띄움·역할 선 = 하위).
@@ -279,11 +281,13 @@ async function main() {
       const H = x.harness;
       const base = H.base === 'bare' ? '런처 없음(맨 명령)' : `런처 ${H.launcher}${H.base === 'rail' ? '(보드 레일의 기본 설정)' : ''}`;
       const appr = { parent: `너의 승인 방식 ${H.parentPermissionMode}을 옮김`, launcher: '런처의 인자', harness: `${x.kind}의 사용자 설정(너의 승인 방식 ${H.parentPermissionMode}은 옮기지 않음)` }[H.approvalFrom] || '옮기지 않음';
-      say(`  폴더 ${x.cwd}${x.model ? ` · 모델 ${x.model}` : ''} · ${base}`);
+      say(`  폴더 ${x.cwd}${x.worktreeVia === 'git' ? ` · 워크트리 ${x.worktree}(브랜치 ${x.worktreeBranch}, 보드가 git worktree ${x.worktreeReused ? '있던 것을 다시 씀' : 'add로 만듦'})` : ''}${x.model ? ` · 모델 ${x.model}` : ''} · ${base}`); // P382
       say(`  명령 ${[H.start || x.kind, ...H.argv].join(' ')} · 승인: ${appr}${H.effort ? ` · 노력 ${H.effort}${x.kind === 'hermes' ? `(준비되면 보드가 /reasoning ${H.effort}을 넣는다)` : x.kind === 'omo' ? `(--thinking ${H.effort}로 넘긴다)` : '(런처 인자의 같은 값을 덮음)'}` : ''}`); // P208. P299: Hermes
       say(`  ${x.kind}는 hook이 없다. 보드가 화면으로 끝과 답을 보고, atrium wait가 같은 모양으로 돌려준다`);
     } else say(`  폴더 ${x.cwd}${x.worktree ? ` · 워크트리 ${x.worktree}(claude -w${x.gate ? ', 신뢰를 받은 뒤' : ''})` : ''}${x.model ? ` · 모델 ${x.model}` : ''}${x.effort ? ` · 노력 ${x.effort}` : ''} · 승인 방식 ${x.permissionMode}`);
     if (x.effortNote) say(`  ${x.effortNote}`); // P208: 노력 수준을 받지 않는 종류
+    if (x.warning) say(`  ${x.warning}`); // P382: omo가 주 체크아웃에서 뜸
+    if (x.branchNote) say(`  ${x.branchNote}`); // P382: OMO가 쓰는 브랜치
     const w = x.waited;
     if (x.needsTrust) { trustLines(x); say(`응답 읽기: ${x.next.read}`); say(counts(x.counts)); return; }
     if (!w) say(`  상태: 기다리지 않음(--no-wait). 준비되면 보드가 첫 요청을 넣는다. 끝나기 기다리기: atrium wait ${x.name}`);

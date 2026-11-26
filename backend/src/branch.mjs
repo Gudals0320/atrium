@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { workspaceOf, gitProbe } from './git.mjs';
+import { boardMakesWorktree, makeChildWorktree, undoChildWorktree, omoMainWarning, omoBranchNote } from './child-worktree.mjs'; // P382: 다른 하네스의 --worktree, OMO 경고
 import { uploadsReadRule } from './uploads.mjs'; // P162
 import { ROLE_RE } from './links.mjs';
 import { SIZE_STEPS } from './canvas.mjs';
@@ -275,7 +276,7 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
    - 이름은 사람이 보드에서 보고 무슨 일을 맡은 워커인지 알 수 있게 네가 생각해서 짓는다. 맡긴 일이나 역할을 짧게 말한다(예: api-tests, reviewer, ko-copy, login-bug). w1·ds1 같은 번호 이름은 일이 정말 하찮을 때만 쓴다. 예를 외우지 말고 이번 일에 맞게 짓는다.
    - 규칙: 영문 소문자로 시작, 소문자·숫자·-·_ 만, 32자까지, 판 전체에서 하나. 겹친다는 답(\`name_taken\`)이 오면 다른 이름으로 다시 짓는다.
    - 워커가 준비되면 돌아온다.
-   - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. Claude Code가 \`claude -w\`로 브랜치 \`worktree-<이름>\`의 워크트리를 만든다(자리는 Claude Code가 정한다). 직접 \`git worktree add\`를 하거나 보드 외부 형제 폴더를 만들지 않는다.
+   - 코드를 고치는 조각은 \`--worktree <이름>\`을 붙인다. 브랜치 \`worktree-<이름>\`의 워크트리가 생긴다(Claude Code는 \`claude -w\`, 다른 종류는 보드가 만든다). 직접 \`git worktree add\`를 하거나 보드 외부 형제 폴더를 만들지 않는다. omo는 체크아웃된 브랜치에 직접 합치니 늘 \`--worktree\`로.
    - 다른 폴더는 \`--cwd C:/Workspace/x\`(슬래시로). 역할 이름 \`--role 리뷰어\`(기본 워커).
    - 모델과 추론 수준은 조각에 맞게 고른다: 찾기·요약·단순 수정은 \`--model haiku\`나 \`--effort low\`, 설계·어려운 디버깅은 \`--effort high\`. 빼면 너의 것을 물려받는다.
    - 사용자가 모델을 말로 하면("glm flash", "opus", "gpt-6.1-sol") \`atrium models\`로 목록을 보고 가장 맞는 줄의 명령으로 띄운다. \`--model "glm flash"\`처럼 들은 말을 줘도 보드가 푼다. 정확한 ID를 사용자에게 묻지 않고, 보드가 후보 여럿을 돌려줄 때만 묻는다. 사용자가 말한 모델·워커를 서브에이전트로 갈음하지 않는다.
@@ -760,13 +761,15 @@ export class Branch {
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw apiError('bad_request', `폴더를 찾을 수 없습니다: ${o.cwd}. Windows 경로는 슬래시로 입력하세요 (--cwd C:/Workspace/x). 따옴표로 묶지 않은 백슬래시는 Bash에서 제거됩니다.`);
     const worktree = o.worktree ? String(o.worktree) : null;
     if (worktree && !WORKTREE_RE.test(worktree)) throw apiError('bad_request', `워크트리 이름에는 영문, 숫자, ., -, _만 사용할 수 있습니다: ${worktree}`);
-    if (worktree && !claude) throw apiError('bad_request', "--worktree는 Claude Code(claude -w)에서만 사용할 수 있습니다.");
-    if (worktree && !(await gitProbe(cwd)).isRepo) throw apiError('bad_request', `--worktree는 Git 저장소 안에서만 사용할 수 있습니다: ${cwd}`);
+    // P382: Claude Code가 아닌 하네스는 판이 git worktree add로 만든 폴더에서 띄운다(child-worktree.mjs). omo는 주 체크아웃이면 경고 한 줄
+    const probe = worktree || kind === 'omo' ? await gitProbe(cwd) : null;
+    const warning = omoMainWarning({ kind, worktree, probe });
+    if (worktree && !probe.isRepo) throw apiError('bad_request', `--worktree는 Git 저장소 안에서만 사용할 수 있습니다: ${cwd}`);
     // P36: 커밋이 없는 저장소는 워크트리를 만들 곳이 없다. 판과 명령은 빈 커밋을 대신 만들지 않는다
     if (worktree && !repoHasCommit(cwd)) throw apiError('needs_commit', `이 저장소(${cwd.split(path.sep).join('/')})에 커밋이 없어 워크트리를 만들 수 없습니다. 먼저 첫 커밋을 만드세요. 보드에서 대신 생성하지는 않습니다.`);
     // Claude Code는 신뢰를 받지 않은 저장소에서 -w를 신뢰 대화상자 없이 거부하고 바로 끝난다("Workspace trust not yet accepted", P8·P36 시험).
     // P36: 미리 거부하지 않고 신뢰 관문으로 띄운다(그 저장소에서 claude를 띄워 신뢰 질문을 노드에 보이고, 사람이 답하면 claude -w로 다시 띄운다)
-    const gate = worktree && !route.sdk && predictTrust(cwd, b.cfg.claudeJson).needsTrust ? worktree : null; // P363: SDK 세션(claude -p)은 신뢰 화면이 없다(관문 없이 -w)
+    const gate = worktree && claude && !route.sdk && predictTrust(cwd, b.cfg.claudeJson).needsTrust ? worktree : null; // P363: SDK 세션(claude -p)은 신뢰 화면이 없다(관문 없이 -w)
     // P41: 모델은 풀린 값(호출자면 호출자의 모델). 빼면 부모의 것
     // P96: 다른 종류(codex 등)는 판 레일의 그 종류 호출자를 바탕으로 띄우고, 부모의 권한 모드를 그 하네스의 승인 인자로 옮긴다
     const other = claude ? null : otherKindPlan({ route, permissionMode: parent.permissionMode || 'manual', lists: this.launchersData() });
@@ -794,18 +797,19 @@ export class Branch {
     const info = { role, depth, by: parent.sessionId, at: Date.now(), order: this.nextOrder(parent.sessionId), worktree, ...(worktree ? { wtHome: 1 } : {}), kind, via: 'atrium child', inherited: { cwd: !o.cwd, model: claude && !o.model && !o.launcher, effort: claude && !o.effort && !viaLauncher && !!parent.effort, permissionMode: other ? other.record.approvalFrom === 'parent' : !viaLauncher }, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(other ? { harness: other.record } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(gate ? { gate: 'trust' } : {}), ...(head ? { head: true } : {}), ...(peer ? { relation: 'peer' } : {}) };
 
     this.pending.push(parent.sessionId); this.pendingNames.add(name);
-    let out;
+    let out, gw = null;
     try {
+      if (worktree && boardMakesWorktree(kind)) { gw = await makeChildWorktree({ cwd, name: worktree, probe }); info.wtVia = 'git'; info.wtPath = gw.dir.split(path.sep).join('/'); } // P382
       // 신뢰 관문이면 처음에는 -w 없이 띄운다(그 저장소의 신뢰 질문이 뜬다)
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
-      const base = { cwd, name, worktree: gate ? null : worktree, parentSessionId: parent.sessionId, branch: info };
+      const base = { cwd: gw ? gw.dir : cwd, name, worktree: gate || gw ? null : worktree, parentSessionId: parent.sessionId, branch: info };
       // P96: 다른 종류는 그 호출자 값(모델·추가 인자에 옮긴 승인 인자를 더한 것)으로, 호출자가 없으면 맨 명령에 같은 인자로. 권한 모드는 판 기록용으로 부모의 것
       const oe = effortPlan && effortPlan.applied ? { effort: otherEffort } : {}; // P208
       const sp = other ? (other.launcher ? { ...base, launcherDef: { ...other.launcher, model: other.model || '', args: joinArgs(other.args) }, permissionMode: parent.permissionMode, ...oe } : { ...base, kind, model: other.model, args: other.args, permissionMode: parent.permissionMode, ...oe }) // P115: 모델과 추가 인자를 따로(어댑터가 모양을 정한다)
         : viaLauncher ? { ...base, launcher: route.launcher.id, effort: o.effort ? effort : undefined, ...(route.sdk && o.model ? { model } : {}) }
         : route.launcherDef ? { ...base, launcherDef: route.launcherDef, model, effort, permissionMode: parent.permissionMode }
         : { ...base, kind, model, effort, permissionMode: parent.permissionMode, ...(route.args ? { args: route.args } : {}) };
-      out = await b.spawn(sp);
+      try { out = await b.spawn(sp); } catch (e) { if (gw) { await undoChildWorktree(gw, (probe && (probe.mainRoot || probe.root)) || cwd); b.log(`branch child ${name}: spawn failed, removed its worktree ${gw.dir}`); } throw e; }
     } finally { this.pending.splice(this.pending.indexOf(parent.sessionId), 1); this.pendingNames.delete(name); }
     const child = b.sessions.get(out.sessionId);
     if (!child) throw apiError('spawn_failed', "하위 세션이 보드에 등록되지 않았습니다.");
@@ -815,11 +819,12 @@ export class Branch {
     b.linkEvent(l, 'spawn', `atrium child ${name}${peer ? ' --peer' : ''}`, { by: 'atrium child', paneId: child.paneId, kind, depth, relation }, { quiet: true });
     // P156: 동료면 일 관계를 저장한다(출처 agent, 알림 없음: 띄운 쪽은 이 응답, 띄운 세션은 첫 요청 앞 줄로 안다)
     if (peer) this.setRelation(parent, child, 'peer', { source: 'agent', by: parent.name, quiet: true });
-    const notice = head ? headNotice({ name: child.name, kind }) : peer ? peerNotice({ role, name: child.name, kind }) : childNotice({ role, name: child.name, kind, depth }); // P116: 판의 이름과 atrium 명령
+    const branchNote = gw ? omoBranchNote({ kind, branch: gw.branch, name }) : null; // P382
+    const notice = [head ? headNotice({ name: child.name, kind }) : peer ? peerNotice({ role, name: child.name, kind }) : childNotice({ role, name: child.name, kind, depth }), warning, branchNote].filter(Boolean).join('\n'); // P116: 판의 이름과 atrium 명령. P382: OMO 경고·브랜치 표시
     b.linkEvent(l, 'role', role, { notice, via: 'command' });
-    b.store.addEvent(parent.sessionId, 'branch_child', { child: name, sessionId: child.sessionId, role, depth, cwd: cwd.split(path.sep).join('/'), workspace: ws.key, worktree, kind, model, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(other ? { harness: { ...other.record, argv: other.argv, ...(other.launcher && other.launcher.startCommand ? { start: other.launcher.startCommand } : {}) } } : {}) }); // P309: start(실행 명령, omh 등)
+    b.store.addEvent(parent.sessionId, 'branch_child', { child: name, sessionId: child.sessionId, role, depth, cwd: cwd.split(path.sep).join('/'), workspace: ws.key, worktree, ...(gw ? { wtVia: 'git', wtPath: info.wtPath, wtReused: gw.reused } : {}), ...(warning ? { warning } : {}), kind, model, ...(viaLauncher || (other && other.launcher) ? { launcher: (viaLauncher ? route.launcher : other.launcher).name } : {}), ...(route.resolved ? { resolved: route.resolved } : {}), ...(other ? { harness: { ...other.record, argv: other.argv, ...(other.launcher && other.launcher.startCommand ? { start: other.launcher.startCommand } : {}) } } : {}) }); // P309: start(실행 명령, omh 등)
     b.store.addEvent(child.sessionId, 'branch_parent', { parent: parent.name, parentSessionId: parent.sessionId, role, depth });
-    b.log(`branch child ${parent.name} → ${name} (${kind}, ${depth}단계, ws=${ws.key}${worktree ? `, worktree ${worktree}` : ''})`);
+    b.log(`branch child ${parent.name} → ${name} (${kind}, ${depth}단계, ws=${ws.key}${worktree ? `, worktree ${worktree}${gw ? ` (git ${gw.reused ? 'reused' : 'add'} ${info.wtPath})` : ''}` : ''}${warning ? ', omo in main checkout' : ''})`);
     // 명령의 응답이 부모에게 닿지 않았으면(명령이 시간 제한으로 끊김 등) F2처럼 판이 알림을 보낸다
     if (res) res.once('close', () => { if (!res.writableFinished && b.sessions.has(parent.sessionId)) { const d = b.queue.enqueue(parent.sessionId, notice); b.linkEvent(l, 'notice', notice, { deliveryId: d.deliveryId, why: 'command response lost' }, { quiet: true }); } });
 
@@ -849,7 +854,7 @@ export class Branch {
     const needsTrust = state === 'trust_wait' || (wait && wait.state === 'trust_wait') || (!!gate && !['exited', 'closed', 'error'].includes(state) && this.gated(child.sessionId));
     return {
       name, sessionId: child.sessionId, agentName: child.agentName, paneId: child.paneId, kind, role, depth,
-      relation: head ? null : relation, relationText: head ? null : peer ? `동료(@${name}는 너의 하위 워커가 아니다. 결과를 보내오지 않고 한 일은 보드의 동료 소식에 남는다: atrium news ${name})` : `하위 워커(@${name}는 너의 워커다. 끝나면 너에게 보고한다)`, /* P156 */ cwd: cwd.split(path.sep).join('/'), workspaceKey: ws.key, worktree, model: child.model || model, effort: child.effort || effort || (effortPlan && effortPlan.applied ? otherEffort : null),
+      relation: head ? null : relation, relationText: head ? null : peer ? `동료(@${name}는 너의 하위 워커가 아니다. 결과를 보내오지 않고 한 일은 보드의 동료 소식에 남는다: atrium news ${name})` : `하위 워커(@${name}는 너의 워커다. 끝나면 너에게 보고한다)`, /* P156 */ cwd: (gw ? gw.dir : cwd).split(path.sep).join('/'), workspaceKey: ws.key, worktree, worktreeVia: worktree ? (gw ? 'git' : 'claude-w') : null, worktreePath: gw ? info.wtPath : null, worktreeBranch: worktree ? (gw ? gw.branch : 'worktree-' + worktree) : null, worktreeReused: gw ? gw.reused : null, warning, branchNote, model: child.model || model, effort: child.effort || effort || (effortPlan && effortPlan.applied ? otherEffort : null),
       effortNote: effortPlan && effortPlan.ignored ? effortIgnoredLine(kind, effortPlan.why === 'launcherArgs' ? effortPlan.effort : otherEffort, effortPlan.why || null) : null, // P299: Hermes 까닭 // P208: 노력 수준을 받지 않는 종류
       launcher: viaLauncher ? route.launcher.name : other && other.launcher ? other.launcher.name : null, resolved: route.resolved || null,
       gateway: route.gateway || null, inheritedGateway: route.type === 'inherit-gateway' ? route.gateway : null, // P41
