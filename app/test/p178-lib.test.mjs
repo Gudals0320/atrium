@@ -93,13 +93,13 @@ test('줄 머리 상자: 이름과 알약이 들 만큼 넓고, 알약이 넘치
   assert.ok(long.w >= 'a-very-long-workspace-name-here'.length * 0.6 * px.ws);
 });
 
-test('창: 기둥·줄 머리 글 크기는 배치(lay.px)에서, 계단은 움직임이 멈춘 뒤에 바꾸고 닻 카드를 제자리에', () => {
+test('창: 기둥·줄 머리 글 크기는 배치(lay.px)에서. P377부터 배치는 늘 자리 계단(LABEL.ROOM)이고 멈춘 뒤 계단 바꾸기·닻 옮기기는 없다(p377-lib)', () => {
   const src = read('MissionLineage.jsx');
-  assert.match(src, /lineageLayout\(g2, \{ \.\.\.layOpts, label: lstep \}\)/);
+  assert.match(src, /lineageLayout\(g2, \{ \.\.\.layOpts, label: LABEL\.ROOM \}\)/);
   assert.match(src, /fontSize: lay\.px\.name/);
   assert.match(src, /fontSize: lay\.px\.ws/);
-  assert.match(src, /delete root\.dataset\.moving; setIk\(\); checkStep\(\);/);
-  assert.match(src, /anchorRef\.current/);
+  assert.match(src, /delete root\.dataset\.moving; setIk\(\); \}/);
+  assert.ok(!/checkStep|anchorRef|lstep/.test(src));
 });
 
 const ev = (target, extra = {}) => ({ key: 'Tab', type: 'keydown', target, ...extra });
