@@ -108,7 +108,7 @@ test('P116 계약: 계약 2, 동사 prompt·wait·read(인자·출력 모양), �
   assert.deepEqual(by.prompt.args, ['<이름>', '"<할 일>"', '[--wait | --steer]', '[--raw]', '[--timeout ms]', '[--json]']); // P380: --raw. P248: --steer(= --now). P143: --now, P194: --case, P237: --talk(더하기만 해 계약은 그대로)
   assert.deepEqual(by.prompt.out, ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next', 'unit']); // P180: unit, P237: talk(더하기만)
   assert.deepEqual(by.wait.out, ['name', 'agentName', 'kind', 'status', 'state', 'ms', 'answer', 'ask', 'error', 'delivery', 'next', 'unit']); // P180
-  assert.deepEqual(by.read.out, ['name', 'agentName', 'kind', 'state', 'lines', 'source', 'text', 'answer', 'next']);
+  assert.deepEqual(by.read.out, ['name', 'agentName', 'kind', 'state', 'lines', 'source', 'text', 'answer', 'record', 'next']); // P381: omo 기록 요약
   assert.equal(EXIT.timeout, 3);
   assert.ok(contractJson().waitStatus.includes('waiting'));
   const h = shortHelp();

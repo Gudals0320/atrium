@@ -97,6 +97,7 @@ import { m, confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이스 지우기 판단
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META, syncWsGroups, wsLabels } from './ws-groups.mjs'; // P44: 가상 그룹. P91: 폴더 위계 묶음(저절로)
 import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel, readPiLastAnswer, resumeModel } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
+import { readOmoRecord, omoAskOf, omoRecordView, newOmoRecord } from './omo-record.mjs'; // P381: omo 기록의 열린 질문·할 일·goal
 import { codexHomeOf } from './codex-models.mjs';
 import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
 import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
@@ -1073,6 +1074,7 @@ export class Backend {
       if ((e.status === 'idle' || e.status === 'done') && !s.rt.term.agentSessionId) this.refreshAgent(s);
       if (!this.hooked(s)) {
         // hook이 없는 세션: 제출 확인은 터미널 상태 working으로, 마지막 답은 턴이 끝난 화면 끝으로 대신한다(F5)
+        if (s.kind === 'omo') { this.refreshOmoRecord(s); if (e.status !== 'working') this.omoRecordLater(s, e.status); } // P381: 질문(막힘·쉼)은 기록에서 본문을 읽는다. 기록이 늦게 적힐 수 있어 잠깐 다시 본다
         if (e.status === 'working') this.queue.onAgentWorking(s.sessionId);
         if ((prev === 'working' || prev === 'blocked') && (e.status === 'idle' || e.status === 'done') && !this.queue.unsubmitted(s.sessionId)) await this.readScreenAnswer(s); // P184: 첫 요청이 입력 칸에 남은 채 끝난 시작 표시(MCP)는 답으로 읽지 않는다
         if (!s.adoptNamed) this.refreshAdoptedName(s);
@@ -1420,6 +1422,42 @@ export class Backend {
       if (i < tries - 1) await new Promise((r) => setTimeout(r, gapMs));
     }
     return false;
+  }
+
+  // P381: omo 기록을 읽어 열린 질문(rt.recordAsk)을 둔다. 기록을 못 읽으면(꼴이 다름) 세션마다 backend.log에 한 줄 남기고 화면(screenAsk)으로 물러난다 → 바뀌었으면 true
+  refreshOmoRecord(s) {
+    if (s.kind !== 'omo' || !s.rt) return false;
+    let file = null;
+    try { s._modelFind = s._modelFind && s._modelFind.file ? s._modelFind : null; file = this.modelFileOf(s); } catch { file = null; }
+    if (!file) return false;
+    let st;
+    try { st = readOmoRecord(file, s._omoRec || null); } catch (e) { st = { ...(s._omoRec || newOmoRecord(file)), ok: false, error: e.message }; }
+    if (!st) return false;
+    s._omoRec = st;
+    if (st.ok === false && !s._omoRecWarned) { s._omoRecWarned = true; this.log(`omo record unreadable, screen fallback: ${s.name} ${path.basename(file)}${st.error ? ` (${st.error})` : ''}`); }
+    const ask = omoAskOf(st);
+    const was = JSON.stringify(s.rt.recordAsk || null);
+    s.rt.recordAsk = ask;
+    if (was === JSON.stringify(ask)) return false;
+    this.store.addEvent(s.sessionId, 'record_ask', ask ? { id: ask.toolUseId, questions: ask.questions.length, waitingHuman: ask.waitingHuman, more: ask.more } : { closed: true });
+    return true;
+  }
+  // P381: 터미널 상태(막힘·쉼)가 기록보다 먼저 올 수 있다. 그 상태가 이어지는 동안 몇 번 다시 읽고 바뀌면 알린다
+  omoRecordLater(s, status) {
+    const tok = (s._omoLater = (s._omoLater || 0) + 1);
+    (async () => {
+      for (const wait of [300, 800, 1600, 3000]) {
+        await sleep(wait);
+        if (s._omoLater !== tok || !this.sessions.has(s.sessionId) || s.rt.term.status !== status) return;
+        if (this.refreshOmoRecord(s)) { this.store.saveRuntime(s.sessionId, s.rt); this.broadcastSession(s, { cause: 'record:ask' }); }
+      }
+    })().catch(() => {});
+  }
+  // P381: atrium read --json의 기록 요약(omo만)
+  omoRecordOf(s) {
+    if (s.kind !== 'omo') return undefined;
+    this.refreshOmoRecord(s);
+    return omoRecordView(s._omoRec || null);
   }
 
   // P270: dsh의 마지막 답은 기록(zstd 프레임 JSONL)의 마지막 assistant/message 글이다(화면은 전체 화면 TUI라 고르기 어렵다).
