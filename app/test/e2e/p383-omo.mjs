@@ -190,7 +190,7 @@ async function peek() {
 }
 
 async function stop() {
-  for (const n of ['o1', 'o2', 'o3', 'ld']) { try { log(atrium('kill', n, '--yes').trim().slice(0, 200)); } catch (e) { log('kill ' + n + ' ' + e.message.slice(0, 160)); } }
+  for (const n of ['o1', 'o2', 'o3', 'o4', 'ld']) { try { log(atrium('kill', n, '--yes').trim().slice(0, 200)); } catch (e) { log('kill ' + n + ' ' + e.message.slice(0, 160)); } }
   await sleep(3000);
   try { log(atrium('terminal', 'stop', '--yes').trim().slice(0, 200)); } catch (e) { log('terminal stop ' + e.message.slice(0, 160)); }
   try { log(atrium('backend', 'stop').trim().slice(0, 200)); } catch (e) { log('backend stop ' + e.message.slice(0, 160)); }
