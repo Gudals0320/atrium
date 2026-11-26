@@ -309,7 +309,7 @@ export function dshInputBox(text) {
 // 긴 글은 입력 칸에서 접히거나([Pasted text #1 +N lines], Codex는 [Pasted Content N chars]) 잘릴 수 있어 첫머리(40자)로 본다. kind: 'claude' | 'codex'
 const flatText = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 export function promptOnScreen(screenText, prompt, kind = 'claude') {
-  const box = kind === 'codex' ? codexInputBox(screenText) : kind === 'dsh' ? dshInputBox(screenText) : kind === 'hermes' ? hermesInputBox(screenText) : claudeInputBox(screenText); // P270: dsh. P298: hermes
+  const box = kind === 'codex' ? codexInputBox(screenText) : kind === 'dsh' ? dshInputBox(screenText) : kind === 'hermes' ? hermesInputBox(screenText) : kind === 'omo' ? omoInputBox(screenText) : claudeInputBox(screenText); // P270: dsh. P298: hermes. P383: omo
   const want = flatText(prompt);
   const head = want.slice(0, 40);
   // P184: 여러 줄 글은 화면에서 첫 줄 뒤가 다음 줄로 넘어간다. 첫 줄이 짧으면(30자 미만) 그 첫 줄(8자 이상)로도 본다
@@ -421,6 +421,18 @@ export function omoInputBox(text) {
   if (!box.found) return box;
   const t = box.text.replace(/^❯\s?/, '').trim();
   return { ...box, text: t, rows: t ? box.rows : 0 };
+}
+
+// P383: omo 화면(마지막 답을 기록에서 못 읽어 화면에서 고른 글)의 실패한 턴 표시 → { type, message } | null.
+//   omo 상태 줄은 실패한 턴 뒤 "(OmO Native …) failed · provider_error"를 보이고, 그 위에 "Error: <오류 글>" 줄이 있다(P382 실시험).
+//   상태 줄 꼴(failed · <낱말>)만 실패로 본다. 답 글에 든 "Error:"만으로는 실패로 보지 않는다(오류를 설명하는 답일 수 있다)
+const FAIL_STATUS_RE = /\bfailed\s*·\s*([a-z][a-z0-9_]*)/i;
+export function screenTurnFailure(text) {
+  const t = String(text || '');
+  const m = t.match(FAIL_STATUS_RE);
+  if (!m) return null;
+  const e = t.split('\n').map((l) => l.trim()).filter((l) => /^Error:\s*\S/.test(l)).pop();
+  return { type: m[1], message: e ? e.replace(/^Error:\s*/, '').slice(0, 300) : null };
 }
 
 // P139: ANSI 화면(hc 관찰 붙기로 받은 지금 화면, adapter._paint)을 줄마다 글자와 그 글자의 흐림(SGR 2)·뒤집힘(SGR 7)으로 푼다.

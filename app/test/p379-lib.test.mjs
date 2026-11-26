@@ -74,12 +74,13 @@ test('P379 확대를 viewport로 막지 않는다(두 손가락 확대를 남긴
 });
 
 test('P379 스티어링을 받지 않는 세션: 휴대폰 줄의 orch로 까닭은 orchestrates, 스티어링을 골라도 대기열로 보낸다', () => {
-  const omo = { sessionId: 'o', name: 'o', kind: 'omo', state: 'working', orch: { on: true } };
+  // P383: OmO는 스티어링을 받게 되어(사용자 결정) 막히는 자체 오케스트레이션의 예는 Hermes다
+  const orchH = { sessionId: 'o', name: 'o', kind: 'hermes', state: 'working', orch: { on: true } };
   const claudeOrch = { sessionId: 'c', name: 'c', kind: 'claude', state: 'working', orch: { on: true } };
-  assert.equal(steerBlock(omo), 'orchestrates');
+  assert.equal(steerBlock(orchH), 'orchestrates');
   assert.equal(steerBlock(claudeOrch), 'orchestrates', 'claude 위 오케스트레이션 런처도 휴대폰이 미리 안다');
-  assert.equal(steerBlock({ ...omo, orch: undefined }), 'kind', '줄에 orch가 없으면 종류 까닭(고치기 전 휴대폰)');
-  for (const s of [omo, claudeOrch, { kind: 'opencode' }, { kind: 'claude', hooked: false }]) {
+  assert.equal(steerBlock({ ...orchH, orch: undefined }), 'kind', '줄에 orch가 없으면 종류 까닭(고치기 전 휴대폰)');
+  for (const s of [orchH, claudeOrch, { kind: 'opencode' }, { kind: 'claude', hooked: false }]) {
     const p = sendPlan(s, 'hi', { steer: true });
     assert.equal(p.method, 'session.send');
     assert.ok(!('steer' in p), '실패시키지 않고 대기열(steer 없이 보통 보내기)');

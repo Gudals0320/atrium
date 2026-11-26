@@ -62,20 +62,24 @@ export function bgOnlyOf(rt, state, bg, { kind = 'claude', hooked = true } = {})
 // 입력 칸에 쓰던 글이 있거나 입력 칸을 못 읽으면 넣지 않는다(_typeNow). 막힌 패널은 터미널의 prompt가 글을 넣기 전에 거부한다(agent_blocked)
 // P271(이슈 #19): 일하는 중인 Codex도 받는다. Codex는 일하는 중 입력 칸의 글에 Enter를 치면 지금 턴에 끼워 넣는다(Tab은 턴 뒤로 미룬다).
 //   판은 붙여 넣고 화면에서 다 들어간 것을 본 뒤 Enter를 친다(adapter.pastePrompt). 제출 확인은 화면(입력 칸이 비고 대화에 보임, P184)
+// P383: OmO(omo)는 일하는 중 Enter가 스티어링 대기열이다(지금 턴의 도구 호출을 마친 뒤 다음 모델 호출 전에 들어간다). 자체 오케스트레이션이어도 스티어링을 받는다
+export const STEER_ORCH_KINDS = new Set(['omo']);
+const orchBlocks = (o, kind) => !!(o && o.on !== false) && !STEER_ORCH_KINDS.has(kind || 'claude');
 export function canTypeNow(view) {
-  if (view && view.orch) return false; // P296: 대기열만
+  if (view && orchBlocks(view.orch, view.kind)) return false; // P296: 대기열만(P383: OmO는 뺀다)
   if (!view || view.closed || !view.termConnected || !view.agentPresent || view.state !== 'working') return false;
   const kind = view.kind || 'claude';
-  return kind === 'codex' || (kind === 'claude' && !!view.hooked);
+  return kind === 'codex' || kind === 'omo' || (kind === 'claude' && !!view.hooked); // P383: 일하는 OmO는 입력 칸에 글+Enter(스티어링 대기열)
 }
 // P248: 스티어링(일하는 중에 입력 칸에 넣기)을 받을 수 없는 세션의 까닭 | null. 상태와 상관없이 종류로 정한다(쉬는 동안 고른 스티어링도 같다)
 //   kind: Claude Code·Codex가 아니다(opencode 등), no_hook: hook이 없는 Claude Code(받아들인 세션). canTypeNow의 종류 조건과 같다(P271: Codex는 받는다)
 // P296: orchestrates — 자체 오케스트레이션 세션은 입력을 대기열로만 받는다(안의 오케스트레이션이 일의 중심이다)
+// P383: OmO(omo)는 자체 오케스트레이션이어도 스티어링을 받는다(사용자 결정 2026-11-27). Hermes 등 다른 자체 오케스트레이션은 그대로 막는다
 export function steerBlock(s, hooked = s ? s.hooked !== false : false) {
   if (!s) return 'kind';
-  if (s.orch && s.orch.on) return 'orchestrates';
   const kind = s.kind || 'claude';
-  if (kind === 'codex') return null;
+  if (s.orch && s.orch.on && !STEER_ORCH_KINDS.has(kind)) return 'orchestrates';
+  if (kind === 'codex' || kind === 'omo') return null;
   if (kind !== 'claude') return 'kind';
   return hooked ? null : 'no_hook';
 }
@@ -118,9 +122,10 @@ export class DeliveryQueue extends EventEmitter {
   //   손쓰기로 세지 않고 다시 본다(submitLooks번까지). 입력 칸에 보낸 글이 남았으면 submitEnterMs 뒤에 Enter, 다시 보내기는 submitRetryMs 뒤에만
   // P128: drafts = { aside(sid, d) → { state: 'clear'|'moved'|'keep', held?, why? }, back(sid, held, d) → { result, why? } }(draft-aside.mjs draftMover).
   //   보내기 직전에 입력 칸에 쓰다 만 글이 있으면 비키고(moved), 지시가 끝나면(확인·확인 못 함·실패·취소) 되돌린다. 비우지 못하면(keep, P139) 'draft'로 기다리며 draftLookMs마다 다시 본다
-  constructor({ store, cfg, view, send, inspect = null, pressEnter = null, drafts = null }) {
+  constructor({ store, cfg, view, send, inspect = null, pressEnter = null, drafts = null, recordSeen = null }) {
     super();
     this.store = store; this.cfg = cfg; this.view = view; this.send = send; this.inspect = inspect; this.pressEnter = pressEnter; this.drafts = drafts;
+    this.recordSeen = recordSeen; // P383: (sessionId, 글, 보낸 시각) → 하네스 기록에 그 글이 user 메시지로 들어갔나(OmO). 없으면 null
     this.items = new Map();
     this.late = new Map(); // P258: sessionId → 미확인으로 끝난 전달들(늦은 확인을 기다린다, lateUntil까지)
     for (const d of store.activeDeliveries()) {
@@ -413,6 +418,12 @@ export class DeliveryQueue extends EventEmitter {
       if (d.status === 'sent') {
         if (!d.sentAt) d.sentAt = now; // 다른 길로 sentAt 없는 sent가 생겨도 여기서부터 기한을 센다
         if (d.recovering || d.screenChecking) continue;
+        // P383: OmO에 넣은 글은 세션 기록의 user 메시지(넣은 뒤 생긴 것)로 확인한다. 일하는 중에 넣은 스티어링은 working 신호가 새로 오지 않는다
+        if (this.recordSeen && now - (d.recordAt || 0) >= (this.cfg.recordCheckMs ?? 1000)) {
+          d.recordAt = now;
+          let seen = false; try { seen = !!this.recordSeen(sid, d.text, d.sentAt); } catch { seen = false; }
+          if (seen) { this._set(d, 'confirmed', 'record', { confirmedAt: now }); setImmediate(() => this.pump()); continue; }
+        }
         // P184: Codex는 보낸 뒤 screenCheckMs마다 화면을 보고 제출을 확인한다(working이 오면 곧바로도 본다)
         if (this._screenConfirms(d) && now - (d.screenAt || d.sentAt) >= this._screenMs()) { this._checkScreen(d); continue; }
         const last = d.triedAt || d.sentAt;
@@ -601,7 +612,7 @@ export class DeliveryQueue extends EventEmitter {
 
   _set(d, status, reason, extra = {}) {
     if (status === 'confirmed' && d.held) reason = 'draft_moved';
-    else if (d.sentNow && (status === 'sent' || status === 'confirmed') && (reason == null || reason === 'typed' || reason === 'term working' || reason === 'screen' || reason === 'transcript')) reason = d.typed ? 'now_typed' : 'now'; // P172: 바로 보낸 글(전달 기록의 "바로 보냄") // P128: 쓰다 만 글을 잠시 비키고 보냈다(되돌린 뒤 draft_restored 등으로 바꾼다)
+    else if (d.sentNow && (status === 'sent' || status === 'confirmed') && (reason == null || reason === 'typed' || reason === 'term working' || reason === 'screen' || reason === 'transcript' || reason === 'record')) reason = d.typed ? 'now_typed' : 'now'; // P172: 바로 보낸 글(전달 기록의 "바로 보냄") // P128: 쓰다 만 글을 잠시 비키고 보냈다(되돌린 뒤 draft_restored 등으로 바꾼다)
     d.status = status; d.reason = reason ?? null;
     if (extra.sentAt) d.sentAt = extra.sentAt;
     if (extra.confirmedAt) d.confirmedAt = extra.confirmedAt;

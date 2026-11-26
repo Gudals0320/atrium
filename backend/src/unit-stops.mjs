@@ -27,6 +27,8 @@ import { askDetailText } from './omo-record.mjs'; // P381: 멈춤 알림에 질�
 // P238: 띄운 지 곧바로 종료 코드 2로 끝난 에이전트는 띄우기 인자 오류일 수 있다(CLI 인자 분석기의 오류 종료 코드, Codex의 맞지 않는 인자 등).
 //   QUICK_EXIT_MS: 판이 명령을 넣은 때부터 끝남을 안 때까지(셸이 명령을 받아 CLI가 뜨고 끝나는 시간과 터미널 서버의 알림을 더한 여유)
 export const QUICK_EXIT_MS = 2500;
+// P383: 실패한 턴(rt.turnError: omo 기록·화면에서 읽은 오류)의 멈춤 알림 덧말 한 줄 | null
+export const turnErrorDetail = (f) => (f ? clip(`${f.type || 'error'}${f.message ? ': ' + String(f.message).replace(/\s+/g, ' ') : ''}`, 200) : null);
 export const BAD_ARGS_CODE = 2;
 // 명령 줄 보이기: 빈칸·따옴표가 있는 낱말만 큰따옴표로 감싼다
 export function commandLine(argv) {
@@ -169,7 +171,7 @@ export class UnitStops {
       // P381: 질문이면 본문·보기·추천·마감을 붙인다. 하네스 기록에서 읽은 질문(omo)은 보낼 때 같은 질문을 아직 기다리는지 다시 본다
       const ask = sum.ask || null;
       this.add(tr, unit, why, askDetailText(ask), { askKey: ask && ask.source === 'record' ? needKey({ state: 'waiting', ask }) : null });
-    } else this.add(tr, unit, why);
+    } else this.add(tr, unit, why, why === 'turn_error' && s.rt && s.rt.turnError ? turnErrorDetail(s.rt.turnError) : null); // P383: omo 실패한 턴은 오류 글 한 줄
     return why;
   }
   // P296: 오케스트레이션 세션의 안 일이 끝났다(sleep.mjs 바쁨 신호가 바쁨 → 조용). 쉬는데 done 없이 열린 머리 시도가 남았으면 그때 한 번 알린다

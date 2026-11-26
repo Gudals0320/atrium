@@ -14,11 +14,14 @@ const MAX_LINE_CHECK = 50; // 꼴 판정에 쓰는 첫 줄 수
 // 선택지 꼬리표의 추천 표시: "(추천)", "(권장)", "(Recommended)"
 export const RECOMMENDED_RE = /[(（[]\s*(추천|권장|recommended)\s*[)）\]]/i;
 
+const USERS_KEEP = 20;
+const USER_TEXT_MAX = 4000;
+const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter((x) => x && x.type === 'text' && typeof x.text === 'string').map((x) => x.text).join('\n') : '').trim();
 const clip = (s, n) => { const t = String(s ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const tsOf = (o) => { const t = Date.parse(o && o.timestamp); return Number.isFinite(t) ? t : null; };
 
 export function newOmoRecord(file = null) {
-  return { file, pos: 0, size: 0, ok: null, header: false, sessionId: null, lines: 0, bad: 0, calls: {}, asks: {}, resolved: null, lifecycle: null, todo: null, goal: null, children: null, at: null };
+  return { file, pos: 0, size: 0, ok: null, header: false, sessionId: null, lines: 0, bad: 0, calls: {}, asks: {}, resolved: null, lifecycle: null, todo: null, goal: null, children: null, at: null, users: [], failure: null, okAt: null }; // P383: users(최근 user 메시지), failure(실패한 턴), okAt(마지막 성공 답)
 }
 
 // 질문 도구 인자 → 보일 질문들. 선택지는 꼬리표 글(창이 이미 그렇게 그린다), 설명은 notes, 추천은 꼬리표에 추천 표시가 든 첫 선택지
@@ -54,6 +57,14 @@ export function foldOmoLine(st, o) {
   if (o.type === 'session') { st.header = true; if (o.id) st.sessionId = String(o.id); return; }
   if (o.type === 'message' && o.message && typeof o.message === 'object') {
     const m = o.message;
+    const mat = (typeof m.timestamp === 'number' ? m.timestamp : null) || at;
+    // P383: user 메시지(사람·판이 넣은 글, 스티어링 포함)는 최근 USERS_KEEP개만 남긴다(판의 제출 확인이 본다)
+    if (m.role === 'user') { const text = textOf(m.content); if (text) st.users = [...(st.users || []), { text: text.slice(0, USER_TEXT_MAX), at: mat }].slice(-USERS_KEEP); }
+    // P383: assistant 끝 까닭. error면 그 턴이 실패했다(errorMessage), stop·length·toolUse면 성공한 답이다
+    if (m.role === 'assistant' && m.stopReason) {
+      if (m.stopReason === 'error') st.failure = { type: 'error', message: m.errorMessage ? clip(m.errorMessage, 300) : null, at: mat, via: 'message' };
+      else if (m.stopReason !== 'aborted' && m.stopReason !== 'pending') st.okAt = mat;
+    }
     if (m.role === 'assistant' && Array.isArray(m.content)) {
       for (const c of m.content) {
         if (!c || c.type !== 'toolCall') continue;
@@ -83,6 +94,7 @@ export function foldOmoLine(st, o) {
     const w = data.waitingOn || {};
     const human = (Array.isArray(w.human) ? w.human : []).filter((h) => h && h.requestId).map((h) => ({ id: String(h.requestId), kind: h.kind || null, since: Date.parse(h.since) || null, raw: h }));
     st.lifecycle = { state: String(data.state), at, human };
+    if (data.state === 'failed') st.failure = { type: (data.error && (data.error.code || data.error.type)) || 'failed', message: data.error ? clip(data.error.message || data.error, 300) : (st.failure && st.failure.at >= (at || 0) - 5000 ? st.failure.message : null), at: at || Date.now(), via: 'lifecycle' }; // P383: 제공자 오류로 끝난 생명 주기(P381 실측)
     const sources = Array.isArray(w.childSources) ? w.childSources : [];
     st.children = { count: Number(w.children) || 0, sources: sources.slice(0, 6).map((x) => ({ source: (x && x.source) || null, active: Number(x && x.activeCount) || 0, items: (Array.isArray(x && x.items) ? x.items : []).slice(0, 6).map((i) => clip(i.label || i.description || i.id || '', 120)) })) };
   } else if (o.customType === 'senpi.todo-state' && Array.isArray(data.phases)) {
@@ -105,7 +117,7 @@ function judge(st) {
 // 기록 파일 → 새 읽기 상태(st가 같은 파일이면 덧붙은 줄만 접는다). 파일이 없으면 st 그대로(같은 파일일 때)나 null
 export function readOmoRecord(file, st = null) {
   let stat; try { stat = fs.statSync(file); } catch { return st && st.file === file ? st : null; }
-  let cur = st && st.file === file && stat.size >= st.pos ? { ...st, calls: { ...st.calls }, asks: { ...st.asks } } : newOmoRecord(file);
+  let cur = st && st.file === file && stat.size >= st.pos ? { ...st, calls: { ...st.calls }, asks: { ...st.asks }, users: [...(st.users || [])] } : newOmoRecord(file);
   if (stat.size === cur.size && cur.pos === cur.size) return cur;
   let pos = cur.pos;
   while (pos < stat.size) {
@@ -191,4 +203,22 @@ export function askDetailText(ask, { max = 440, maxOptions = 6 } = {}) {
   if (ask.deadline) parts.push(`마감: ${new Date(ask.deadline).toISOString()}`);
   if (ask.questions.length > 1) parts.push(`질문 ${ask.questions.length}개 중 첫째`);
   return clip(parts.join('; '), max);
+}
+
+// P383: 판이 넣은 글이 기록에 user 메시지로 들어갔나. since(보낸 시각) - 2초 뒤에 적힌 것 가운데 같은 글(앞부분)이 있으면 true
+export function promptInRecord(st, text, since = 0, match = null) {
+  if (!st || st.ok === false || !Array.isArray(st.users)) return false;
+  const want = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!want) return false;
+  const same = match || ((a, b) => { const x = String(b || '').replace(/\s+/g, ' ').trim(); const n = Math.min(80, want.length); return x.includes(want.slice(0, n)) || (x.length >= 8 && want.includes(x.slice(0, 80))); });
+  return st.users.some((u) => (u.at == null || u.at >= (since || 0) - 2000) && same(text, u.text));
+}
+
+// P383: 그 턴(since 뒤)이 실패로 끝났나 → { type, message, via } | null. 실패 뒤에 성공한 답이 있으면(다시 시도가 됐다) 실패가 아니다
+export function omoTurnFailure(st, since = 0) {
+  if (!st || st.ok === false || !st.failure) return null;
+  const f = st.failure;
+  if ((f.at || 0) < (since || 0) - 1000) return null;
+  if (st.okAt && st.okAt > f.at) return null;
+  return { type: f.type || 'error', message: f.message || null, via: f.via || 'record' };
 }
