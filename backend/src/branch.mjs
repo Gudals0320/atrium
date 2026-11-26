@@ -84,6 +84,7 @@ const READY_WAIT_MS = 75000; // atrium child가 하위 세션이 준비되기를
 const SUBMIT_WAIT_MS = 20000; // --prompt를 준 경우 첫 지시가 들어가 일을 시작하기까지 더 기다리는 시간
 const CHILD_WAIT_MS = 100000; // P36: atrium child-wait 한 번의 최대(Bash 도구 2분 안쪽). 더 기다리려면 다시 부른다
 const GATE_TRUST_WAIT_MS = 5000; // P36: 신뢰를 받은 뒤 ~/.claude.json에 쓰이기까지 기다리는 시간
+export const LOST_BATCH_MS = 300; // P369: 같은 까닭으로 한꺼번에 끝난 전달의 잃음 알림을 모으는 시간(세션 닫힘이 대기열을 한 번에 취소한다)
 const BODY_MAX = 256 * 1024;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FINAL = new Set(['confirmed', 'unconfirmed', 'failed', 'cancelled']); // P81: 전달이 끝난 상태
@@ -372,13 +373,14 @@ export function childShims({ node = process.execPath, script = path.join(BACKEND
 export function attachBranch(b, opts) { return new Branch(b, opts); }
 
 export class Branch {
-  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, noticeBatchMs = NOTICE_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {}, merger: mergerOpts = {}, decisions: decisionsOpts = {} } = {}) {
+  constructor(b, { readyWaitMs = READY_WAIT_MS, submitWaitMs = SUBMIT_WAIT_MS, childWaitMs = CHILD_WAIT_MS, gateTrustWaitMs = GATE_TRUST_WAIT_MS, noticeBatchMs = NOTICE_BATCH_MS, lostBatchMs = LOST_BATCH_MS, verbs: verbOpts = {}, news: newsOpts = {}, merger: mergerOpts = {}, decisions: decisionsOpts = {} } = {}) {
     this.b = b; this.readyWaitMs = readyWaitMs; this.submitWaitMs = submitWaitMs; this.childWaitMs = childWaitMs; this.gateTrustWaitMs = gateTrustWaitMs;
     this.modelErrors = new Map(); // P41: 세션 ID → 마지막으로 알린 모델 오류(rt.lastError 객체. P55: 시각으로 가리면 같은 밀리초의 다음 오류를 놓친다)
     this.passing = new Set(); // P36: 신뢰 관문을 지나는 중인 세션 ID(claude -w로 다시 띄우는 중)
     this.info = new Map(); // 세션 ID → 하위 세션 기록(sessions.branch)
     this.firstOf = new Map(); // P79: 첫 요청 전달 ID → 하위 세션 ID(들어가지 않으면 부모에게 알린다)
     this.lost = new Map(); // P79: 하위 세션 ID → 들어가지 않은 첫 요청 { status, reason, at, text }(atrium children에 보인다)
+    this.lostBatchMs = lostBatchMs; this.lostGroups = new Map(); this.lostClosed = new Set(); // P369: 잃음 알림 묶음(보낸 세션·받는 세션·까닭마다), 닫힌 받는 쪽을 이미 알린 쌍
     this.closed = new Map(); // 닫힌 세션 ID → { parentSessionId, name }(깊이·자손을 셀 때 따라간다)
     this.pending = []; // 만드는 중인 하위 세션의 부모 ID(상한을 동시에 넘지 않게)
     this.pendingNames = new Set(); // 만드는 중인 하위 세션 이름(동시에 같은 이름을 짓지 않게)
@@ -402,6 +404,7 @@ export class Branch {
     this.briefNotices = new BriefNotices(b, { promptOf: (s) => boardPromptOf(s, s.orch ? (this.permFor(s).scope === 'sub' ? 'sub' : 'free') : null), permOf: (s) => this.permFor(s) }); b.briefNotices = this.briefNotices;
     this.docs = new DocWatch(b, this); b.docs = this.docs; // P257: 문서 점검(일 단위가 done·머리에서 부른다)
     this.units = new WorkUnits(b, this, { noticeBatchMs }); // P180: 일 단위와 시도(bus 처리보다 먼저 만든다). P181: 멈춤 알림도 같은 묶음 시간
+    if (b.queue && !b.queue.stale) b.queue.stale = (d) => this.units.staleDelivery(d); // P369: 대기열이 먼저 있는 판(시험). 판은 backend.mjs가 잇는다
     this.merger = new Merger(b, this.units, mergerOpts); b.merger = this.merger; // P267: 브랜치 하위의 done ok를 merger에게
     b.bus.on('closed', (s, reason) => {
       this.closed.set(s.sessionId, { parentSessionId: s.parentSessionId || null, name: s.name });
@@ -1075,22 +1078,51 @@ export class Branch {
   }
   // P215: 에이전트가 보낸 글(atrium prompt, 맡긴 일)이 끝내 들어가지 못했다(기다림 상한, 받는 세션이 닫힘·깨지 못함 등) → 보낸 세션에 판 알림 한 줄.
   //   사람이 지운 것(cancelled user)은 알리지 않는다. 보낸 세션이 이미 닫혔으면 알리지 않는다. 사람이 창에서 보낸 글은 창의 전달 줄이 실패를 보인다
+  // P369: 끝난 일의 머리 전달을 판이 거른 것(cancelled unit_closed)도 알리지 않는다(일은 이미 닫혔다). 같은 까닭으로 한꺼번에 끝난 전달(세션 닫힘 등)은
+  //   lostBatchMs 동안 모아 보낸 세션·받는 세션·까닭마다 한 줄로 묶는다("글 n개"). 닫힌 받는 쪽을 이미 알린 쌍에는 늦게 끝난 전달을 다시 알리지 않는다
   senderLost(d) {
-    if (d.status !== 'failed' && !(d.status === 'cancelled' && d.reason && d.reason !== 'user')) return null;
+    if (d.status !== 'failed' && !(d.status === 'cancelled' && d.reason && d.reason !== 'user' && d.reason !== 'unit_closed')) return null;
     const b = this.b;
     const row = b.store.getDelivery(d.deliveryId);
     if (!row || row.origin !== 'agent' || !row.fromSession || row.fromSession === row.sessionId) return null;
     const from = b.sessions.get(row.fromSession);
     if (!from) return null;
-    const to = b.sessions.get(row.sessionId);
-    const old = to ? null : b.store.getSession(row.sessionId); // 닫힌 받는 쪽은 저장소의 이름
-    const name = to ? to.name : (old && old.name) || String(row.sessionId).slice(0, 8);
+    const pair = `${from.sessionId}>${row.sessionId}`;
+    if (!b.sessions.has(row.sessionId) && this.lostClosed.has(pair)) { b.store.addEvent(from.sessionId, 'delivery_lost_quiet', { deliveryId: d.deliveryId, to: row.sessionId, status: d.status, reason: d.reason || null }); return null; }
     const body = String(row.text || '').replace(/^\[Atrium 보드\][^\n]*\n+/gm, '').replace(/\s+/g, ' ').trim(); // 일 머리는 떼고 본문 앞부분
+    const key = `${pair}>${d.status}:${d.reason || '-'}`;
+    let g = this.lostGroups.get(key);
+    if (!g) {
+      g = { key, from: from.sessionId, to: row.sessionId, status: d.status, reason: d.reason || null, items: [] };
+      this.lostGroups.set(key, g);
+      const tm = setTimeout(() => this.flushLost(key), this.lostBatchMs);
+      if (tm.unref) tm.unref();
+    }
+    g.items.push({ deliveryId: d.deliveryId, body });
+    return g;
+  }
+  // P369: 모은 잃음을 보낸 세션에 한 줄로(하나면 옛 꼴 그대로)
+  flushLost(key) {
+    const g = this.lostGroups.get(key);
+    if (!g) return null;
+    this.lostGroups.delete(key);
+    const b = this.b;
+    const from = b.sessions.get(g.from);
+    if (!from || !g.items.length) return null;
+    const to = b.sessions.get(g.to);
+    const old = to ? null : b.store.getSession(g.to); // 닫힌 받는 쪽은 저장소의 이름
+    const name = to ? to.name : (old && old.name) || String(g.to).slice(0, 8);
     const again = to ? `다시 보내려면: atrium prompt ${name} "<글>"` : `@${name}는 닫혔다. 필요하면 새 세션에 맡긴다`;
-    const text = `[Atrium 보드] @${name}에게 보낸 글("${clip(body, 80)}")이 들어가지 않았다(${d.status}: ${d.reason || '-'}). ${again}`; // P263: "알겠다" 줄을 뺐다(다시 보내라는 말과 어긋났다)
+    const why = `${g.status}: ${g.reason || '-'}`;
+    const n1 = g.items.length;
+    const text = n1 === 1
+      ? `[Atrium 보드] @${name}에게 보낸 글("${clip(g.items[0].body, 80)}")이 들어가지 않았다(${why}). ${again}` // P263: "알겠다" 줄을 뺐다(다시 보내라는 말과 어긋났다)
+      : `[Atrium 보드] @${name}에게 보낸 글 ${n1}개가 들어가지 않았다(${why}). 첫 글: "${clip(g.items[0].body, 80)}". ${again}`;
+    if (!to) this.lostClosed.add(`${g.from}>${g.to}`);
     const n = b.queue.enqueue(from.sessionId, text);
-    b.store.addEvent(from.sessionId, 'delivery_lost_notice', { deliveryId: d.deliveryId, to: row.sessionId, status: d.status, reason: d.reason || null, noticeDeliveryId: n.deliveryId });
-    b.log(`delivery lost ${name} (${d.deliveryId} ${d.status}: ${d.reason || '-'}) → notice to ${from.name}`);
+    const ids = g.items.map((x) => x.deliveryId);
+    b.store.addEvent(from.sessionId, 'delivery_lost_notice', { deliveryId: ids[0], ...(n1 > 1 ? { deliveryIds: ids.slice(0, 50), n: n1 } : {}), to: g.to, status: g.status, reason: g.reason, noticeDeliveryId: n.deliveryId });
+    b.log(`delivery lost ${name} (${n1 > 1 ? `${n1} deliveries` : ids[0]} ${why}) → notice to ${from.name}`);
     const l = to ? b.store.linkByPair(from.sessionId, to.sessionId) : null;
     if (l && !l.removedAt) b.linkEvent(l, 'notice', text, { deliveryId: n.deliveryId, why: 'delivery lost' }, { quiet: true });
     return n;

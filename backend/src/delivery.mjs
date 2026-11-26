@@ -431,10 +431,12 @@ export class DeliveryQueue extends EventEmitter {
       // P158: 고치는 중이면 보내지 않는다(이 세션의 뒤 전달도 기다린다). 오래 놓지 않으면 저절로 놓는다
       if (d.editing) { if (now - d.editingAt > (this.cfg.editHoldMs ?? 600000)) this._release(d); continue; }
       if (this._overdue(d, now)) { this._set(d, 'failed', `timeout (${d.reason || 'queued'})`); continue; }
+      // P369: 판의 손 stale(d) → 까닭 | null. 끝난 일의 머리 전달(work-units staleDelivery)은 보내지 않고 그 까닭으로 취소한다(보낸 쪽 잃음 알림 없음)
+      if (this.stale) { let why = null; try { why = this.stale(d); } catch { why = null; } if (why) { this._set(d, 'cancelled', why); continue; } }
       const view = this.view(sid, d);
       const reason = blockReason(view, now, this.cfg);
       d.acctFree = LONG_WAIT.has(reason); // P215: 이번에 본 까닭으로 다음 pump까지를 센다
-      if (reason === 'closed') { this._set(d, 'failed', 'session closed'); continue; }
+      if (reason === 'closed') { for (const x of this._ofSession(sid)) if (x.status === 'queued' && !x.editing) this._set(x, 'failed', 'session closed'); continue; } // P369: 닫힌 세션의 대기 중 글을 한 번에 끝낸다(보낸 쪽 잃음 알림이 한 묶음이 된다)
       // P295: 지금 턴에만 넣는 글. 턴이 도는 동안(working·질문 중)만 기다리고, 턴이 끝났거나(쉼·뒤 일만) 턴을 못 본 채 rideGraceMs가 지나면 취소한다(rideMissed: 판이 답을 다시 붙잡는다)
       if (d.rideOnly) {
         const live = (reason === 'working' && !(view && view.bgOnly)) || reason === 'waiting' || reason === 'trust_wait';

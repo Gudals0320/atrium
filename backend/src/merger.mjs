@@ -337,6 +337,15 @@ export class Merger {
   take(plan, child, unit, text) {
     const st = this.store();
     const key = mergeKey(plan.ws, plan.target);
+    const dup = this.dupOf(child, plan.probe); // P369: 같은 하위·같은 끝 커밋의 합치기 일이 이미 있으면 새로 만들지 않는다
+    if (dup) {
+      st.addEvent(child.sessionId, 'merge_dup', { unitId: dup.id, source: unit.id, branch: plan.probe.branch, tip: plan.probe.tip, status: dup.status });
+      this.log('merge dup ' + dup.id + ' @' + (shownName(child) || child.name) + ' ' + plan.probe.branch + ' ' + short(plan.probe.tip) + ' (' + dup.status + ')');
+      this.pendingSleep.set(child.sessionId, 0);
+      this.sleepSoon(child);
+      const ds = dup.to ? this.b.sessions.get(dup.to) : null; const dr = this.rec(key);
+      return { unit: dup.id, merger: ds ? shownName(ds) || ds.name : dr ? dr.name : null, dup: true };
+    }
     const c = plan.cfg.config;
     const childName = shownName(child) || child.name;
     const meta = { key, ws: plan.ws, root: slash(plan.root), target: plan.target, child: childName, childId: child.sessionId, childKind: child.kind || 'claude', parentId: unit.from,
@@ -355,6 +364,13 @@ export class Merger {
     this.changed(plan.ws);
     const r = this.rec(key);
     return { unit: mu.id, merger: s ? shownName(s) || s.name : r ? r.name : null };
+  }
+  // P369: 그 하위의 같은 브랜치·같은 끝 커밋 합치기 일(열림 또는 합침). 실패·취소한 일은 보지 않는다(다시 done하면 새로 맡긴다)
+  dupOf(child, probe) {
+    if (!child || !probe || !probe.tip) return null;
+    const st = this.store();
+    const list = st.mergeUnitsOfChild ? st.mergeUnitsOfChild(child.sessionId) : [];
+    return list.find((u) => u.meta && !u.meta.discard && u.meta.tip === probe.tip && u.meta.branch === probe.branch && (u.status === 'open' || u.status === 'done')) || null;
   }
   // P325: 사람이 판에서 누른 치우기(worktree-session.mjs discard)를 merger 일로. 세션은 이미 닫혔다. from = 그 세션(닫힘: 알림은 판이 사람에게)
   takeDiscard(job) {
