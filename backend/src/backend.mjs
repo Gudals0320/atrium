@@ -31,6 +31,7 @@ import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
 import { reopenSession } from './user-close.mjs'; // P125
 import { writeSessionSettings, fillSessionHooks, buildStartArgs, buildResumeArgv, buildResumeArgs, predictTrust, transcriptPathFor, slash, recoveryPlan, writeBoardPlugin } from './launch.mjs';
+import { revokeExit } from './exit-revoke.mjs'; // P378
 import { newRuntime, applyHook, applyTermStatus, applyAgentDetected, applyAgentReleased, applyExitCode, applyExitText, applyTermDisconnected, deriveState, flags, worktreeExitAsk, trackWaiting, screenPermissionAsk } from './state.mjs';
 import { worktreeOf, waitClaudeExit, beginBoardExit, endBoardExit } from './worktree-exit.mjs'; // P71: 워크트리 나가기 질문
 import { summarizeChanges, CHANGE_KINDS } from './changes.mjs';
@@ -985,6 +986,7 @@ export class Backend {
     s.lastHookAuthOk = authOk;
     if (!authOk) { this.store.addEvent(s.sessionId, 'hook_rejected', { ev }); this.log(`hook rejected ${s.name} ${ev}`); return; }
     s.hookCount = (s.hookCount || 0) + 1;
+    if (s.rt.exit && ev !== 'SessionEnd') revokeExit(this, s, `hook:${ev}`).catch((e) => this.log('exit revoke error', e.stack)); // P378: 끝남으로 둔 세션에 같은 세션의 hook이 왔다
     applyHook(s.rt, body);
     if (isSdk(s) && sdkHookGuard(s.rt, ev, body)) this.store.addEvent(s.sessionId, 'sdk_ask_dropped', { ev, tool: body.tool_name || null }); // P367: SDK 세션은 권한·질문 hook으로 응답 필요가 되지 않는다(승인 화면 없음, stream이 상태를 정한다)
     if (ev === 'Stop') s.rt.answerSource = 'hook';
@@ -1062,6 +1064,7 @@ export class Backend {
       // 띄운 뒤 agent_detected를 놓쳤어도, 끝난 적 없는 세션에 상태가 오면 claude가 패널에 있다는 뜻이다(P2에서 더한 안전망).
       // 끝난 세션(exit)은 되살리지 않는다. 해제 직후에도 idle이 한 번 온다(E10 2.4).
       if (!s.rt.term.present && !s.rt.exit && e.status !== 'unknown') { applyAgentDetected(s.rt, now); this.store.addEvent(s.sessionId, 'terminal_agent', { detected: true, by: 'status' }); }
+      if (s.rt.exit && e.status === 'working') revokeExit(this, s, 'term:working').catch((err) => this.log('exit revoke error', err.stack)); // P378: 끝남으로 둔 세션의 터미널 에이전트가 일한다(판이 터미널에서 확인한 뒤 되살린다)
       const prev = applyTermStatus(s.rt, e.status, now);
       if (e.status !== 'unknown') s.resumingAfterRestart = null; // 이어 가기가 됐다
       this.store.addEvent(s.sessionId, 'terminal_status', { from: prev, to: e.status });
