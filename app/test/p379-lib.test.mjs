@@ -109,6 +109,7 @@ test('P379 휴대폰 단추: 못 받는 세션이면 흐리게(aria-disabled·da
   const css = rules(read('mobile.css')).find((r) => r.sel === '.mt-mp-round.mt-mp-steer[data-off]');
   assert.ok(css);
   assert.match(css.body, /color:\s*var\(--cmd-btn-ink\)/);
+  assert.match(css.body, /border-style:\s*dashed/);
   assert.doesNotMatch(css.body, /opacity/, 'opacity로 흐리게 하지 않는다(docs testing CSS 규칙)');
   // 옛 휴대폰 화면(Phone.jsx)도 같은 글
   assert.match(read('Phone.jsx'), /if \(why\) toast\(steerOffText\(t, why\)\)/);
