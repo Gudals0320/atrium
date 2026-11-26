@@ -128,7 +128,8 @@ test('창: 멈춘 뒤 계단 바꾸기·배치 다시 세기·닻 보기 옮김�
 test('CSS: 이름표 덩어리는 왼쪽 위 기준으로 줄고, 폴더 이름은 말줄임, 미끄러지기 규칙은 P164 블록 앞', () => {
   const css = read('styles.css');
   assert.match(css, /\.mt-sm-lq \{[^}]*transform-origin: 0 0;/);
-  assert.match(css, /\.mt-sm-head\[data-lq\] \{ transform-origin: 0 0; \}/);
+  assert.match(css, /\.mt-sm-head\[data-lq\] \{ transform-origin: 0 0; contain: layout style; \}/);
+  assert.match(css, /\.mt-sm-lq \{ contain: layout style; \}/);
   assert.match(css, /\.mt-sm-lq \.fn \{ overflow: hidden; text-overflow: ellipsis; \}/);
   const g = css.indexOf('.mt-ta-world.glide [data-lq]'), p164 = css.indexOf('/* P164');
   assert.ok(g > 0 && g < p164);
