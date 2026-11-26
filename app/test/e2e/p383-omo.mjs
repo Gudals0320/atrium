@@ -157,7 +157,6 @@ async function fail() {
   check('리드에게 멈춤 알림(오류로 턴이 끝났다 + 오류 글)', !!note, note && note.text.slice(0, 500));
   const okNote = call('delivery.list', { session: 'ld', limit: 20 }).find((x) => (x.text || '').includes('[판이 마지막 답으로 닫음]') && x.text.includes('@' + name));
   check('리드에게 ok 보고(마지막 답으로 닫음)가 가지 않음', !okNote, okNote && okNote.text.slice(0, 300));
-  const units = call('unit.list', {}).catch ? null : null;
   fs.writeFileSync(path.join(OUT, 'fail-events.json'), JSON.stringify({ session: s, events: tf, note: note && note.text }, null, 1));
 }
 
@@ -168,7 +167,7 @@ async function board() {
     await page.setViewportSize({ width: 1440, height: 900 }).catch(() => {});
     await sleep(3000);
     await page.screenshot({ path: path.join(OUT, '4-board.png') });
-    for (const n of ['o2', 'o1']) {
+    for (const n of (process.env.P383_CARDS || 'o2,o1').split(',')) {
       const s = byName(n); if (!s) continue;
       const node = page.locator('[data-session-id="' + s.sessionId + '"], [data-session="' + s.sessionId + '"]').first();
       if (await node.count()) { await node.screenshot({ path: path.join(OUT, '5-card-' + n + '.png') }).catch((e) => log('card shot ' + e.message.slice(0, 120))); }
