@@ -20,7 +20,9 @@
 import { NoticeBatcher, NOTICE_BATCH_MS, closeWhy } from './link-notice.mjs';
 import { treeIndex, cycleCheck } from './push-cycle.mjs';
 import { clip } from './text.mjs';
-import { unitTitle } from './work-units.mjs'; // P267: 합치기 일은 첫 줄만(merger의 멈춤도 그 일의 부모 = work_units.from에게 간다)
+import { unitTitle } from './work-units.mjs';
+import { deriveState, needKey } from './state.mjs'; // P381: 보내기 전에 같은 질문을 아직 기다리는지
+import { askDetailText } from './omo-record.mjs'; // P381: 멈춤 알림에 질문 본문·보기·추천·마감 // P267: 합치기 일은 첫 줄만(merger의 멈춤도 그 일의 부모 = work_units.from에게 간다)
 
 // P238: 띄운 지 곧바로 종료 코드 2로 끝난 에이전트는 띄우기 인자 오류일 수 있다(CLI 인자 분석기의 오류 종료 코드, Codex의 맞지 않는 인자 등).
 //   QUICK_EXIT_MS: 판이 명령을 넣은 때부터 끝남을 안 때까지(셸이 명령을 받아 CLI가 뜨고 끝나는 시간과 터미널 서버의 알림을 더한 여유)
@@ -107,14 +109,14 @@ export class UnitStops {
   }
   waited(fromId, toId) { const ws = this.units.waiters.get(`${fromId}>${toId}`); return !!(ws && ws.size); }
   // 상위의 묶음에 한 줄을 더한다
-  add(tr, unit, why, detail = null) {
+  add(tr, unit, why, detail = null, { askKey = null } = {}) {
     if (!unit || !this.b.sessions.has(unit.from)) return false;
     if (unit.from === tr.sessionId) return false; // 자기에게 맡긴 일(자기에게 멈춤을 알리면 끝없이 돈다)
     if (unit.meta && unit.meta.human) return false; // P321: 사람이 맡긴 병합의 merger 멈춤은 재운 하위에게 알리지 않는다
     if (why !== 'tree_quiet' && this.waited(unit.from, unit.to)) return false;
     const line = stopLine({ child: this.units.nameOf(tr.sessionId), unitId: unit.id, spec: unitTitle(unit), why, detail });
     this.store().addEvent(tr.sessionId, 'unit_stop_seen', { unitId: unit.id, tryId: tr.id, why });
-    return this.batch.add(unit.from, { key: `${tr.id}:${why}:${tr.sessionId}`, tryId: tr.id, unitId: unit.id, sessionId: tr.sessionId, why, line });
+    return this.batch.add(unit.from, { key: `${tr.id}:${why}:${tr.sessionId}${askKey ? `:${askKey}` : ''}`, tryId: tr.id, unitId: unit.id, sessionId: tr.sessionId, why, line, askKey });
   }
   // 보낼 때 아직 알릴 것인가: done이 오지 않았고, 다시 일하기 시작하지 않았다
   still(l) {
@@ -127,6 +129,10 @@ export class UnitStops {
     if (l.why === 'tree_quiet') return this.treeQuiet(tr) === true;
     if (!this.b.sessions.has(tr.sessionId)) return false; // 닫혔으면 closed 줄이 따로 간다
     const state = this.units.prev.get(tr.sessionId);
+    if (l.why === 'needs_human' && l.askKey) { // P381: 기록에서 읽은 질문이면 그 질문을 아직 기다릴 때만(사람이 이미 답했거나 다른 질문이면 보내지 않는다)
+      const s = this.b.sessions.get(tr.sessionId);
+      return HUMAN.has(state) && !!(s && s.rt) && needKey(deriveState(s.rt)) === l.askKey;
+    }
     return l.why === 'needs_human' ? HUMAN.has(state) : STOPPED.has(state);
   }
 
@@ -159,6 +165,10 @@ export class UnitStops {
     if (quiet) {
       st.addEvent(s.sessionId, 'unit_stop_quiet', { unitId: tr.unitId, tryId: tr.id, why, because: quiet });
       this.b.log(`unit stop not noticed: ${this.units.nameOf(s.sessionId)} ${tr.unitId} ${why} (${quiet})`);
+    } else if (why === 'needs_human') {
+      // P381: 질문이면 본문·보기·추천·마감을 붙인다. 하네스 기록에서 읽은 질문(omo)은 보낼 때 같은 질문을 아직 기다리는지 다시 본다
+      const ask = sum.ask || null;
+      this.add(tr, unit, why, askDetailText(ask), { askKey: ask && ask.source === 'record' ? needKey({ state: 'waiting', ask }) : null });
     } else this.add(tr, unit, why);
     return why;
   }

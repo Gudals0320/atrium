@@ -81,6 +81,16 @@ export function compactLines(text, n) {
 // 다음에 칠 명령(사람과 모델이 그대로 친다). 이름은 판의 주소(바뀌지 않는다)
 export const verbLines = (name) => ({ prompt: `atrium prompt ${name} "<할 일>" --wait`, wait: `atrium wait ${name}`, read: `atrium read ${name}` });
 
+// P381: atrium wait가 돌려주는 기다리는 질문. 질문(kind question: Claude AskUserQuestion, omo 기록의 ask_user_question)이면 본문과 보기·추천·마감도
+function askOut(a) {
+  const out = { kind: a.kind || null, summary: clip(a.summary || a.question || (a.kind === 'question' && a.questions && a.questions[0] ? a.questions[0].question : '') || a.kind || '', 300) };
+  if (a.kind === 'question' && Array.isArray(a.questions)) {
+    out.questions = a.questions.slice(0, 4).map((q) => ({ question: clip(q.question, 600), header: q.header || null, options: (q.options || []).map((o) => clip(typeof o === 'string' ? o : (o && o.label) || '', 120)), recommended: q.recommended || null }));
+    out.deadline = a.deadline || null;
+  }
+  return out;
+}
+
 export class AgentVerbs {
   // b: 백엔드(sessions, store, queue, summary, hooked, ensureLink, linkEvent, adapter, sleeper, log). branch: Branch(잠듦 판정)
   constructor(b, branch, { pollMs = 200, settleMs = PROMPT_SETTLE_MS, turnGraceMs = TURN_GRACE_MS, answerGraceMs = ANSWER_GRACE_MS } = {}) {
@@ -322,7 +332,7 @@ export class AgentVerbs {
     const got = waiter && waiter.got ? waiter.got : null;
     const unit = got ? { ...this.units().view(b.store.getTry(got.tryId)), claimedBy: 'wait', alreadyDelivered: false } : prior || null;
     const answer = got ? { text: clip(got.text, ANSWER_MAX), clipped: got.text.length > ANSWER_MAX, source: 'done', at: Date.now() } : ['done', 'idle', 'error', 'sleeping', 'unconfirmed'].includes(status) ? this.answerOf(t) : null;
-    const out = { status, state: st, ms, answer, unit, ask: status === 'waiting' && s && s.ask ? { kind: s.ask.kind || null, summary: clip(s.ask.summary || s.ask.question || s.ask.kind || '', 300) } : null,
+    const out = { status, state: st, ms, answer, unit, ask: status === 'waiting' && s && s.ask ? askOut(s.ask) : null,
       error: status === 'error' && s && s.error ? { type: s.error.type || null, message: clip(s.error.message, 300) } : null,
       delivery: row ? { deliveryId, status: row.status, reason: row.reason ?? null } : null, next: verbLines(t.name) };
     if (status !== 'aborted' && b.sessions.has(caller.sessionId)) {
@@ -350,7 +360,8 @@ export class AgentVerbs {
       catch (e) { why = e.code || 'read_failed'; }
     }
     const answer = this.answerOf(t);
-    const out = { ...this.head(t), state: st, lines, source: text != null ? 'screen' : 'answer', text, why, answer, next: verbLines(t.name) };
+    const record = b.omoRecordOf ? b.omoRecordOf(t) : undefined; // P381: omo는 기록 요약(열린 질문, 할 일 단계, 하위 작업, goal). 마지막 답은 answer
+    const out = { ...this.head(t), state: st, lines, source: text != null ? 'screen' : 'answer', text, why, answer, ...(record !== undefined ? { record } : {}), next: verbLines(t.name) };
     const l = this.openLink(caller, t);
     if (l) b.linkEvent(l, 'reply', text != null ? screenAnswerText(text, 40, { kind: t.kind }) : answer ? answer.text : null, { via: 'atrium', verb: 'read', source: out.source, ...(text != null ? { screenTail: tailText(text, 60) } : {}) });
     b.store.addEvent(caller.sessionId, 'atrium_read', { target: t.name, sessionId: t.sessionId, lines, source: out.source, why });

@@ -56,6 +56,7 @@ export function newRuntime({ trustPredicted = false, now = Date.now(), kind = 'c
     workSince: null, // P173: 터미널이 working이 된 때(이번 일 구간의 시작)
     lastWork: null, // P173: 끝난 일 구간 { since, endedAt, turnless, compact } — turnless면 턴이 아니다(압축 등)
     compact: null, // P173: 대화 압축 { trigger: manual|auto|…, at, endedAt } (PreCompact·PostCompact hook)
+    recordAsk: null, // P381: 하네스 기록에서 읽은 열린 질문(omo ask_user_question, omo-record.mjs omoAskOf). hook이 없는 세션의 응답 필요 본문
   };
 }
 
@@ -256,6 +257,7 @@ export function applyAgentReleased(rt, now = Date.now(), { termStopping = false,
   rt.term.present = false;
   rt.term.status = 'unknown';
   rt.pendingAsk = null;
+  rt.recordAsk = null; // P381
   rt.worktreeExit = null;
   rt.bg = null; // P92: claude가 끝나면 뒤 일도 끝난다
   const reason = rt.sessionEnd && rt.sessionEnd.reason;
@@ -332,9 +334,12 @@ export function deriveState(rt) {
       if ((rt.kind === 'claude' || rt.kind === 'agy' || rt.kind === 'codex') && rt.trustScreen) return { state: 'trust_wait', confirmedByScreen: true }; // P192: AGY 신뢰 질문. P208: Codex
       if (boardClosing(rt)) return closingState(rt);
       if (rt.kind === 'claude' && rt.worktreeExit) return { state: 'waiting', ask: worktreeExitAsk(rt.worktreeExit) };
+      if (rt.recordAsk) return { state: 'waiting', ask: rt.recordAsk }; // P381: 기록에서 읽은 질문(본문·선택지). 못 읽으면 아래 화면 끝
       return { state: 'waiting', ask: { kind: 'screen', tail: rt.screenAsk ? rt.screenAsk.tail : null, since: rt.screenAsk ? rt.screenAsk.at : h.at } };
     }
     if (s === 'working') return { state: 'working' };
+    // P381: 턴은 쉬는데 기록의 생명 주기가 사람의 답을 기다린다(기다리지 않는 질문 waitForAnswer:false 등). 일하는 중에는 보지 않는다(기록이 늦게 닫힐 수 있다)
+    if ((s === 'idle' || s === 'done') && rt.recordAsk && rt.recordAsk.waitingHuman) return { state: 'waiting', ask: rt.recordAsk, estimate: `record waiting_human, term ${s}` };
     if (s === 'idle' || s === 'done') return { state: 'ready' };
     if (s === 'unknown' && rt.phase === 'running' && h.present) return { state: 'ready', estimate: 'term unknown' };
     return { state: 'starting' };
