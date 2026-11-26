@@ -91,19 +91,16 @@ const segHits = (pts, r) => pts.slice(1).some(([bx, by], i) => {
   return x1 < r.x + r.w && x2 > r.x && y1 < r.y + r.h && y2 > r.y;
 });
 
-test('두 열: 열 사이를 건너는 선은 열 머리(오늘·이전 이름표 칸)와 그 위를 지나지 않는다', () => {
+test('P374 열 흘리기: 열 사이를 건너는 선은 받는 카드 곁에서 끝나고, 열 머리 칸은 없다', () => {
   const L = lineageLayout(G, { vgroups: FOLDERS, today: TODAY, noFolder: 'No folder', columns: 2 });
   assert.equal(L.ncol, 2);
-  const heads = L.sections.filter((s) => s.mode === 'head');
-  assert.equal(heads.length, 2);
+  assert.equal(L.sections.filter((s) => s.mode === 'head').length, 0);
   const cross = L.edges.filter((e) => e.pts && L.cards.get(e.from) && L.cards.get(e.to) && L.cards.get(e.from).x < L.colDx !== L.cards.get(e.to).x < L.colDx);
-  assert.ok(cross.length >= 3, `열 사이 선 ${cross.length}`);
-  const top = { x: -1e6, y: -1e6, w: 2e6, h: 1e6 + heads[0].h };
+  assert.ok(cross.length >= 2, `열 사이 선 ${cross.length}`);
   for (const e of cross) {
-    assert.ok(!segHits(e.pts, top), `${e.id} 머리 칸·그 위를 지남: ${JSON.stringify(e.pts)}`);
-    // 선은 받는 카드 곁(화살촉 틈 안)에서 끝난다
     const b = L.cards.get(e.to), last = e.pts[e.pts.length - 1];
     assert.ok(last[0] >= b.x - 24 && last[0] <= b.x + b.w + 24 && last[1] >= b.y - 24 && last[1] <= b.y + b.h + 24, `${e.id} 끝(화살촉 틈까지)`);
+    for (const sp of L.bands) assert.ok(!segHits(e.pts.slice(1, -1).length > 1 ? e.pts.slice(1, -1) : [], { x: sp.x + 4, y: sp.y + 4, w: L.spine - 8, h: sp.h - 8 }), `${e.id} 폴더 기둥을 지남`);
   }
 });
 

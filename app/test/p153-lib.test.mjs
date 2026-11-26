@@ -400,18 +400,14 @@ const deepLay = (expanded, sets = []) => { const { g, order } = deepGraph(); ret
 const colsOf = (lay) => lay.cols.map((c) => (c.key === 'lv' ? c.level : c.key));
 const lvX = (lay, n) => lay.cols.find((c) => c.key === 'lv' && c.level === n).x;
 
-test('P153 r11: 칸은 시작 · 1단계 · …(P260: 칸 머리 띠·솔로 칸 없음), 4단계보다 깊은 가지는 접고(+n단계) 편 가지만 끝까지 편다', () => {
+test('P153 r11·P374: 칸은 시작 · 1단계 · …(P260: 칸 머리 띠·솔로 칸 없음), PC는 깊은 가지도 접지 않고 끝까지 보인다', () => {
   const lay = deepLay(new Set());
-  assert.deepEqual(colsOf(lay), [0, 1, 2, 3, 4], '보이는 가장 깊은 단계(4)까지');
-  assert.equal(lay.cards.get('s:d4').fold, 2, 'd4 카드에 +2단계');
-  assert.ok(!lay.cards.has('s:d5') && !lay.cards.has('s:d6'), '접힌 카드는 그리지 않는다');
-  const open = deepLay(new Set(['s:d4']));
-  assert.deepEqual(colsOf(open), [0, 1, 2, 3, 4, 5, 6]);
-  assert.equal(open.cards.get('s:d4').fold, 0);
-  assert.equal(open.cards.get('s:d6').x, lvX(open, 6), '편 가지는 끝(6단계)까지');
+  assert.deepEqual(colsOf(lay), [0, 1, 2, 3, 4, 5, 6], 'P374: 가장 깊은 단계(6)까지');
+  for (const id of ['s:d4', 's:d5', 's:d6']) assert.equal(lay.cards.get(id).fold, 0, `${id}에 접기 칩 없음`);
+  assert.equal(lay.cards.get('s:d6').x, lvX(lay, 6), '끝(6단계)까지');
   for (const k of ['colLead', 'colWorkers', 'colNext', 'colWs', 'colRoot', 'colLevel', 'colSolo']) assert.ok(!(k in ko.mmLine) && !(k in en.mmLine), `${k}는 없앴다`);
-  const src = (read('MissionLineage.jsx') + read('MapCard.jsx'));
-  assert.match(src, /data-action="ln-fold"/); assert.match(src, /localStorage\.setItem\(EXP_KEY/, '편 가지는 기억한다');
+  const ml = read('MissionLineage.jsx');
+  assert.ok(!/onFold|EXP_KEY|[^-]expanded\b/.test(ml.replace(/atrium\.sessionMap\.expanded/g, '')), 'P374: PC 맵은 편 가지를 기억하지 않는다(접기 없음)');
 });
 
 test('P153 r11: 동료는 같은 칸에 붙어 쌓이고 양끝 점 선(화살촉 없음), 독립은 시작 칸에서 옅은 계보 선만', () => {

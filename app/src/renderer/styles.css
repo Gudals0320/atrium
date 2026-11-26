@@ -3325,3 +3325,6 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-trend-tip { position: absolute; top: 0; z-index: 2; pointer-events: none; padding: 6px 8px; min-width: 150px; max-width: 300px; display: grid; gap: 2px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; box-shadow: var(--panel-shadow); color: var(--text); font-size: 12px; }
 .mt-trend-tipmark { display: flex; align-items: center; color: var(--text); }
 .mt-trend-empty { padding: 14px 0; text-align: center; color: var(--dim); font-size: 12px; }
+
+/* P374: PC 세션 맵 카드의 작은 줄(상태·역할·하네스·모델·더 보기)을 13px로. 처음 화면 배율(MissionLineage.jsx OPEN_K 0.85)에서 화면 11px 이상(이름 15.5·지금 일 13.5는 그대로). 휴대폰 맵은 그대로 */
+.mt-sm[data-layout="lineage"] .mt-ta-full .cst, .mt-sm[data-layout="lineage"] .mt-ta-full .c2, .mt-sm[data-layout="lineage"] .mt-ta-full .crole, .mt-sm[data-layout="lineage"] .mt-ta-full .c4 { font-size: 13px; }
