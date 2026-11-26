@@ -3471,4 +3471,8 @@ export default {
     extraTitle: '부가 연결',
     extraNote: '일반 에이전트 하네스 밖의 연결입니다. API 키로 과금되는 SDK 세션과, 더는 시작할 수 없는 옛 API 런처가 여기에 있습니다.',
   },
+  mmPlan: { // P376: 세션 맵 기억한 배열의 오늘 표시
+    todayAsOf: '오늘({date} 기준)',
+    todayMark: '오늘',
+  },
 };

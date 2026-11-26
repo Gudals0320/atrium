@@ -15,9 +15,7 @@ let seq = 0;
 const node = (n, parent = null, o = {}) => ({ id: `s:${n}`, kind: 'session', sessionId: `x-${n}`, name: n, workspaceKey: A, state: 'ready', parentId: parent ? `s:${parent}` : null, createdAt: 100 + seq++, ...o });
 const spawn = (nodes) => nodes.filter((n) => n.parentId).map((n) => ({ from: n.parentId, to: n.id, kind: 'spawn', count: 1 }));
 const sleep = { state: 'sleeping' };
-// P374: PC 세션 맵은 얇은 줄로 줄이지 않는다(접지 않음). 얇은 줄 규칙은 휴대폰 맵(phone: true)에만 남는다
-const lay = (nodes, edges = null) => lineageLayout({ nodes, edges: edges || spawn(nodes) }, { order: [A], phone: true });
-const pcLay = (nodes, edges = null) => lineageLayout({ nodes, edges: edges || spawn(nodes) }, { order: [A] });
+const lay = (nodes, edges = null) => lineageLayout({ nodes, edges: edges || spawn(nodes) }, { order: [A] });
 const thinIds = (l) => [...l.cards].filter(([, c]) => c.thin).map(([id]) => id);
 const kidsY = (l, ids) => ids.map((id) => l.cards.get(id).y);
 
@@ -44,7 +42,7 @@ test('작업 중·응답 필요·오류·완료 미확인은 하위가 많아도
   seq = 0;
   const nodes = [node('lead'), node('wk', 'lead', { state: 'working' }), node('ask', 'lead', { state: 'needs_input' }), node('err', 'lead', { state: 'error' }), node('fin', 'lead', { state: 'idle', category: 'done' }), node('zz', 'lead', sleep)];
   const tiers = new Map([['s:lead', 'rest'], ['s:wk', 'work'], ['s:ask', 'turn'], ['s:err', 'alert'], ['s:fin', 'review'], ['s:zz', 'sleep']]);
-  const l = lineageLayout({ nodes, edges: spawn(nodes) }, { order: [A], tiers, phone: true });
+  const l = lineageLayout({ nodes, edges: spawn(nodes) }, { order: [A], tiers });
   assert.deepEqual(thinIds(l), ['s:zz']);
 });
 
@@ -59,10 +57,14 @@ test('자기 아래 보이는 하위가 있는 절전 세션과 깊이 접기 �
   const chain = ['c0', 'c1', 'c2', 'c3'];
   const ns = chain.map((n, i) => node(n, i ? chain[i - 1] : null));
   ns.push(node('f', 'c3', sleep), node('g', 'c3', sleep), node('h', 'c3', sleep), node('f1', 'f'));
-  const l2 = lay(ns);
-  assert.equal(l2.cards.get('s:f').depth, 4, '휴대폰 FOLD 단계');
+  // P374: PC는 깊이 접기가 없어 접기 칩은 휴대폰 맵에서 본다(얇은 줄 규칙은 같다). PC는 f가 하위(f1)가 보여 카드
+  const l2 = lineageLayout({ nodes: ns, edges: spawn(ns) }, { order: [A], phone: true });
+  assert.equal(l2.cards.get('s:f').depth, LINE.FOLD);
   assert.ok(l2.cards.get('s:f').fold > 0 && !l2.cards.get('s:f').thin, '접기 칩이 붙는 세션은 카드');
   assert.ok(l2.cards.get('s:g').thin && l2.cards.get('s:h').thin);
+  const l3 = lay(ns);
+  assert.ok(!l3.cards.get('s:f').thin && l3.cards.get('s:f').fold === 0, 'P374·P376: PC는 접지 않고 하위가 보이는 f는 카드');
+  assert.ok(l3.cards.get('s:g').thin && l3.cards.get('s:h').thin, 'P376: PC도 얇은 줄');
 });
 
 test('얇은 줄은 깨어 있는 카드 아래로 모이고(그 안은 만든 차례), 얇은 줄끼리 간격은 TGY, 카드와는 GY', () => {
@@ -95,7 +97,7 @@ test('동료 붙이기가 먼저: 형제 중 동료가 있는 절전 하위는 �
   seq = 0;
   const nodes = [node('lead'), node('w1', 'lead', sleep), node('w2', 'lead'), node('w3', 'lead', sleep), node('w4', 'lead', sleep)];
   const g = applyRelationStub({ nodes, edges: spawn(nodes) }, [{ a: 'x-w1', b: 'x-w2', relation: 'peer' }]);
-  const l = lineageLayout(g, { order: [A], phone: true });
+  const l = lineageLayout(g, { order: [A] });
   assert.ok(!l.cards.get('s:w1').thin, '동료 짝이 형제면 카드');
   assert.deepEqual(thinIds(l).sort(), ['s:w3', 's:w4']);
   const ks = l.vkids.get('s:lead');
@@ -106,9 +108,8 @@ test('휴대폰: 같은 판정(얇은 줄 표시, 깨어 있는 카드 아래로
   seq = 0;
   const nodes = [node('lead'), node('w1', 'lead', sleep), node('w2', 'lead'), node('w3', 'lead', sleep), node('w4', 'lead'), node('a', 'lead', sleep), node('a1', 'a')];
   const ph = (ns) => lineageLayout({ nodes: ns, edges: spawn(ns) }, { order: [A], phone: true });
-  const l = ph(nodes), pc = pcLay(nodes);
-  assert.deepEqual(thinIds(l).sort(), ['s:w1', 's:w3'], '휴대폰은 얇은 줄');
-  assert.deepEqual(thinIds(pc), [], 'P374: PC는 얇은 줄 없음');
+  const l = ph(nodes), pc = lay(nodes);
+  assert.deepEqual(thinIds(l), thinIds(pc), 'P166: 휴대폰 배치도 같은 얇은 줄');
   assert.deepEqual(l.vkids.get('s:lead'), ['s:w2', 's:w4', 's:a', 's:w1', 's:w3'], '깨어 있는 카드 아래로 모음');
   assert.ok(thinIds(l).every((id) => l.cards.get(id).h === LINE.THIN));
   seq = 0;
@@ -132,13 +133,4 @@ test('Alt+끌기: 얇은 줄끼리 사이 틈은 동료 자리가 아니고(부�
   assert.ok(!gap || gap.kind !== 'peer', '틈은 동료가 아니다');
   const below = relationDrop(l, 's:other', z3.x + 20, z3.y + z3.h + 12);
   assert.equal(below && below.kind, 'peer'); assert.equal(below.target, 's:z3');
-});
-
-test('P374: PC 세션 맵은 하위가 많아도 절전 하위를 줄이지 않고 모두 카드로 보인다', () => {
-  seq = 0;
-  const nodes = [node('lead'), ...[1, 2, 3, 4, 5, 6, 7].map((i) => node(`w${i}`, 'lead', i <= 2 ? {} : sleep))];
-  const l = pcLay(nodes);
-  assert.deepEqual(thinIds(l), []);
-  for (let i = 1; i <= 7; i++) assert.ok(l.cards.get(`s:w${i}`).h >= 100, `w${i}는 카드 높이`);
-  assert.equal(LINE.THINMIN, 3, '휴대폰 문턱은 그대로');
 });

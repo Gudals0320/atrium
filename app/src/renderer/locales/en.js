@@ -3467,4 +3467,8 @@ export default {
     extraTitle: 'Add-on connections',
     extraNote: 'Outside the usual agent harnesses: SDK sessions billed to an API key, and old API launchers that can no longer start.',
   },
+  mmPlan: { // P376
+    todayAsOf: 'Today (as of {date})',
+    todayMark: 'Today',
+  },
 };

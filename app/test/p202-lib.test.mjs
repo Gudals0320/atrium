@@ -223,7 +223,7 @@ test('문구·화면: 두 사전에 오늘·이전, 맵은 사이드바 손 차�
     assert.ok(!/lineageLayout\([^)]*\border\b/.test(src.replace(/\n/g, ' ').match(/useMemo\(\(\) => \(\{[^]*?\}\)/)?.[0] || ''), '맵 배치 옵션에 order 없음');
     assert.ok(/msToMidnight\(\)/.test(src) && /todayWorkspaces\(/.test(src), '자정 다시 세기·오늘 판단');
   }
-  assert.ok(/columns: 'auto'/.test(ml), 'PC는 열 수 자동(P374: 띠 흘리기)');
+  assert.ok(/columns: plan \? 1 : 'auto', plan/.test(ml), 'PC는 기억한 열 나누기(P376), 정하기 전에만 열 수 자동(P374: 띠 흘리기)');
   const css = fs.readFileSync(path.join(SRC, 'styles.css'), 'utf8');
   const sec = css.slice(css.indexOf('/* P202: 세션 맵 오늘·이전 이름표'));
   assert.ok(sec.length > 10 && !/animation|transition/.test(sec), '이름표는 움직임에 기대지 않는다');

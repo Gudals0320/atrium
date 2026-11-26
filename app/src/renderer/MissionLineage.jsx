@@ -10,7 +10,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, getState, setMissionOpen, toast, wsName } from './store.js';
-import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, tagScale, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes, SHEET } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
+import { lineageLayout, headDrag, relationDrop, relationCall, applyRelationStub, labelStep, LINE, tagScale, todayWorkspaces, dayStart, msToMidnight, keepSameMap, graphKey, keepSameGraph, factsKeeper, keepCardBoxes, SHEET, mapPlan } from './lib/mission-lineage.js'; // P210: keepSameMap·graphKey·keepSameGraph·factsKeeper(다시 셀 것만) // P202: 오늘 일한 폴더 먼저 // P178: labelStep(이름표 배율 계단) // P155: headDrag(Alt+끌기만 옮기기)
 import { levelOf, zoomAt, wheelK, panBy, fitView, centerOn, pressIntent, viewKey, stepCard, ZOOM } from './lib/mission-terr.js';
 import { roleModel, nodeTier, roleText, modelText, ageText, summaryColumn } from './lib/mission-model.js';
 import { kindOf } from './lib/kinds.js';
@@ -54,6 +54,10 @@ const SUM_W = 288, SUM_GAP = 12; // P179: 옛 요약 열 폭
 const SUM_KEY = 'atrium.sessionMap.summary';
 // P374: 판 목표 비(lib/mission-lineage.js SHEET.ASPECT). 숨은 조정 열쇠(시험·비교용): 'view' 또는 수(예 1.3333). 없거나 틀리면 SHEET.ASPECT
 const ASPECT_KEY = 'atrium.sessionMap.aspect';
+// P376: 기억한 열 나누기(lib/mission-lineage.js mapPlan). 이 기기(창)에 둔다. 새 워크스페이스가 생길 때만 고친다
+const PLAN_KEY = 'atrium.sessionMap.plan';
+const loadPlan = () => { try { const p = JSON.parse(localStorage.getItem(PLAN_KEY) || 'null'); return p && typeof p === 'object' ? p : null; } catch { return null; } };
+const savePlan = (p) => { try { localStorage.setItem(PLAN_KEY, JSON.stringify(p)); } catch { /* 기억 못 해도 지금 화면은 된다 */ } };
 const loadAspect = () => { try { const v = localStorage.getItem(ASPECT_KEY); if (v === 'view') return 'view'; const n = Number(v); return v && n > 0.3 && n < 5 ? n : SHEET.ASPECT; } catch { return SHEET.ASPECT; } };
 // 정한 적이 없으면 넓은 창(1280px 이상)에서만 처음부터 연다(좁은 창·태블릿 세로에서는 카드 자리가 먼저)
 const SUM_WIDE = 1280;
@@ -136,12 +140,14 @@ const XIcon = ({ s = 20 }) => <svg width={s} height={s} viewBox="0 0 24 24" aria
 // 글자 키인가(명령줄로 보낼 것): 한 글자 키, 또는 IME 조합 시작(Process)
 const typedKey = (e) => !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'Process' || (e.key && e.key.length === 1));
 
+// P376: 기억한 배열의 구분 줄은 배열을 정한 날에 고정된다. 그날이 오늘이 아니면 "오늘(11/26 기준)"처럼 날짜를 붙인다
+const dayText = (ms) => { const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()}`; };
 // P202: 오늘·이전 이름표(세계 좌표). 머리(두 열) = 열 위 큰 이름표와 밑줄, 줄(한 열) = 가로 줄 위에 "오늘", 아래에 "이전". 움직임 없이 글과 줄만
 export function SectionMark({ s, px, t }) {
   const fs = Math.round(px * 1.15 * 10) / 10;
   if (s.mode === 'line') return (
     <div className="mt-sm-sec line" data-role="ln-section" data-kind="split" style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
-      <span className="up" style={{ fontSize: fs }}>{t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn" style={{ fontSize: fs }}>{t('mmSec.earlier')}</span>
+      <span className="up" style={{ fontSize: fs }}>{s.day && s.day !== dayStart() ? t('mmPlan.todayAsOf', { date: dayText(s.day) }) : t('mmSec.today')}</span><i aria-hidden="true" /><span className="dn" style={{ fontSize: fs }}>{t('mmSec.earlier')}</span>
     </div>);
   return (
     <div className={`mt-sm-sec head ${s.kind}`} data-role="ln-section" data-kind={s.kind} data-col={s.col} style={{ left: s.x, top: s.y, width: s.w, height: s.h }}>
@@ -241,7 +247,18 @@ export function LineageMap() {
     return graph.nodes.filter((n) => n.kind === 'session').map((n) => { const k = (todoCount(decisions, n.sessionId, n.sessionId && pl ? planCountFor(pl, n.sessionId) : 0) > 0 ? 1 : 0) + (tiers.get(n.id) === 'review' ? 1 : 0); return k ? `${n.id}\t${k}` : null; }).filter(Boolean).join('\n');
   }, [graph, decisions, plans, tiers]);
   const tagRows = useMemo(() => new Map(tagKey ? tagKey.split('\n').map((x) => { const [id, k] = x.split('\t'); return [id, Number(k)]; }) : []), [tagKey]);
-  const layOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, columns: 'auto', view: fitArea, aspect, mergers, tags: tagRows }), [vgroups, tiers, names, t, today, fitKey, aspect, mergers, tagRows]); // eslint-disable-line react-hooks/exhaustive-deps
+  const baseOpts = useMemo(() => ({ vgroups, tiers, names, noFolder: t('mmTerr.noFolder'), spineText: (w, n) => [t('mmTerr.workspaces', { n: w }), t('mmTerr.sessions', { n })], chipText: (tier, n) => `${n} ${t(`mmTerr.chip.${tier}`)}`, today, view: fitArea, aspect, mergers, tags: tagRows }), [vgroups, tiers, names, t, today, fitKey, aspect, mergers, tagRows]); // eslint-disable-line react-hooks/exhaustive-deps
+  // P376: 배열 고정. 열 나누기는 기억한 plan 그대로(배율·창 크기·상태·카드 높이로 바뀌지 않는다). 새 워크스페이스·새 띠가 생길 때만 mapPlan이 고친다.
+  //   보기 칸 크기를 알기 전에는 정하지 않는다(그동안은 예전 auto). 바뀐 것이 없으면 mapPlan이 같은 객체를 돌려준다(배치를 다시 세지 않는다)
+  const planRef = useRef(undefined);
+  if (planRef.current === undefined) planRef.current = loadPlan();
+  const plan = useMemo(() => {
+    if (!g2 || !fitArea) return planRef.current && planRef.current.cols ? planRef.current : null;
+    const prev = planRef.current, next = mapPlan(prev, g2, baseOpts);
+    if (next !== prev) { planRef.current = next; savePlan(next); }
+    return next;
+  }, [g2, baseOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const layOpts = useMemo(() => ({ ...baseOpts, columns: plan ? 1 : 'auto', plan }), [baseOpts, plan]);
   const lastLay = useRef(null); // P210: 앞 배치(같은 카드 상자는 앞 객체로)
   const lay0 = useMemo(() => (lastLay.current = keepCardBoxes(lastLay.current, g2 ? timedLayout(() => lineageLayout(g2, { ...layOpts, label: lstep })) : null)), [g2, layOpts, lstep]);
   const lay = lay0;
@@ -601,16 +618,13 @@ export function LineageMap() {
       if (g && g.mode === 'card') { endCard(e.type === 'pointerup'); return; }
       if (!pts.size) { g = null; el.classList.remove('dragging'); } else begin();
     };
-    // P374: 휠은 판을 끈다(세로, Shift+휠·가로 휠 = 가로). Ctrl·⌘+휠(터치패드 오므리기 포함)은 전처럼 확대·축소
+    // P376: 휠은 커서 둘레 확대·축소만 한다(사용자 2026-11-26, P374 전처럼). 판 옮기기는 끌기와 화살표
     const wheel = (e) => {
       if (e.target.closest('.mt-ta-hud')) return;
       e.preventDefault();
       const v = view.current; if (!v) return;
-      if (e.ctrlKey || e.metaKey) { const p = local(e); paint(zoomAt(v, p.x, p.y, wheelK(v.k, e.deltaY, e.deltaMode))); return; }
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-      let dx = e.deltaX * unit, dy = e.deltaY * unit;
-      if (e.shiftKey && !dx) { dx = dy; dy = 0; }
-      paint(panBy(v, -dx, -dy));
+      const p = local(e);
+      paint(zoomAt(v, p.x, p.y, wheelK(v.k, e.deltaY, e.deltaMode)));
     };
     const click = (e) => { if (justDragged.current) { e.stopPropagation(); e.preventDefault(); justDragged.current = false; } };
     const esc = (e) => { if (e.key === 'Escape' && g && g.mode === 'row') { e.preventDefault(); e.stopPropagation(); pts.clear(); endRow(false); } else if (e.key === 'Escape' && g && g.mode === 'card') { e.preventDefault(); e.stopPropagation(); pts.clear(); endCard(false); } };
@@ -720,7 +734,7 @@ export function LineageMap() {
             {lay.bands.map((b) => (
               <div key={`b:${b.id || 'none'}`} className={`mt-sm-band${b.odd ? ' odd' : ''}${b.loose ? ' loose' : ''}`} data-role="ln-band" data-id={b.id || 'none'} data-today={b.today ? '1' : undefined} data-col={b.col || 0} style={{ left: b.x || 0, top: b.y, height: b.h, width: lay.W }}>
                 <div className="mt-sm-spine" style={{ width: lay.spine }}>
-                  <span className="fk" style={{ fontSize: lay.px.kind }}>{b.loose ? t('mmLine.loose') : t('mmLine.folder')}</span>
+                  <span className="fk" style={{ fontSize: lay.px.kind }}>{b.loose ? t('mmLine.loose') : t('mmLine.folder')}{lay.planned && b.today ? <span className="ftd" data-role="ln-band-today">{t('mmPlan.todayMark')}</span> : null}</span>
                   <span className="fn" data-role="ln-band-name" style={{ fontSize: lay.px.name }}>{b.name}</span>
                   <span className="fs" data-role="ln-band-stat" style={{ fontSize: lay.px.stat }}><span>{t('mmTerr.workspaces', { n: b.nWs })}</span><span>{t('mmTerr.sessions', { n: b.sessions })}</span></span>
                   <span className="fbar" aria-hidden="true" style={{ height: lay.px.bar }}>{b.bar.map((c) => <i key={c.tier} className={`st-${ST[c.tier]}`} style={{ flexGrow: c.n }} />)}</span>
