@@ -3325,3 +3325,10 @@ html:not(.mt-lite):not([data-work-light="off"]):not([data-work-light="system"]) 
 .mt-trend-tip { position: absolute; top: 0; z-index: 2; pointer-events: none; padding: 6px 8px; min-width: 150px; max-width: 300px; display: grid; gap: 2px; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; box-shadow: var(--panel-shadow); color: var(--text); font-size: 12px; }
 .mt-trend-tipmark { display: flex; align-items: center; color: var(--text); }
 .mt-trend-empty { padding: 14px 0; text-align: center; color: var(--dim); font-size: 12px; }
+/* P373 설정 › 런처: 새 런처 단추를 목록 위로, 일반 하네스 런처 아래에 "부가 연결" 절(SDK 런처·SDK 키 칸·옛 API 런처) */
+.mt-ln { grid-template-rows: auto auto minmax(0, 1fr); }
+.mt-ln-top { padding-bottom: 2px; }
+.mt-ln-group { display: flex; flex-direction: column; gap: 2px; }
+.mt-ln-extra { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--panel-line); }
+.mt-ln-extra-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 0 6px 4px; }
+.mt-ln-extra-head .mt-set-sub { margin: 0; padding: 0; border: 0; }

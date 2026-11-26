@@ -5,6 +5,7 @@
 // P97: 틀 맨 위에 명령줄 붙여 넣기 칸(PasteLine). 실행 명령 칸(예: 래퍼 명령)이 있고, 추가 인자는 고급 밖에 둔다. "레일에 고정"은 만들기 단추 옆(기본 켜짐).
 // P115: 실행 명령은 모든 에이전트 하네스. env에 평문 인증 값이 든 런처는 목록 위에 알린다(판은 옮기지 않는다). P255: 연결 칸은 걷어 냈다.
 // P28 원칙: 최소 창(900×600)에서도 스크롤 없이 들어간다. 목록이 길면 목록 칸만 넘긴다.
+// P373: 새 런처 단추는 설명 바로 아래(목록 위). 목록은 일반 하네스 런처, 그 아래 "부가 연결" 절(SDK 런처·SDK 키 칸·쓸 수 없는 옛 API 런처).
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import { useStore, toast, loadLaunchers, getState } from './store.js';
@@ -15,7 +16,7 @@ import { ICONS, orderedLaunchers, moveFavorite, launcherIcon, launcherMark, prev
 import { orchApplies, launcherOrchestrates, orchBody, launcherFallback, fallbackValue, orchHarness } from './lib/orch.js'; // P296: 자체 오케스트레이션. P309: orchHarness
 import { UsageLeft } from './Usage.jsx'; // P211: 하네스 이름 옆 그 구독의 남은 양
 import { ApiKeyPanel, SdkTag } from './AuthRelay.jsx'; // P359: 키 칸(P366: SDK 키, SDK 런처 바로 아래). P363: SDK 표시
-import { isSdkLauncher, isUnusableLauncher } from './lib/auth-relay.js';
+import { isSdkLauncher, isUnusableLauncher, splitLaunchers } from './lib/auth-relay.js'; // P373: 부가 연결 절
 
 const MODES = PERMISSION_MODES;
 
@@ -31,20 +32,15 @@ const call = async (m, p, t, ok) => { try { const r = await api.call(m, p); if (
 function LauncherList({ data, onEdit }) {
   const t = useT();
   const rows = orderedLaunchers(data);
+  const { main, extra } = splitLaunchers(rows); // P373: 일반 하네스 런처 | 부가 연결(SDK 런처, 쓸 수 없는 옛 API 런처)
   const favs = data.favorites || [];
   const [sure, setSure] = useState(null); // 지우기는 두 번 누른다(한 번 누르면 '지울까요?'로 바뀐다)
   const move = (id, d) => { const ids = moveFavorite(favs, id, d); if (ids) call('launcher.order', { ids }, t); };
-  const sdkId = (rows.find((l) => isSdkLauncher(l)) || {}).id || null; // P366: SDK 키 칸은 첫 SDK 런처 줄 바로 아래(없으면 목록 위)
+  const sdkId = (extra.find((l) => isSdkLauncher(l)) || {}).id || null; // P366: SDK 키 칸은 첫 SDK 런처 줄 바로 아래(없으면 부가 연결 절 위)
   const del = async (l) => { if (sure !== l.id) { setSure(l.id); return; } setSure(null); await call('launcher.delete', { id: l.id }, t, t('launchers.deleted', { name: l.name })); };
-  return (
-    <div className="mt-ln" data-role="launchers-list">
-      <p className="mt-set-note">{t('launchers.note')}</p>
-      {sdkId ? null : <ApiKeyPanel />}
-      <div className="mt-ln-rows">
-        {(data.notices || []).map((n) => <div key={n.id} className="mt-ln-secret warn" data-role="launcher-plain-auth" data-launcher={n.id}>{t('p255.plainAuthNotice', { name: n.name, names: n.env.join(', ') })}</div>)}
-        {rows.map((l) => {
-          const fi = favs.indexOf(l.id);
-          return (<Fragment key={l.id}>
+  const row = (l) => {
+    const fi = favs.indexOf(l.id);
+    return (<Fragment key={l.id}>
             <div className={`mt-ln-row${l.favorite ? ' fav' : ''}`} data-role="launcher-row" data-launcher={l.id} data-name={l.name}>
               <button type="button" className={`mt-ln-star${l.favorite ? ' on' : ''}`} data-action="launcher-favorite" title={l.favorite ? t('launchers.unfavorite') : t('launchers.favorite')} aria-pressed={l.favorite} onClick={() => call('launcher.favorite', { id: l.id, favorite: !l.favorite }, t)}>{l.favorite ? '★' : '☆'}</button>
               <LauncherIcon l={l} />
@@ -59,13 +55,26 @@ function LauncherList({ data, onEdit }) {
             </div>
             {l.id === sdkId ? <ApiKeyPanel under /> : null}
           </Fragment>
-          );
-        })}
-      </div>
-      <div className="mt-ln-foot">
+    );
+  };
+  return (
+    <div className="mt-ln" data-role="launchers-list">
+      <p className="mt-set-note">{t('launchers.note')}</p>
+      {/* P373: 새 런처 단추는 목록 위(스크롤하지 않아도 보인다) */}
+      <div className="mt-ln-foot mt-ln-top" data-role="launchers-new">
         <button type="button" className="mt-btn small primary" data-action="launcher-new" onClick={() => onEdit(blankLauncher('claude'))}>{t('launchers.new')}</button>
         <button type="button" className="mt-btn small" data-action="launcher-new-command" onClick={() => onEdit(blankLauncher('command'))}>{t('launchers.newCommand')}</button>
         <span className="mt-set-hint">{t('launchers.railHint')}</span>
+      </div>
+      <div className="mt-ln-rows">
+        {(data.notices || []).map((n) => <div key={n.id} className="mt-ln-secret warn" data-role="launcher-plain-auth" data-launcher={n.id}>{t('p255.plainAuthNotice', { name: n.name, names: n.env.join(', ') })}</div>)}
+        <div className="mt-ln-group" data-role="launchers-main">{main.map(row)}</div>
+        {/* P373: 부가 연결(일반 하네스 밖): SDK 런처와 SDK 키 칸, 쓸 수 없음으로 남은 옛 API 런처 */}
+        <section className="mt-ln-group mt-ln-extra" data-role="launchers-extra" aria-labelledby="mt-ln-extra-title">
+          <div className="mt-ln-extra-head"><span className="mt-set-sub" id="mt-ln-extra-title">{t('p373.extraTitle')}</span><span className="mt-set-hint">{t('p373.extraNote')}</span></div>
+          {sdkId ? null : <ApiKeyPanel />}
+          {extra.map(row)}
+        </section>
       </div>
     </div>
   );
