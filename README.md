@@ -45,10 +45,10 @@ Markdown memos and session-linked kanban boards sit right next to your terminals
 
 ![Session Map showing Today and Earlier columns, parent-worker trees, peer chains across repos, multi-harness cards, working border light, summary column, and command bar tagging](.github/images/session-map.png)
 
-Press `Tab` to switch from the canvas to the **Session Map** — an infinite lineage view organized by folder and repository, split into **Today** and **Earlier**.
+Press `Tab` to switch from the canvas to the **Session Map** — an infinite lineage view organized by folder and repository, with today's folders first; when it grows, folder bands flow into columns so it stays a readable 2D sheet you pan.
 
 - Follow parent–worker trees and peer chains across Claude Code, Codex, Antigravity, and pi without crossing lines.
-- Spot running sessions from afar by their animated border light, while sleeping workers collapse into compact rows.
+- Spot running sessions from afar by their animated border light; every depth and every worker stays visible (nothing folds).
 - Click any card to `@tag` it directly in the bottom command bar and send a prompt without leaving the map, or double-click to jump to its terminal.
 
 ### Docks, delivery queues, and mid-turn steering
