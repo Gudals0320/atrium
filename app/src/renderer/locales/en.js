@@ -3471,4 +3471,7 @@ export default {
     todayAsOf: 'Today (as of {date})',
     todayMark: 'Today',
   },
+  p379: { // P379
+    phoneSteerOff: 'This session takes messages after its current work ends ({why}). Just send.',
+  },
 };

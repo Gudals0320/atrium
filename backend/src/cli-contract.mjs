@@ -46,7 +46,9 @@
 // 12(P364): know 동사(작업 지식 찾기: 이 리포의 지우지 않은 원문을 전문 검색해 위치와 짧은 발췌, open·unit·build, --usage)를 더했다.
 //   막혔을 때 판이 아니라 에이전트가 스스로 묻는 새 약속(안내문 한 줄)이라 올렸다. 자체 오케스트레이션 하위 세션도 쓴다(읽기만)
 // P371: know의 --self(부른 세션 자기 단위의 것도 넣기)와 결과의 line·copies·also 칸, 응답의 self 칸을 더했다. 순위·포인터·발췌가 절 단위다(더하기만이라 12 그대로)
-export const CONTRACT_VERSION = 12;
+// 13(P380): prompt --raw(보드 머리 줄과 앞에 붙는 사람의 답 없이 글을 그대로 맨 앞에. 하위에게 새 일이면 일은 만들고 머리는 판 기록에만)를 더했다.
+//   부른 세션이 OmO(omo)면 사람 글 출력에서 홀로 선 위험 낱말(risky-words.mjs)을 다른 표기로 바꾸고(--json·경로·플래그 값은 그대로), child --kind는 대소문자를 가리지 않는다. 보내는 글의 모양을 바꾸는 새 약속이라 올렸다
+export const CONTRACT_VERSION = 13;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
 export const ASK_QUESTION_MAX = 300;
 export const ASK_OPTION_MAX = 80;
@@ -70,7 +72,7 @@ export const PEER_RULE_SHORT = '동료에게는 다섯 경우(상대만 답할 �
 // out: --json일 때 result의 주요 칸. 사람이 읽는 출력(--json 없음)은 같은 내용의 글이다
 export const VERBS = [
   { name: 'help', args: ['[--json]'], does: '이 사용법. --json은 이 계약(동사, 인자, 출력, 종료 코드, 버전)', out: ['contract', 'verbs', 'exit'] },
-  { name: 'prompt', args: ['<이름>', '"<할 일>"', '[--wait | --steer]', '[--timeout ms]', '[--json]'], does: '다른 에이전트에게 일을 맡긴다. 보드가 받는 쪽 차례에 맞춰 넣고(일하는 중·응답 대기면 끝난 뒤, 잠들었으면 깨운 뒤) 연결을 판에 남긴다. 하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 보고를 너에게 넣고, 보고 없이 멈추면 알린다. --wait면 그 턴(또는 done)까지 기다려 답을 돌려준다(기본 100초, 지금 답이 꼭 필요할 때만). 기본은 대기열이다: 받는 쪽이 지금 하는 일이 끝난 뒤 들어가면 될 글은 그냥 보낸다. 받는 쪽이 지금 하고 있는 일의 방향에 대한 추가 정보·정정이면 --steer(스티어링, 옛 이름 --now): 일하는 중인 Claude Code에 기다리지 않고 대기 메시지로 넣는다(다른 종류는 대기열, --wait와 함께 쓰지 않는다). done 보고와 판 알림은 늘 대기열이다', out: ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next', 'unit'] },
+  { name: 'prompt', args: ['<이름>', '"<할 일>"', '[--wait | --steer]', '[--raw]', '[--timeout ms]', '[--json]'], does: '다른 에이전트에게 일을 맡긴다. 보드가 받는 쪽 차례에 맞춰 넣고(일하는 중·응답 대기면 끝난 뒤, 잠들었으면 깨운 뒤) 연결을 판에 남긴다. 하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 보고를 너에게 넣고, 보고 없이 멈추면 알린다. --wait면 그 턴(또는 done)까지 기다려 답을 돌려준다(기본 100초, 지금 답이 꼭 필요할 때만). 기본은 대기열이다: 받는 쪽이 지금 하는 일이 끝난 뒤 들어가면 될 글은 그냥 보낸다. 받는 쪽이 지금 하고 있는 일의 방향에 대한 추가 정보·정정이면 --steer(스티어링, 옛 이름 --now): 일하는 중인 Claude Code에 기다리지 않고 대기 메시지로 넣는다(다른 종류는 대기열, --wait와 함께 쓰지 않는다). done 보고와 판 알림은 늘 대기열이다. --raw는 보드 머리 줄(관계·일·약속) 없이 글을 그대로 맨 앞에 넣는다: 슬래시 명령(/ulw-plan 등)은 입력 맨 앞이어야 하네스가 명령으로 받는다(하위에게 새 일이면 일은 그대로 만들어지고 머리는 판 기록에만 남는다. 머리가 빠지므로 그 하위는 자기 일을 atrium item으로 안다. --raw는 슬래시 명령용이고 보통 지시는 --raw 없이 보낸다)', out: ['name', 'agentName', 'kind', 'state', 'woke', 'deliveryId', 'delivery', 'turn', 'next', 'unit'] },
   { name: 'wait', args: ['<이름>', '[--timeout ms]', '[--json]'], does: '그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(기본 100초). 사람의 답을 기다리면 바로 돌아온다. 맡긴 일의 보고는 보드가 가져다주므로 되풀이해 치지 않는다', out: ['name', 'agentName', 'kind', 'status', 'state', 'ms', 'answer', 'ask', 'error', 'delivery', 'next', 'unit'] },
   { name: 'read', args: ['<이름>', '[--lines n]', '[--json]'], does: '그 세션 화면의 최근 줄(기본 80줄). 잠든 세션은 마지막 답. omo는 기록 요약(record: 열린 질문·할 일 단계·하위 작업·goal)도', out: ['name', 'agentName', 'kind', 'state', 'lines', 'source', 'text', 'answer', 'record', 'next'] },
   { name: 'me', args: ['[--json]'], does: '너의 지금 연결: 상위(너를 하위로 둔 세션), 동료, 하위, 독립, 역할 연결, 상대마다 종류와 마지막 지시. 보드의 지금 기록. 사람이 판에서 잇거나 끊은 역할 연결은 알림 없이 여기에만 보인다', out: ['me', 'parent', 'peers', 'children', 'independent', 'lineage', 'roles', 'news', 'plans'] },

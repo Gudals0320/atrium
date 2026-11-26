@@ -321,3 +321,9 @@ html.mt-mp-on body { bottom: auto; }
 .mt-ms-sdk-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
 .mt-ms-sdk-err { margin-bottom: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 90, 90, 0.12); color: #ff9a9a; font-size: 13px; white-space: pre-wrap; }
 .mt-ms-sdk-text { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.5; }
+/* P379: 휴대폰 입력칸 글자 바닥. iOS Safari(홈 화면 앱 포함)는 글자가 16px보다 작은 입력칸에 초점이 가면 화면을 확대한다(다시 줄여야 보내기가 보였다).
+   페이지 글자 크기는 16px × --mp-fs(A− 최소 0.75)라 입력칸의 rem 값이 15px·12px로 내려갔다. 입력칸만은 설정과 상관없이 16px 아래로 내려가지 않는다(A+로 키우면 그대로 커진다).
+   viewport의 maximum-scale·user-scalable로 막지 않는다(두 손가락 확대를 빼앗는다). 뒤에 입력칸 규칙을 더해도 이 바닥이 이긴다(!important) */
+html.mt-mp-on :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="color"], [type="file"], [type="image"], [type="hidden"]), textarea, select) { font-size: max(16px, 1rem) !important; }
+/* P379: 스티어링을 받지 않는 세션(자체 오케스트레이션 등)의 휴대폰 스티어링 단추는 흐리게(색 토큰으로, opacity는 쓰지 않는다: 보통 단추의 --dim보다 어두운 --cmd-btn-ink, 점선 테두리, 크롬 바탕). 눌러도 켜지지 않고 까닭을 짧게 보인다 */
+.mt-mp-round.mt-mp-steer[data-off] { color: var(--cmd-btn-ink); border-color: var(--cmd-btn-line); border-style: dashed; background: var(--chrome-bg); cursor: not-allowed; } /* 점선 테두리: 꺼진 칸(색만으로는 보통 단추와 가깝다) */

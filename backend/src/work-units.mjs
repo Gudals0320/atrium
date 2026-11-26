@@ -100,7 +100,8 @@ export class WorkUnits {
     const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: null, startedAt: Date.now() };
     st.insertTry(tr);
     if (!st.queuedUnitsOf(unit.to).length) this.queued.delete(unit.to);
-    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}${tail}`, { origin: { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션)
+    const raw = unit.origin === 'raw'; // P380: atrium prompt --raw의 일(머리 없이 글이 맨 앞, 머리는 판 기록에만)
+    const d = b.queue.enqueue(unit.to, header ? `${header}\n\n${unit.spec}${tail}` : `${unit.spec}${tail}`, { origin: { kind: 'agent', session: unit.from }, ...(raw ? { raw: true } : {}) }); // P182: 출처(맡긴 세션)
     st.updateTry(tr.id, { deliveryId: d.deliveryId });
     st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
     if (later && this.onDispatch) try { this.onDispatch(unit, d, header); } catch (e) { b.log('unit dispatch hook error', e.stack); }
@@ -110,10 +111,13 @@ export class WorkUnits {
   headerOf(unit) {
     const b = this.b;
     const t = b.sessions.get(unit.to);
+    if (unit.origin === 'raw') return ''; // P380: --raw 일은 머리를 넣지 않는다(판 기록의 머리는 recordHeaderOf)
     if (unit.origin === 'merge' && b.merger) return b.merger.headerFor(unit); // P267: 합치기 일 머리
     if (unit.origin === 'merge_request' && b.wtSessions) return b.wtSessions.headerFor(unit); // P321: 사람이 판에서 맡긴 병합(worktree-session.mjs)
     return unitHeader({ merge: b.merger ? b.merger.childTail(t) : null, /* P267 */ parent: this.nameOf(unit.from), unitId: unit.id, kind: t ? t.kind || 'claude' : null, docs: b.docs ? b.docs.headerTail(t) : null }); // P208. P257: 문서 한 마디
   }
+  // P380: --raw 일이 넣지 않은 머리(판 연결 기록에만 남긴다)
+  recordHeaderOf(unit) { return this.headerOf({ ...unit, origin: 'prompt' }); }
   // 붙잡아 둔 일을 넣을 차례인가(열린 시도가 없을 때 먼저 온 것 하나)
   // P369: 넣는 동안 같은 세션의 pump가 다시 불리면(넣기 → 방송 → onSession) 아무것도 하지 않는다
   pump(sessionId) {

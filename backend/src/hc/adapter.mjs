@@ -250,6 +250,13 @@ export class HcAdapter extends EventEmitter {
       // 2b: hc는 터미널을 끝내기 바로 앞에 상태를 지운다(status null). 그 놓임을 잠깐 들고 있다가, 코어 쪽 까닭(서버 끔·holder 잃음)의 끝이 따라오면 버린다.
       // 그러지 않으면 판 밖에서 코어를 껐을 때 판이 claude를 "스스로 끝남"으로 보고 되살리지 않는다(서버가 꺼지면 끊김만 와야 한다)
       if (e.type === 'agent_released' && e.raw && e.raw.type === 'status' && e.paneId) { this._holdRelease(e); continue; }
+      // P378: 상태 지움으로 놓임을 들고 있는 동안 같은 에이전트가 다시 상태를 말했다(Claude Code는 신뢰 질문에 답하면 그 막힘 상태를 지우고 곧 idle을 말한다).
+      //   떠난 것이 아니다: 들고 있던 놓임을 버리고 다시 나타남도 내지 않는다(판은 놓임을 보지 못했다). 다른 에이전트면 놓임을 먼저 내 차례를 지킨다.
+      //   (전에는 다시 나타남이 먼저 나가고 300ms 뒤 놓임이 풀려, 살아 있는 claude가 끝남(other)으로 남았다)
+      if (e.type === 'agent_detected' && e.paneId && this._releases && this._releases.has(e.paneId)) {
+        if (this._releases.get(e.paneId).e.agent === e.agent) { this._dropRelease(e.paneId); this.log(`${e.paneId}: ${e.agent} cleared its status and reported again; not a release`); continue; }
+        this._flushRelease(e.paneId);
+      }
       if (e.paneId && this._releases && this._releases.has(e.paneId)) {
         if (e.type === 'terminal_finished' && CORE_DOWN.has(e.reason)) this._dropRelease(e.paneId);
         else if (e.type === 'pane_exited' || e.type === 'terminal_finished') this._flushRelease(e.paneId, e.exitCode); // P125: 끝난 프로그램의 종료 코드를 놓임에 붙인다(사람이 끝냄·오류 가르기)

@@ -381,7 +381,7 @@ test('P364 worker thread: 짓기·찾기가 worker에서 돌고 판 쪽은 기�
 });
 
 test('P364 계약과 안내: 계약 12, know 동사, 허용 규칙, 하위 오케스트레이션도 쓴다, help·판·하네스 안내문 한 줄', () => {
-  assert.equal(CONTRACT_VERSION, 12);
+  assert.equal(CONTRACT_VERSION, 13);
   assert.ok(VERB_NAMES.includes('know')); assert.equal(VERB_OP.know, 'know');
   assert.ok(ORCH_SUB_VERBS.includes('know'));
   const perm = permOf({ orch: { orchestrates: true } }, { relation: 'sub', parentId: 'p' });

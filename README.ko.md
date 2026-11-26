@@ -251,7 +251,7 @@ npm test             # 창 단위 시험
 - [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org), [Electron](https://www.electronjs.org).
 - 한국어 화면 번역: [Qualop](https://github.com/Qualop)([Qualop/atrium-macos](https://github.com/Qualop/atrium-macos) 기반).
 - 내장 글꼴: Geist, JetBrains Mono, Pretendard, 나눔고딕코딩(SIL Open Font License 1.1).
-- Claude, Codex, Antigravity, DeepSeek, Grok, Pi의 이름과 로고는 각 소유자의 상표이며, 세션 종류 표시에만 사용하고 제휴나 보증을 뜻하지 않습니다.
+- Claude, Codex, Antigravity, DeepSeek, Grok, Pi, Hermes, OmO의 이름과 로고는 각 소유자의 상표이며, 세션 종류 표시에만 사용하고 제휴나 보증을 뜻하지 않습니다.
 
 자세한 내용은 [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt)를 참고하세요.
 

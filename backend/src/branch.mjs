@@ -291,6 +291,8 @@ const SKILL_BODY = `# Atrium 보드에서 일하기: 워커로 나눠 맡기기
 - 연결: \`atrium me\`가 상위·동료·하위·독립과 역할 연결의 지금 기록이다. 판에서 잇거나 끊은 역할 연결은 알리지 않으니 모르는 이름·역할을 들으면 친다.
 - 헤드: 다른 폴더에 따로 이끌 세션을 띄우라면 \`atrium child <이름> --head --cwd <폴더> --prompt "<지시>"\`. 첫 요청 뒤 보드가 떼므로 그 뒤로 시키거나 기다리지 않는다.
 - 다른 종류(Codex 등): \`atrium child <이름> --kind codex --model "<모델>" --prompt "<지시>"\`. 레일의 Codex 설정과 너의 승인 방식을 따른다. 시키기·기다리기는 같다.
+- 슬래시 명령(\`/ulw-plan\` 등)은 입력 맨 앞이어야 하네스가 받는다: \`atrium prompt <이름> --raw "<명령>"\`(머리 없음. 새 하위는 자기 일을 \`atrium item\`으로 안다).
+- OmO 계획 검토자는 ulw-plan 요청과 \`.omo/plans/*.md\`를 read·write·edit 도구로 건드린 기록이 다 있어야 열린다. 셸 스크립트로 만든 계획 파일은 도구 기록에 잡히지 않는다.
 
 ## 신뢰 질문
 
@@ -346,6 +348,8 @@ export const delegateSkill = () => boardSkill(LEGACY_SKILL_NAME); // P8 이름(�
 // P184: atrium 명령의 코드(bin/atrium-child.mjs와 그것이 부르는 src 파일들)를 { '<backend 안 상대 경로>': 글 }로 모은다.
 //   판은 이것을 하네스 bin 폴더 안(lib/)에 함께 두고 거기를 부른다. 샌드박스 Codex(승인 모드)는 작업 폴더와 Codex가 권한을 준 폴더만 읽어서,
 //   판 코드가 그 밖(개발용 판의 C:\Workspace 등)이면 atrium을 부르지 못했다. 이렇게 하면 판 데이터 폴더만 읽히면 된다
+// P380: /branch 응답에 싣는 부른 세션의 종류(atrium 명령이 OmO면 출력에서 위험 낱말을 뺀다, risky-words.mjs)
+export const callerKind = (s) => (s ? { kind: s.kind || 'claude', ...(s.flavor ? { flavor: s.flavor } : {}) } : null);
 export function childBundle(root = BACKEND_ROOT, entry = 'bin/atrium-child.mjs') {
   const out = {};
   const walk = (rel) => {
@@ -646,13 +650,13 @@ export class Branch {
       if (caller.error) return send(caller.status, { error: caller.error });
       // P296: 오케스트레이션 세션은 허용 동사만(보드가 막는다. 안내 글만으로는 부족하다)
       const refused = this.refusalOf(caller.s, op, body);
-      if (refused) return send(403, { error: refused });
+      if (refused) return send(403, { caller: callerKind(caller.s), error: refused });
       try {
         const result = await this.dispatch(op, caller.s, body, res);
-        send(200, { result, board: { terminalSession: this.b.cfg.terminalSession, port: this.b.cfg.port } });
+        send(200, { result, board: { terminalSession: this.b.cfg.terminalSession, port: this.b.cfg.port }, caller: callerKind(caller.s) }); // P380: 부른 세션의 종류(OmO면 atrium 명령이 출력을 거른다)
       } catch (e) {
         if (!e.code) this.b.log(`branch ${op} failed: ${e.stack}`);
-        send(['not_parent', 'not_sub', 'not_linked', 'user_set'].includes(e.code) ? 403 : e.code === 'not_found' ? 404 : 400, { error: { code: e.code || 'error', message: e.message, ...(e.limit ? { limit: e.limit, now: e.now } : {}), ...(e.candidates ? { candidates: e.candidates } : {}), ...(e.problems ? { problems: e.problems } : {}), ...(e.parent ? { parent: e.parent } : {}) } }); // P304: 계획 가져오기의 문제 목록, 거절의 부모
+        send(['not_parent', 'not_sub', 'not_linked', 'user_set'].includes(e.code) ? 403 : e.code === 'not_found' ? 404 : 400, { caller: callerKind(caller.s), error: { code: e.code || 'error', message: e.message, ...(e.limit ? { limit: e.limit, now: e.now } : {}), ...(e.candidates ? { candidates: e.candidates } : {}), ...(e.problems ? { problems: e.problems } : {}), ...(e.parent ? { parent: e.parent } : {}) } }); // P304: 계획 가져오기의 문제 목록, 거절의 부모
       }
     });
     return true;
@@ -749,6 +753,7 @@ export class Branch {
     const relation = peer ? 'peer' : 'sub';
     const role = o.role == null || o.role === '' ? (head ? HEAD_ROLE : peer ? PEER_ROLE : DEFAULT_ROLE) : String(o.role).trim();
     if (!ROLE_RE.test(role)) throw apiError('bad_request', "역할은 1~40자로 입력하세요. 줄바꿈, 따옴표, $, \\는 사용할 수 없습니다.");
+    if (o.kind != null && o.kind !== '') o = { ...o, kind: String(o.kind).toLowerCase() }; // P380: 종류 이름은 소문자로 맞춘다(OmO 세션은 출력에서 대문자 표기를 본다)
     if (o.kind === 'shell') throw apiError('bad_request', "하위 세션은 에이전트만 만들 수 있습니다. 셸은 사람이 보드에서 엽니다.");
     // P41: 무엇으로 띄우는가(호출자, 말로 한 모델 이름 풀기, 부모의 게이트웨이 물려받기)
     const route = await this.routeOf(parent, o);
