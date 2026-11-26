@@ -48,9 +48,9 @@ test('명령줄: 갈라 열기는 --resume <원래> --fork-session --session-id 
 });
 
 test('계약 11: revive·fork 동사, 오케스트레이션 세션에는 없음, 승인 규칙, help·판 안내문·하네스 안내문·스킬에 사람이 시킬 때만 한 줄', () => {
-  assert.equal(CONTRACT_VERSION, 12); // P364: know로 12
+  assert.equal(CONTRACT_VERSION, 13); // P364: know로 12
   assert.deepEqual(VERB_NAMES.slice(-3, -1), ['revive', 'fork']); // P364: 뒤에 know
-  assert.equal(contractJson().contract, 12); // P364
+  assert.equal(contractJson().contract, 13); // P364
   const fork = contractJson().verbs.find((v) => v.name === 'fork');
   assert.ok(fork.args.includes('[--launcher 런처]') && fork.args.includes('[--peer]'));
   assert.equal(VERB_OP.revive, 'revive'); assert.equal(VERB_OP.fork, 'fork');

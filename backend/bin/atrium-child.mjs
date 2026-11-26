@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 하위 세션 명령(P8, ARCH 4절 K): 판이 띄운 세션 안에서 부른다. 판 플러그인의 bin/atrium(옛 이름 bin/mtask)이 이 파일을 부른다.
 // 판의 API 토큰(backend.json)을 읽지 않는다. 세션 설정 파일의 env(ATRIUM_PORT, ATRIUM_SESSION_ID, ATRIUM_SESSION_TOKEN 등. P18 전에 띄운 세션은 MTASK_*)로 그 판의 POST /branch/*만 부른다.
-// 사용: atrium prompt <이름> "<글>" [--wait | --now] [--timeout ms] [--file 경로] [--json]   (P116: 다른 에이전트에게 일 시키기. 판의 전달 규칙으로 넣는다)
+// 사용: atrium prompt <이름> "<글>" [--wait | --now] [--raw] [--timeout ms] [--file 경로] [--json]   (P116: 다른 에이전트에게 일 시키기. 판의 전달 규칙으로 넣는다. P380: --raw는 판 머리 없이 글을 맨 앞에)
 //       atrium wait <이름> [--timeout ms] [--json]   (P116: 그 세션의 지금 턴이 끝날 때까지, 마지막 답)
 //       atrium read <이름> [--lines n] [--json]   (P116: 그 세션 화면의 최근 줄)
 //       atrium relate <이름> sub|peer|none|auto [--json]   (P156: 나와 그 세션의 일 관계)
@@ -28,12 +28,13 @@ import path from 'node:path';
 import { envVar, terminalSessionVar } from '../src/config.mjs';
 import { shortHelp, contractJson, VERB_NAMES, RELATION_HELP, PEER_RULE_SHORT, NEWS_LOG_MAX, ASK_QUESTION_MAX, ASK_OPTIONS_MAX, ASK_OPTION_MAX, ASK_WHY_MAX, ASK_OPEN_MAX, TODO_CMDS_MAX, TODO_CMD_MAX, TODO_LATER_MAX } from '../src/cli-contract.mjs'; // P292: 사용자 몫 상한 // P284: 결정 카드 상한 // P204: 동료 소식 // P115: 계약(atrium help --json). P156: 관계 고르기 안내
 import { usageLines } from '../src/usage-text.mjs'; // P211: atrium usage
+import { dropRiskyWords, riskyKind } from '../src/risky-words.mjs'; // P380: OmO 세션이 부르면 출력에서 위험 낱말을 뺀다
 import { PLAN_HELP, parsePlanArgs, showLines, listLines, writeLines, importLines, logLines, meLines as planMeLines } from '../src/plan-cli.mjs'; // P304: atrium plan
 
 // P181: 하위에게 일을 맡긴 뒤의 안내(폴링하지 않고 턴을 끝낸다)
 const HAND_OFF = '기다리지 않고 턴을 끝낸다. 끝나면 보드가 done 보고를 가져다주고, 보고 없이 멈추면 한 번 알린다.';
 const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같다)
-  atrium prompt <이름> "<할 일>" [--wait | --steer] [--timeout ms] [--file 경로]
+  atrium prompt <이름> "<할 일>" [--wait | --steer] [--raw] [--timeout ms] [--file 경로]
       다른 에이전트에게 일을 맡긴다. 이름은 보드의 세션 이름이다(@ 없이도). 보드가 받는 쪽 차례에 맞춰 넣는다: 일하는 중이거나 사람의 답을 기다리면 끝난 뒤,
       사람이 그 터미널에 치는 중이면 3초 뒤, 잠들었으면 깨운 뒤. 보낸 쪽 → 받는 쪽 연결과 오간 기록이 판에 남는다.
       하위에게 맡겼으면 턴을 끝낸다: 하위가 atrium done으로 닫으면 보드가 그 값과 보고를 네 차례에 한 번 넣고, 보고 없이 멈추면(쉼, 오류, 사람의 답 기다림, 닫힘) 한 번 알린다. 폴링하지 않는다.
@@ -43,6 +44,8 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
       그 세션의 대기 메시지로 바로 넣는다(지금 턴 안에서 읽는다). --now는 받는 쪽이 일하는 중인 Claude Code면 같은 길이다.
       그 밖(쉬는 중, 다른 종류, 사람의 답을 기다림, 잠듦)은 위와 같다(다른 종류는 일하는 중 입력을 받지 못해 대기열로 간다). --wait와 함께 쓰지 않는다. done 보고와 판 알림은 늘 대기열이다.
       --file은 글을 파일에서 읽는다(긴 글, 따옴표가 많은 글).
+      --raw는 보드 머리 줄(관계·일·약속)과 앞에 붙는 사람의 답 없이 글을 그대로 맨 앞에 넣는다. 슬래시 명령(/ulw-plan, /handoff 등)은 입력 맨 앞이어야 하네스가 명령으로 받는다.
+      하위에게 새 일이면 일은 그대로 만들어지고(atrium item, done 연결) 머리는 판 기록에만 남는다. 머리가 빠지므로 그 하위는 자기 일을 atrium item으로 안다. --raw는 슬래시 명령용이다(보통 지시는 --raw 없이).
   atrium wait <이름> [--timeout ms]
       그 세션이 지금 턴(너의 글이 대기열에 있으면 그 글의 턴)을 끝낼 때까지 기다려 마지막 답을 돌려준다(Claude Code는 hook의 답, 다른 종류는 보드가 화면에서 고른 답).
       사람의 답을 기다리면 바로 돌아온다(waiting). 시간이 끝나면 종료 코드 3이고 일은 계속된다. 맡긴 일의 보고는 보드가 가져다주므로 되풀이해 치지 않는다
@@ -121,7 +124,7 @@ ${RELATION_HELP.join('\n')}
 이 명령은 보드가 띄운 세션에서만 된다. 다른 보드 명령은 없다. 다른 에이전트에게는 atrium prompt로만 보낸다(터미널 명령으로 직접 보내면 보드가 연결을 남기지 못한다).`;
 
 const MULTI = new Set(['option', 'cmd', 'record']); // P284: ask --option 여럿. P292: todo --cmd 여럿. P334: done --record 여럿
-const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list', 'check', 'tell', 'full', 'usage', 'self']); // P371: know --self // P364: know build --full, know --usage // P292: todo --check·--tell // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
+const BOOL = new Set(['no-wait', 'json', 'all', 'only', 'help', 'head', 'long', 'wait', 'now', 'steer', 'peer', 'list', 'check', 'tell', 'full', 'usage', 'self', 'raw']); // P380: prompt --raw // P371: know --self // P364: know build --full, know --usage // P292: todo --check·--tell // P284: ask --list // P248: prompt --steer(= --now) // P156: child --peer // P116: prompt --wait, P143: prompt --now
 // P208: PowerShell 꾸러미(atrium.ps1)는 인자를 JSON으로 env에 실어 준다(cmd를 거치지 않아 여러 줄·따옴표·<>|&%가 그대로 온다). 읽고 지운다
 function argvOf() {
   const j = process.env.ATRIUM_ARGV_JSON; const f = process.env.ATRIUM_ARGV_FILE;
@@ -145,6 +148,11 @@ function sessionToken() {
   try { return fs.readFileSync(path.join(E('DATA_DIR'), 'sessions', `${E('SESSION_ID')}.token`), 'utf8').trim() || null; } catch { return null; }
 }
 let TOKEN = null;
+// P380: 부른 세션이 OmO(omo)면 보드 응답이 그 종류를 알려 준다(caller). 그 뒤의 사람 글 출력(오류 포함)에서 홀로 선 위험 낱말을 뺀다(risky-words.mjs).
+//   --json 출력은 그대로 둔다(종류 값 등을 읽는 쪽이 대소문자를 가린다)
+let RISKY = false;
+const noteCaller = (j) => { if (j && j.caller && (riskyKind(j.caller.kind) || riskyKind(j.caller.flavor))) RISKY = true; };
+for (const st of [process.stdout, process.stderr]) { const w = st.write.bind(st); st.write = (c, ...a) => w(RISKY && !flags.json && typeof c === 'string' ? dropRiskyWords(c) : c, ...a); }
 const say = (s) => process.stdout.write(s + '\n');
 const fail = (msg, code = 1) => { process.stderr.write(`atrium: ${msg}\n`); process.exit(code); };
 
@@ -154,7 +162,7 @@ function call(op, body, timeoutMs) {
     const req = http.request({ host: '127.0.0.1', port: Number(E('PORT')), path: `/branch/${op}`, method: 'POST', timeout: timeoutMs,
       headers: { 'content-type': 'application/json', 'content-length': data.length, authorization: `Bearer ${TOKEN}`, 'x-mt-session': E('SESSION_ID') } }, (res) => {
       let b = ''; res.setEncoding('utf8'); res.on('data', (d) => (b += d));
-      res.on('end', () => { try { resolve(JSON.parse(b)); } catch { reject(new Error(`보드의 응답을 읽지 못했습니다 (HTTP ${res.statusCode})`)); } });
+      res.on('end', () => { try { const j = JSON.parse(b); noteCaller(j); resolve(j); } catch { reject(new Error(`보드의 응답을 읽지 못했습니다 (HTTP ${res.statusCode})`)); } });
     });
     req.on('timeout', () => { req.destroy(new Error('보드 응답 시간이 초과되었습니다.')); });
     req.on('error', (e) => reject(new Error(e.code === 'ECONNREFUSED' ? `보드 백엔드가 실행 중이 아닙니다 (포트 ${E('PORT')})` : e.message)));
@@ -558,7 +566,7 @@ async function verb(cmd) {
     if (!text.trim()) fail('보낼 글을 준다: atrium prompt <이름> "<할 일>"', 2);
     if (flags.steer) flags.now = true; // P248: --steer는 --now의 뜻이 보이는 이름이다
     if (flags.now && flags.wait) fail('--steer·--now와 --wait는 함께 쓸 수 없다(--steer는 받는 쪽의 지금 턴에 넣어 짝지을 답이 없다). 답을 받으려면 --wait만, 일하는 중에도 바로 알리려면 --steer만 준다.', 2); // P143
-    r = await call('prompt', { name, text, wait: !!flags.wait, ...(flags.now ? { now: true } : {}), timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
+    r = await call('prompt', { name, text, wait: !!flags.wait, ...(flags.now ? { now: true } : {}), ...(flags.raw ? { raw: true } : {}), timeoutMs }, flags.wait ? (timeoutMs || 100000) + WAIT_HTTP_EXTRA : 60000);
   } else if (cmd === 'wait') r = await call('turn', { name, timeoutMs }, (timeoutMs || 100000) + WAIT_HTTP_EXTRA);
   else {
     const lines = flags.lines != null ? Number(flags.lines) : null;

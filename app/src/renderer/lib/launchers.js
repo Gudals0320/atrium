@@ -3,7 +3,7 @@
 import { KINDS } from './kinds.js';
 
 // 고를 수 있는 아이콘(lib/kinds.js의 로고와 기호). 빈 값은 하네스를 따른다
-export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'agy', 'hermes', 'omh', 'omo', 'grok', 'shell']; // P192: agy. P298: hermes. P309: omh. P329: omo(글자 기호)
+export const ICONS = ['claude', 'codex', 'deepseek', 'pi', 'agy', 'hermes', 'omh', 'omo', 'grok', 'shell']; // P192: agy. P298: hermes. P309: omh. P329: omo. P380: omo 로고
 // P196: 하네스가 판에 기본으로 드는 에이전트 종류(백엔드 HARNESSES와 같은 순서). 하네스 표를 아직 못 받았을 때도 드롭다운에 이것을 다 보인다
 export { PERMISSION_MODES } from './permission-modes.js'; // P287: 호출자 창과 설정 › 합치기가 함께 쓰는 승인 방식 목록
 export const AGENT_HARNESSES = ['claude', 'codex', 'opencode', 'pi', 'agy', 'dsh', 'hermes', 'omo']; // P270: dsh. P298: hermes. P329: omo

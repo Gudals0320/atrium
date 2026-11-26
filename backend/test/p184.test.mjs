@@ -166,7 +166,7 @@ test('P184 화면 읽기가 없는 판(inspect 없음)의 Codex는 예전처럼 
 
 test('P184 하네스 bin에 atrium 명령 코드를 함께 두고(lib/), 판 코드 폴더 없이 그것만으로 돈다', async () => {
   const lib = childBundle();
-  assert.deepEqual(Object.keys(lib).sort(), ['bin/atrium-child.mjs', 'src/cli-contract.mjs', 'src/codex-models.mjs', 'src/config.mjs', 'src/model-name.mjs', 'src/plan-cli.mjs', 'src/usage-text.mjs']); // P211: atrium usage 글. P304: atrium plan 인자·출력
+  assert.deepEqual(Object.keys(lib).sort(), ['bin/atrium-child.mjs', 'src/cli-contract.mjs', 'src/codex-models.mjs', 'src/config.mjs', 'src/model-name.mjs', 'src/plan-cli.mjs', 'src/risky-words.mjs', 'src/usage-text.mjs']); // P380: OmO 출력 거르기. P211: atrium usage 글. P304: atrium plan 인자·출력
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'p184-bin-'));
   try {
     const binDir = path.join(tmp, 'bin');

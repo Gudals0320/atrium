@@ -251,7 +251,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full stage-by-stage history. Atrium is an a
 - [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org), and [Electron](https://www.electronjs.org).
 - Korean UI translation by [Qualop](https://github.com/Qualop), adapted from [Qualop/atrium-macos](https://github.com/Qualop/atrium-macos).
 - Bundled fonts: Geist, JetBrains Mono, Pretendard, and Nanum Gothic Coding (SIL Open Font License 1.1).
-- Claude, Codex, Antigravity, DeepSeek, Grok, and Pi names and logos are trademarks of their respective owners, used solely to label session kinds with no affiliation or endorsement.
+- Claude, Codex, Antigravity, DeepSeek, Grok, Pi, Hermes, and OmO names and logos are trademarks of their respective owners, used solely to label session kinds with no affiliation or endorsement.
 
 See [app/THIRD_PARTY_NOTICES.txt](app/THIRD_PARTY_NOTICES.txt) for full third-party notices.
 
