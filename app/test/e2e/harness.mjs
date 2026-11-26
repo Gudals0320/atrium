@@ -4,6 +4,7 @@ import { _electron as electron } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertIsolated, hasBoardValues } from './lib/dev-board.mjs'; // P372
 
 export const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const REPO = path.resolve(APP_ROOT, '..');
@@ -28,7 +29,11 @@ export function logger(name) {
 function cleanEnv() { return Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_EFFORT|CLAUDE_PID|CLAUDE_AGENT_SDK|ELECTRON_RUN_AS_NODE)/.test(k))); }
 
 export async function launch({ query = '', log = console.log, env = {}, args = [] } = {}) {
-  const app = await electron.launch({ args: ['.', '--dev', ...args], cwd: APP_ROOT, env: { ...cleanEnv(), ...env }, timeout: 60000 }); // P65: args(예: --force-device-scale-factor)
+  // P372: 창이 띄울 판(백엔드·터미널 서버)의 격리 값을 띄우기 전에 본다. 빠졌거나 실제 판·다른 판이면 까닭과 고치는 법을 담아 던진다(lib/dev-board.mjs).
+  //   판 값 없이 기본 개발용 판(47811)을 쓰는 옛 시험은 MT_DEFAULT_DEV_BOARD=1일 때만(그 판은 실제 대화 기록을 읽는다)
+  const full = { ...cleanEnv(), ...env };
+  if (hasBoardValues(full) || full.MT_DEFAULT_DEV_BOARD !== '1') assertIsolated(full, { window: true, what: '창 시험 판' });
+  const app = await electron.launch({ args: ['.', '--dev', ...args], cwd: APP_ROOT, env: full, timeout: 60000 }); // P65: args(예: --force-device-scale-factor)
   const page = await app.firstWindow();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') log(`[console.${m.type()}] ${m.text().slice(0, 300)}`); });
   page.on('pageerror', (e) => log(`[pageerror] ${e.message}`));

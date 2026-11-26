@@ -5,6 +5,7 @@
 //      옮기기 시험(assertLegacyTestBoard)은 옛 판 값(ATRIUM_LEGACY_*)도 시험 판 값인지 본다
 import os from 'node:os';
 import path from 'node:path';
+import { isolationProblems, isolationMessage } from './lib/dev-board.mjs'; // P372: 대화 기록·데스크톱 앱·Codex 격리
 
 const NAMES = ['HERDR_SESSION', 'PORT', 'DATA_DIR', 'APP_USERDATA'];
 const IDS = ['atrium', 'multitask'];
@@ -39,6 +40,9 @@ export function assertTestBoard(env, { root } = {}) {
   checkDataDir(val(env, 'DATA_DIR'));
   checkAppProfile(val(env, 'APP_USERDATA'));
   if (root) for (const n of ['DATA_DIR', 'APP_USERDATA']) if (!inside(val(env, n), root)) throw new Error(`ATRIUM_${n}(${val(env, n)})가 시험 폴더(${root}) 밖이다`);
+  // P372: 네 값 말고도 대화 기록(ATRIUM_CLAUDE_PROJECTS)·데스크톱 앱(ATRIUM_CLAUDE_DESKTOP=none)·Codex 홈과 옛 이름 짝을 본다. 빠지면 판이 실제 대화 기록을 읽는다
+  const more = isolationProblems(atriumEnv(env), { window: true }).filter((x) => ['ATRIUM_CLAUDE_PROJECTS', 'ATRIUM_CLAUDE_DESKTOP', 'ATRIUM_CODEX_HOME', 'ATRIUM_HERDR_SESSION'].includes(x.key));
+  if (more.length) throw new Error(isolationMessage(more, '시험 판'));
   return true;
 }
 

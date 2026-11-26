@@ -50,12 +50,11 @@ const relay = (limit = 100) => call('relay.status', { limit });
 const save = (name, v) => fs.writeFileSync(path.join(OUT, '..', name), typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 const ids = () => { try { return JSON.parse(fs.readFileSync(path.join(OUT, '..', 'ids.json'), 'utf8')); } catch { return {}; } };
 const saveIds = (o) => save('ids.json', { ...ids(), ...o });
-// 에이전트 명령 그대로(판이 띄운 세션의 env·토큰 파일): atrium-child.mjs <동사> … 를 그 세션으로 부른다
+// 에이전트 명령 그대로: atrium-child.mjs <동사> … 를 그 세션 신원(세션 ID + 세션 토큰)으로 부른다.
+// P372: 토큰은 판 API 토큰의 HMAC(lib/board-agent.mjs sessionToken)으로 늘 만든다. 예전에는 세션 설정 파일에서 읽어, 파일에 없으면 토큰 없이 불러 not_board_session이 났다(P360 사례 22)
+const { sessionToken } = await import('./lib/board-agent.mjs');
 function agent(sessionId, ...a) {
-  // Claude Code 세션의 토큰은 판이 쓴 세션 설정 파일의 env에 있다(값은 출력하지 않는다)
-  let tok = '';
-  try { tok = JSON.parse(fs.readFileSync(path.join(ENV.ATRIUM_DATA_DIR, 'sessions', `${sessionId}.json`), 'utf8')).env.ATRIUM_SESSION_TOKEN || ''; } catch {}
-  const env = { ...process.env, ATRIUM_SESSION_ID: sessionId, ATRIUM_PROFILE: 'dev', ...(tok ? { ATRIUM_SESSION_TOKEN: tok } : {}) };
+  const env = { ...process.env, ATRIUM_SESSION_ID: sessionId, ATRIUM_PROFILE: 'dev', ATRIUM_SESSION_TOKEN: sessionToken(ENV, sessionId) }; // 값은 출력하지 않는다
   try { return { ok: true, out: execFileSync(process.execPath, [path.join(REPO, 'backend', 'bin', 'atrium-child.mjs'), ...a], { encoding: 'utf8', env, timeout: 240000 }) }; }
   catch (e) { return { ok: false, out: String(e.stdout || '') + String(e.stderr || '') + (e.stdout || e.stderr ? '' : e.message) }; }
 }

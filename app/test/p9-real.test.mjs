@@ -11,11 +11,11 @@ import { migrateAppProfile, PROFILE_MARKER } from '../src/main/profile.mjs';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEV = path.resolve(APP, '..', 'backend', '.dev');
-const OK = { ATRIUM_HERDR_SESSION: 'atrium-dev-p9', ATRIUM_PORT: '47821', ATRIUM_DATA_DIR: path.join(DEV, 'data'), ATRIUM_APP_USERDATA: path.join(DEV, 'app') };
+const OK = { ATRIUM_HERDR_SESSION: 'atrium-dev-p9', ATRIUM_PORT: '47821', ATRIUM_DATA_DIR: path.join(DEV, 'data'), ATRIUM_APP_USERDATA: path.join(DEV, 'app'), ATRIUM_CLAUDE_PROJECTS: path.join(DEV, 'p9-convos'), ATRIUM_CLAUDE_DESKTOP: 'none' }; // P372: 대화 기록 격리 둘
 
 test('P9: 시험 판 막기 — 네 값을 모두 시험 판 값으로 덮어야 띄운다', () => {
   assert.equal(assertTestBoard(OK, { root: DEV }), true);
-  for (const k of Object.keys(OK)) { const e = { ...OK }; delete e[k]; assert.throws(() => assertTestBoard(e, { root: DEV }), new RegExp(k)); }
+  for (const k of Object.keys(OK)) { const e = { ...OK }; delete e[k]; assert.throws(() => assertTestBoard(e, { root: DEV }), new RegExp(k)); } // P372: 대화 기록·데스크톱 앱이 빠져도 막는다
   for (const s of ['atrium', 'atrium-dev', 'multitask', 'multitask-dev', 'default', 'other-p9']) assert.throws(() => assertTestBoard({ ...OK, ATRIUM_HERDR_SESSION: s }), /herdr 세션/, s);
   // P18: 옛 이름의 값(MTASK_*)과 옛 시험 판 이름(multitask-dev-*)도 받는다. 둘 다 있으면 ATRIUM_*
   const old = Object.fromEntries(Object.entries(OK).map(([k, v]) => [k.replace(/^ATRIUM_/, 'MTASK_'), v]));
