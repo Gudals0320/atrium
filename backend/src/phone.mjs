@@ -54,6 +54,7 @@ export function rowOf(s) {
   if (s.unseen) r.unseen = true;
   if (s.waking) r.waking = true;
   if (s.hooked === false) r.hooked = false; // 스티어링할 수 없다(lib/steer.js steerBlock)
+  if (s.orch && s.orch.on) r.orch = { on: true }; // P379: 자체 오케스트레이션 세션은 스티어링 없이 대기열만(steerBlock 'orchestrates')
   if (s.flavor) r.flavor = s.flavor;
   if (s.billing === 'api' || s.billing === 'sdk') r.billing = s.billing; // P359: API 키 과금 세션. P363: SDK 세션(카드의 SDK 표시)
   if (s.model) r.model = String(s.model).replace(/^claude-/, '').slice(0, 40);
