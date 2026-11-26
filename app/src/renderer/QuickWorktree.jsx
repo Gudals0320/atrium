@@ -96,11 +96,12 @@ function QuickBox({ at }) {
   const [peer, setPeer] = useState(!!cands[0]);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(null);
+  const [boardBase, setBoardBase] = useState(null); // P386: 판 설정 워크트리 위치를 정했으면 다른 하네스 워크트리가 들 폴더
   const pos = useFit(at, box);
   useOutside(box, closeAll);
   useEffect(() => {
     let live = true;
-    api.call('session.worktreePreview', { workspace: at.wsKey }).then((r) => { if (!live || !r || !r.name) return; setAuto(r.name); setName((n) => n || r.name); if (r.hasCommit === false) setProblem('needsCommit'); }).catch(() => {});
+    api.call('session.worktreePreview', { workspace: at.wsKey }).then((r) => { if (!live || !r || !r.name) return; setAuto(r.name); setName((n) => n || r.name); if (r.hasCommit === false) setProblem('needsCommit'); if (r.boardBase) setBoardBase(r.boardBase); }).catch(() => {});
     const tm = setTimeout(() => { if (nameRef.current) { nameRef.current.focus(); nameRef.current.select(); } }, 30);
     return () => { live = false; clearTimeout(tm); };
   }, [at.wsKey]);
@@ -128,6 +129,8 @@ function QuickBox({ at }) {
   };
   const cycle = () => { const n = nextHead(cands, headId); if (n) { setHeadId(n.sessionId); setPeer(true); } };
   const nm = name.trim() || auto;
+  const curL = list.find((l) => l.id === lid) || null;
+  const wtPath = boardBase && curL && curL.harness !== 'claude' ? boardBase + nm : wtRel(nm); // P386: Claude Code는 claude -w(자리는 Claude Code·hook)
   return createPortal(
     <div ref={box} className="mt-qwt" role="dialog" aria-labelledby="mt-qwt-title" data-role="quick-worktree" data-ws={at.wsKey} style={pos} onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()}>
       <div className="mt-qwt-title" id="mt-qwt-title">{t('quickWt.title')}</div>
@@ -145,7 +148,7 @@ function QuickBox({ at }) {
         <label><input type="checkbox" data-field="qwt-peer" checked={peer} onChange={(e) => setPeer(e.target.checked)} /> {t('quickWt.peer', { head: head.name })}</label>
         {cands.length > 1 && <button type="button" className="mt-qwt-change" data-action="qwt-head" title={t('quickWt.changeTitle')} onClick={cycle}>{t('quickWt.change')}</button>}
       </div>}
-      <div className={`mt-qwt-note mono${issue ? ' bad' : ''}`} data-role="qwt-preview">{issue ? t('quickWt.bad.' + issue) : problem ? t('quickWt.needsCommit') : t('quickWt.preview', { branch: wtBranch(nm), path: wtRel(nm) })}</div>
+      <div className={`mt-qwt-note mono${issue ? ' bad' : ''}`} data-role="qwt-preview">{issue ? t('quickWt.bad.' + issue) : problem ? t('quickWt.needsCommit') : t('quickWt.preview', { branch: wtBranch(nm), path: wtPath })}</div>
       <div className="mt-qwt-acts">
         <button type="button" className="mt-btn small ghost" data-action="qwt-cancel" onClick={closeAll}>{t('common.cancel')}</button>
         <button type="button" className="mt-btn small primary" data-action="qwt-go" disabled={busy || !!issue || !w} onClick={go}>{busy ? t('quickWt.starting') : t('quickWt.go')}</button>

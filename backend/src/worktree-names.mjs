@@ -3,6 +3,23 @@
 export const WT_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 export const wtBranch = (name) => 'worktree-' + name;
 export const wtRel = (name) => '.claude/worktrees/' + name;
+// P386: 리포 ID(사용자 WorktreeCreate hook과 같은 꼴, 판의 유일한 정의). 주 체크아웃의 절대 경로에서 :·\·/ 묶음을 _로 바꾸고 앞뒤 _를 뺀다.
+//   C:/Workspace/multitask → C_Workspace_multitask. hook은 path.resolve 뒤 같은 바꾸기를 한다(p386 시험이 두 값이 같은지 본다)
+export const repoIdOf = (root) => String(root || '').replace(/[:\\/]+/g, '_').replace(/^_+|_+$/g, '');
+// P386: 판 설정 "워크트리 위치"(worktreeRoot) 값 다듬기: 앞뒤 빈칸, 백슬래시 → 슬래시, 끝 슬래시를 뺀다(드라이브 뿌리 E:/는 그대로). 비면 ''
+export function cleanWtRoot(v) {
+  const t = String(v || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!t) return '';
+  return /^[A-Za-z]:$/.test(t) ? t + '/' : t;
+}
+// P386: 판이 만드는 워크트리(Claude Code가 아닌 하네스)가 들 폴더(슬래시 꼴, 끝에 /). 위치가 비면 <리포>/.claude/worktrees/, 채우면 <위치>/<리포 ID>/
+export function boardWtBase(root, wtRoot = '') {
+  const r = cleanWtRoot(wtRoot);
+  const s = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!r) return s + '/.claude/worktrees/';
+  return (r.endsWith('/') ? r : r + '/') + repoIdOf(s) + '/';
+}
+export const boardWtPath = (root, name, wtRoot = '') => boardWtBase(root, wtRoot) + name;
 // P337: Claude Code 워크트리(claude -w <이름>)의 자리는 정해져 있지 않다. 기본은 <리포>/.claude/worktrees/<이름>이지만 사용자의 WorktreeCreate hook이
 //   다른 곳(다른 드라이브 등)에 만들 수 있다. 그래서 워크트리는 git 워크트리 목록의 브랜치 worktree-<이름>으로 먼저 알아보고, 폴더 꼴(.claude/worktrees/<이름>)은 그중 한 경우로 둔다.
 const segs = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean);

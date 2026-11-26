@@ -2,7 +2,7 @@
 // - head 판정(설계 P318 4.2): 그 리포 영역의 열린 세션 가운데 (1) 일 상위가 없고 (2) merger가 아니고 (3) 셸이 아니고 (4) 폴더가 리포 뿌리(워크트리 아님)인 것.
 //   여럿이면 하위가 가장 많은 것, 같으면 최근에 사람이 만진 것(touchedAt). 빠른 창에서 다른 후보로 바꿀 수 있다.
 // - 빈 곳 메뉴의 항목(리포 영역 안 / 폴더 영역 안 / 영역 밖).
-export { WT_NAME_RE, wtBranch, wtRel, autoName, nameFromPrompt } from '../../../../backend/src/worktree-names.mjs';
+export { WT_NAME_RE, wtBranch, wtRel, autoName, nameFromPrompt, boardWtBase, repoIdOf } from '../../../../backend/src/worktree-names.mjs'; // P386: boardWtBase·repoIdOf
 
 const isWt = (s) => !!(s && s.git && s.git.isWorktree);
 // head 후보(앞이 판정한 head). mergerIds: merger 세션 ID 모음

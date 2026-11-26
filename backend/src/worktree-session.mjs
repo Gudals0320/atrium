@@ -8,6 +8,7 @@
 //   · 다른 하네스: 판이 git worktree add -b worktree-<이름> <리포>/.claude/worktrees/<이름> <리포의 지금 브랜치>로 만든 뒤 그 폴더(--cwd)에서 띄운다.
 //     브랜치 이름이 Claude Code와 같아 워크트리 상자(worktrees.mjs)·merger(mergeVerdict)·치우기가 하네스와 상관없이 같은 길을 쓴다(사용자 hook은 Claude Code에만 걸린다).
 //     이것이 판의 첫 git 쓰기다(사람이 띄울 때만). 띄우기가 실패하면 만든 워크트리와 브랜치를 지운다.
+//     P386: 판 설정 워크트리 위치(worktreeRoot)가 있으면 자리는 <위치>/<리포 ID>/<이름>(child-worktree.mjs childWtDir, 드라이브가 없으면 bad_worktree_root로 거절).
 //   · 관계: peerOf(리포의 head, 창이 판정해 보낸다)가 있으면 사람이 정한 동료(relation peer, 출처 user)로 잇는다. 없으면 독립. 일 상위는 없다.
 //   · 첫 지시를 주면 앞에 판 알림 두 줄(관계, 끝내는 법)을 붙인다. 비우면 띄우기만 한다.
 // - 병합 맡기기(판 API merge.request { session, dryRun? }): 워크트리 브랜치에서 일하는 세션에게 일 하나(origin merge_request)를 연다.
@@ -38,7 +39,8 @@ import { readMergeConfig, workCwd, short } from './merger.mjs';
 import { relaunchInWorktree } from './branch.mjs';
 import { clip } from './text.mjs';
 import { resolveLauncher } from './launchers.mjs';
-import { WT_NAME_RE, wtBranch, autoName, findClaudeWt, wtFolderTaken } from './worktree-names.mjs';
+import { WT_NAME_RE, wtBranch, autoName, findClaudeWt, wtFolderTaken, boardWtBase } from './worktree-names.mjs';
+import { childWtDir, boardWtRoot, checkWtRoot } from './child-worktree.mjs'; // P386: 워크트리 위치
 import { parseWorktreeList } from './worktree-areas.mjs'; // P337
 
 function apiError(code, message, extra = {}) { return Object.assign(new Error(message), { code }, extra); }
@@ -50,9 +52,10 @@ export { WT_NAME_RE, wtBranch, autoName, nameFromPrompt } from './worktree-names
 export const WT_ORIGIN = 'merge_request';
 export const wtDir = (root, name) => path.join(root, '.claude', 'worktrees', name);
 // 띄우는 길(순수). kind: 하네스 종류 → { via: 'claude-w', cwd, worktree } | { via: 'git', cwd, git: [git 인자] }
-export function launchPlan({ kind, root, name, base = 'HEAD' }) {
+// P386: wtRoot(판 설정 워크트리 위치)가 있으면 다른 하네스의 자리는 <위치>/<리포 ID>/<이름>. claude -w는 그대로(Claude Code·사용자 hook이 정한다)
+export function launchPlan({ kind, root, name, base = 'HEAD', wtRoot = '' }) {
   if (!kind || kind === 'claude') return { via: 'claude-w', cwd: root, worktree: name };
-  const dir = wtDir(root, name);
+  const dir = childWtDir(root, name, wtRoot);
   return { via: 'git', cwd: dir, git: ['-C', root, 'worktree', 'add', '-b', wtBranch(name), dir, base || 'HEAD'] };
 }
 // 첫 지시 앞의 판 알림 줄(관계, 끝내는 법). 첫 줄은 text.mjs RELATION_LINE 꼴이라 카드에는 사람의 지시만 보인다
@@ -129,11 +132,12 @@ export class WorktreeSessions {
     return r.ok ? parseWorktreeList(r.out).filter((w) => !w.main) : [];
   }
   // 이름이 그 리포에서 비었는가 → null | 까닭. dir_exists: 기본 자리의 폴더, 또는 같은 폴더 이름의 워크트리(P337: hook이 다른 곳에 만든 것. 같은 이름이면 hook이 그것을 다시 연다)
-  async nameProblem(root, name, wsKey = null) {
+  async nameProblem(root, name, wsKey = null, wtRoot = boardWtRoot(this.b)) {
     if (!WT_NAME_RE.test(name)) return 'bad_name';
     const lower = name.toLowerCase();
     if ([...this.b.sessions.values()].some((x) => !x.closedAt && [x.name, x.label, x.agentName].some((n) => n && String(n).toLowerCase() === lower))) return 'name_taken';
     if (fs.existsSync(wtDir(root, name))) return 'dir_exists';
+    if (wtRoot && fs.existsSync(childWtDir(root, name, wtRoot))) return 'dir_exists'; // P386: 워크트리 위치의 같은 이름 폴더
     if (wtFolderTaken(await this.liveOf(root, wsKey), name)) return 'dir_exists';
     if (await revOf(root, 'refs/heads/' + wtBranch(name))) return 'branch_exists';
     return null;
@@ -145,11 +149,13 @@ export class WorktreeSessions {
     const root = ws.root;
     const taken = [...this.b.sessions.values()].filter((x) => !x.closedAt).flatMap((x) => [x.name, x.label].filter(Boolean));
     try { for (const d of fs.readdirSync(path.join(root, '.claude', 'worktrees'))) taken.push(d); } catch {}
+    const wtRoot = boardWtRoot(this.b);
+    if (wtRoot) { try { for (const d of fs.readdirSync(boardWtBase(root, wtRoot))) taken.push(d); } catch {} } // P386
     for (const w of await this.liveOf(root, ws.key)) { const n = String(w.path || '').split('/').filter(Boolean).pop(); if (n) taken.push(n); } // P337: 다른 자리의 워크트리 폴더 이름
     let name = p.name ? String(p.name) : autoName(new Date(), taken);
     for (let i = 0; i < 30 && !p.name && (await this.nameProblem(root, name, ws.key)); i++) { taken.push(name); name = autoName(new Date(), taken); }
     const problem = await this.nameProblem(root, name, ws.key);
-    return { workspace: ws.key, repo: true, root: slash(root), name, problem, branch: wtBranch(name), path: '.claude/worktrees/' + name, base: await branchOf(root).catch(() => null), hasCommit: repoHasCommit(root) };
+    return { workspace: ws.key, repo: true, root: slash(root), name, problem, branch: wtBranch(name), path: '.claude/worktrees/' + name, boardBase: wtRoot ? boardWtBase(root, wtRoot) : null, base: await branchOf(root).catch(() => null), hasCommit: repoHasCommit(root) }; // P386: boardBase = 다른 하네스 워크트리가 들 폴더(위치를 정했을 때만)
   }
 
   // ---------- 띄우기 ----------
@@ -172,7 +178,9 @@ export class WorktreeSessions {
     const kind = launcher ? resolveLauncher(launcher).kind : String(p.kind || 'claude');
     if (kind === 'shell' || kind === 'command') throw apiError('bad_request', '워크트리 세션은 에이전트 하네스로만 띄웁니다(셸·직접 명령 제외).');
     const base = (await branchOf(root).catch(() => null)) || 'HEAD';
-    const plan = launchPlan({ kind, root, name, base });
+    const wtRoot = boardWtRoot(b); // P386
+    const plan = launchPlan({ kind, root, name, base, wtRoot });
+    if (plan.via === 'git') checkWtRoot(wtRoot);
     const prompt = p.prompt && String(p.prompt).trim() ? quickHeader({ head: head ? shownName(head) : null, name }) + '\n\n' + String(p.prompt).trim() : null;
     const gate = plan.via === 'claude-w' && predictTrust(root, b.cfg.claudeJson).needsTrust;
     let made = false;
