@@ -3462,4 +3462,9 @@ export default {
     legend: { suspect: 'Runaway', heavy: 'Heavy', sleep: 'Slept' },
     aria: 'Last {min} minutes: memory {mem} (peak {memPeak}), CPU {cpu} (peak {cpuPeak}), {n} marks',
   },
+  // P373: 설정 › 런처의 부가 연결 절(일반 하네스 런처 목록 아래 따로)
+  p373: {
+    extraTitle: 'Add-on connections',
+    extraNote: 'Outside the usual agent harnesses: SDK sessions billed to an API key, and old API launchers that can no longer start.',
+  },
 };

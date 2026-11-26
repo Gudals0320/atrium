@@ -8,7 +8,8 @@
 // - 사람이 카드를 거치지 않고 그 세션에 직접 글을 보내면(명령 바·휴대폰 입력 = session.send, 터미널에 직접 친 글 = 전달과 맞지 않는 UserPromptSubmit,
 //   hook 없는 종류는 쉬는 중 터미널 Enter) 그 세션의 열린 자동 카드는 answered(via session)로 닫는다. 세션에 따로 알리지 않는다. 판 알림·다른 세션의 글은 닫지 않는다.
 //   P357(사용자 결정, P303을 갈음): 사람이 터미널에 직접 친 글(where terminal)이면 만들어진 지 AUTO_FRESH_MS가 지난 손 결정·확인 카드도 answered(via terminal)로 닫고
-//   ("터미널에서 답함", 할 일 목록에서 다시 열기 = decision.reopen), 그 턴에 에이전트에게 판 한 줄(닫은 카드와 atrium ask|todo --reopen <번호>)을 싣는다.
+//   ("터미널에서 답함", 할 일 목록에서 다시 열기 = decision.reopen). P373(사용자 2026-11-26): 에이전트에게는 아무 글도 넣지 않는다(사람 글이 곧 답이라
+//   "카드를 닫았다" 한 줄은 같은 말을 한 번 더 넣어 토큰만 쓴다). 에이전트는 atrium ask|todo --reopen <번호>로 다시 열 수 있다.
 //   손 실행·나중에 카드(사람이 할 일)와 명령 바·휴대폰 글(bar)은 손 카드를 닫지 않는다. 만들어진 지 10초 안의 카드는 남긴다(onHuman).
 // - 세션이 닫히거나 보관되면 열린 카드는 closed. 바뀔 때마다 창에 decision.changed { cards }(열린 카드 모두)를 보낸다.
 // - 웹 푸시: 응답 필요 알림 설정(need)을 따라 카드마다 한 번(web-push.mjs decision).
@@ -92,12 +93,6 @@ const oneLine = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 // P357: 알린 카드 질문을 기억하는 시간과 수(세션마다)
 export const NOTIFIED_KEEP_MS = 6 * 3600 * 1000;
 export const TERMINAL_RECENT_MS = 24 * 3600 * 1000; // P357: 할 일 목록에 "터미널에서 답함"으로 보이는 시간
-// P357: 터미널 글로 닫은 손 카드를 에이전트에게 알리는 판 한 줄
-export function terminalNote(cards) {
-  const list = cards.map((d) => `#${d.id} "${clip(oneLine(d.question), 60)}"`).join(', ');
-  const how = cards.map((d) => `atrium ${d.kind === 'check' ? 'todo' : 'ask'} --reopen ${d.id}`).join(' / ');
-  return `[Atrium 보드] 카드 ${list}를 사람이 터미널에 친 글로 답한 것으로 닫았다. 답이 아니면 ${how}`;
-}
 const NOTIFIED_MAX = 20;
 // P357: 두 질문이 같은 뜻인가(문장부호·띄어쓰기·대소문자를 빼고 같거나, 두 글자 조각이 SAME_QUESTION_MIN 넘게 겹친다)
 export const SAME_QUESTION_MIN = 0.7;
@@ -121,8 +116,6 @@ export class Decisions {
     this.b = b; this.branch = branch; this.answerGraceMs = answerGraceMs;
     this.now = now || (() => Date.now()); // P292: 시험이 가짜 시계로 바꾼다
     this.wakeTimer = null; // P292: 숨긴 카드를 띄울 타이머
-    this.notes = new Map(); // P357: 세션 ID → 다음 전달 앞에 실을 판 한 줄(터미널 글로 닫은 손 카드)
-    this.noteRides = new Map(); // P357: 전달 ID → { sessionId, text }(실패·취소면 다시 싣는다)
     this.notified = new Map(); // P357: 세션 ID → 최근에 웹 푸시로 알린 카드 질문 [{ q, at }](같은 뜻으로 바뀐 자동 카드를 다시 알리지 않는다)
     try { this.scheduleWake(); } catch {}
     this.prev = new Map(); // P286: 세션 ID → 마지막으로 본 상태(턴 끝 판정)
@@ -488,7 +481,8 @@ export class Decisions {
 
   // ---------- 닫기 ----------
   // 사람이 카드를 거치지 않고 그 세션에 직접 글을 보냈다(where: bar | terminal). 열린 자동 카드는 answered(via session)
-  // P357(P303을 갈음): 명령 바·휴대폰 글(bar)은 손 카드를 닫지 않는다. 터미널 글(terminal)은 손 결정·확인 카드를 answered(via terminal)로 닫고 에이전트에게 한 줄을 싣는다(terminalClose).
+  // P357(P303을 갈음): 명령 바·휴대폰 글(bar)은 손 카드를 닫지 않는다. 터미널 글(terminal)은 손 결정·확인 카드를 answered(via terminal)로 닫는다(terminalClose).
+  //   P373: 닫았다고 에이전트에게 알리지 않는다(조용히 닫기).
   //   손 실행·나중에 카드는 사람이 할 일이라 남긴다. 그 밖에 대화로 답을 받은 에이전트가 atrium ask|todo --done으로 닫는다. 자동 카드는 마지막 질문을 떠 둔 것이라 다음 대화가 갈음해 닫되,
   //   만들어진 지 AUTO_FRESH_MS 안이면 사람이 카드를 보기 전에 보낸 글로 보고 남긴다. 남긴 카드는 decision_kept { hand, fresh, where }로 센다.
   onHuman(sessionId, where = 'session') {
@@ -499,14 +493,13 @@ export class Decisions {
     const hand = active.filter((d) => !d.auto).map((d) => d.id);
     const fresh = active.filter((d) => d.auto && at - d.createdAt < AUTO_FRESH_MS).map((d) => d.id);
     if (hand.length || fresh.length) this.b.store.addEvent(sessionId, 'decision_kept', { hand, fresh, where });
-    const note = closed.length ? terminalNote(closed) : null;
-    if (!open.length && !this.store().heldAnswers(sessionId).length && !note) { if (closed.length) this.changed(); return 0; }
+    if (!open.length && !this.store().heldAnswers(sessionId).length) { if (closed.length) this.changed(); return closed.length; }
     let n = 0;
     for (const d of open) if (this.store().endDecision(d.id, { state: 'answered', via: 'session', at })) n++;
     if (n) this.b.store.addEvent(sessionId, 'decision_end', { ids: open.map((d) => d.id), autoIds: open.map((d) => d.id), state: 'answered', via: 'session', where });
     // P295: 명령 바·휴대폰 글(bar)이면 모은 답은 그 글에 실려 간다(보통 글은 넣을 때 takeHeld, 스티어링 글은 보낼 때 attachFront). 따로 보내지 않는다.
     //   터미널에 직접 친 글(terminal)로 턴이 열렸으면 지금 턴에 넣을 수 있는 세션만 스티어링(rideOnly)으로 그 턴에 넣고, 못 넣으면 다음 판 전달을 기다린다
-    const f = where === 'terminal' ? this.rideSteer(sessionId, note) : null;
+    const f = where === 'terminal' ? this.rideSteer(sessionId) : null;
     if (n || f || closed.length) this.changed();
     return n + closed.length;
   }
@@ -519,20 +512,15 @@ export class Decisions {
     return done;
   }
   // P295: 모은 답을 지금 턴에 스티어링으로 넣는다(rideOnly: 못 넣고 턴이 끝나면 취소되고 다시 붙잡는다) → { deliveryId, ids } | null
-  // P357: note = 터미널 글로 닫은 손 카드를 알리는 판 한 줄(모은 답 앞에 함께 싣는다. 못 넣으면 다음 전달 앞에 싣는다, attachFront)
-  rideSteer(sessionId, note = null) {
+  rideSteer(sessionId) {
     const s = this.b.sessions.get(sessionId);
-    if (note) this.notes.set(sessionId, this.notes.has(sessionId) ? this.notes.get(sessionId) + '\n' + note : note);
-    if (!s || (!this.store().heldAnswers(sessionId).length && !this.notes.has(sessionId))) return null;
+    if (!s || !this.store().heldAnswers(sessionId).length) return null;
     let hooked = true; try { hooked = this.b.hooked ? this.b.hooked(s) : true; } catch {}
     if (steerBlock(s, hooked)) return null; // 일하는 중 입력을 받지 않는 세션: 다음 판 전달을 기다린다
-    const nt = this.takeNote(sessionId);
     const h = this.takeHeld(sessionId);
-    if (!h && !nt) return null;
-    const q = this.b.queue.enqueue(sessionId, [nt, h && h.text].filter(Boolean).join('\n'), { typeNow: true, aside: true, rideOnly: true, origin: { kind: 'human' } });
+    if (!h) return null;
+    const q = this.b.queue.enqueue(sessionId, h.text, { typeNow: true, aside: true, rideOnly: true, origin: { kind: 'human' } });
     q.frontDone = true; // 이 글이 곧 모은 답이다
-    if (nt) { this.noteRides.set(q.deliveryId, { sessionId, text: nt }); this.b.store.addEvent(sessionId, 'decision_term_note', { deliveryId: q.deliveryId, why: 'ride_steer' }); }
-    if (!h) return { deliveryId: q.deliveryId, ids: [] };
     this.rides.set(q.deliveryId, h.ids);
     this.b.store.addEvent(sessionId, 'decision_flush', { ids: h.ids, deliveryId: q.deliveryId, why: 'ride_steer', now: h.now, next: h.next });
     return { deliveryId: q.deliveryId, ids: h.ids };
@@ -548,8 +536,6 @@ export class Decisions {
     const front = (t) => (vn && t ? vn + '\n' + t : vn || t || null);
     // P306: 사람이 바꾼 목표 레인 알림(plan-notify.mjs)도 같은 자리에 싣는다(결정 답 뒤)
     let pn = null; try { pn = this.b.planNotes ? this.b.planNotes.attach(d.sessionId, d.deliveryId, 'ride') : null; } catch {}
-    const nt = this.takeNote(d.sessionId); // P357: 터미널 글로 닫은 손 카드 한 줄
-    if (nt) { this.noteRides.set(d.deliveryId, { sessionId: d.sessionId, text: nt }); this.b.store.addEvent(d.sessionId, 'decision_term_note', { deliveryId: d.deliveryId, why: 'ride' }); vn = vn ? vn + '\n' + nt : nt; }
     const h = this.takeHeld(d.sessionId);
     if (!h) return front(pn);
     this.rides.set(d.deliveryId, [...(this.rides.get(d.deliveryId) || []), ...h.ids]);
@@ -559,13 +545,7 @@ export class Decisions {
     return front(pn ? h.text + '\n' + pn : h.text);
   }
   // P295: 답을 실은 전달이 끝났다. 실패·취소면 답을 다시 붙잡는다(다음 글에 실려 가거나 사람이 지금 보내기)
-  takeNote(sid) { const t = this.notes.get(sid) || null; this.notes.delete(sid); return t; } // P357
   onDelivery(e) {
-    if (e && this.noteRides.has(e.deliveryId)) { // P357: 판 한 줄을 실은 전달이 실패·취소되면 다음 전달 앞에 다시 싣는다
-      const r = this.noteRides.get(e.deliveryId);
-      if (e.status === 'failed' || e.status === 'cancelled') { this.noteRides.delete(e.deliveryId); if (this.b.sessions.has(r.sessionId) && !this.notes.has(r.sessionId)) this.notes.set(r.sessionId, r.text); }
-      else if (e.status === 'confirmed' || e.status === 'unconfirmed') this.noteRides.delete(e.deliveryId);
-    }
     if (!e || !this.rides.has(e.deliveryId)) return;
     if (e.status === 'confirmed' || e.status === 'unconfirmed') { this.rides.delete(e.deliveryId); return; }
     if (e.status !== 'failed' && e.status !== 'cancelled') return;

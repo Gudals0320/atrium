@@ -1,5 +1,5 @@
 // P357 단위 시험: 결정 카드 웹 푸시 규칙(나중·조건 카드는 깨어날 때 한 번, 같은 뜻으로 바뀐 자동 카드는 다시 알리지 않음, 세션마다 쿨다운, 누르면 갈 카드 번호)과
-// 사람이 터미널에 직접 친 글로 손 결정·확인 카드를 닫기(via terminal, 에이전트에게 판 한 줄, 다시 열기). 틀은 p303 시험(진짜 저장소·전달 대기열·Branch, 가짜 에이전트·시계).
+// 사람이 터미널에 직접 친 글로 손 결정·확인 카드를 닫기(via terminal, 다시 열기. P373: 에이전트에게 알리지 않는다, p373 시험). 틀은 p303 시험(진짜 저장소·전달 대기열·Branch, 가짜 에이전트·시계).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -19,7 +19,7 @@ import { CONTRACT_VERSION, VERB_NAMES, VERBS, shortHelp, ASK_OPEN_MAX, ASK_QUEST
 import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { HARNESS_PROMPT } from '../src/harness.mjs';
 import { findAsk, findQuestion, isQuestion, isPolite, isCheck } from '../src/auto-ask.mjs';
-import { AUTO_FRESH_MS, sameQuestion, terminalNote } from '../src/decisions.mjs';
+import { AUTO_FRESH_MS, sameQuestion } from '../src/decisions.mjs';
 import { Pusher, pushPayload } from '../src/web-push.mjs';
 import { TODO_LATER_MAX, TODO_CMDS_MAX } from '../src/cli-contract.mjs';
 
@@ -144,13 +144,11 @@ test('P357 알림: 자동 나중에 카드는 알리지 않고, 같은 뜻으로
   } finally { await stop(); }
 });
 
-test('P357 같은 뜻 판정과 판 한 줄', () => {
+test('P357 같은 뜻 판정', () => {
   assert.equal(sameQuestion('dev 빌드가 나오면 iPhone으로 열어 보기', 'dev 빌드가 나오면 iPhone으로 열어보기.'), true);
   assert.equal(sameQuestion('Push the branch?', 'push the branch'), true);
   assert.equal(sameQuestion('PR 올리기', '배포하기'), false);
   assert.equal(sameQuestion('', '배포하기'), false);
-  const n = terminalNote([{ id: 12, kind: 'decide', question: '이대로 갈까요?' }, { id: 13, kind: 'check', question: '화면 보기' }]);
-  assert.match(n, /^\[Atrium 보드\] 카드 #12 "이대로 갈까요\?", #13 "화면 보기"를 사람이 터미널에 친 글로 답한 것으로 닫았다\. 답이 아니면 atrium ask --reopen 12 \/ atrium todo --reopen 13$/);
 });
 
 test('P357 웹 푸시: 같은 세션 결정 카드는 쿨다운 안에 한 번, 누르면 갈 카드 번호(decisionId)를 싣는다', () => {
@@ -194,17 +192,9 @@ test('P357 터미널 글: 손 결정·확인은 닫고(via terminal) 실행·나
     // 할 일 목록의 "터미널에서 답함" 줄
     const list = b.decisions.handlers()['decision.list']();
     assert.deepEqual(list.recent.map((x) => x.id).sort(), [q.id, c.id].sort());
-    // 에이전트에게 판 한 줄(그 턴에 스티어링으로) 한 번
-    await until(() => b.sent.some((x) => x.text.includes('터미널에 친 글로 답한 것으로 닫았다')));
-    const notes = () => b.sent.filter((x) => x.sid === lead.sessionId && x.text.includes('터미널에 친 글로 답한 것으로 닫았다'));
-    assert.equal(notes().length, 1);
-    assert.match(notes()[0].text, new RegExp(`#${q.id} "이대로 구현할까요\\?"`));
-    assert.match(notes()[0].text, new RegExp(`atrium ask --reopen ${q.id} / atrium todo --reopen ${c.id}`));
-    // 닫을 손 카드가 더 없으면 한 줄도 없다
-    b.clock += 1000;
-    b.decisions.onHuman(lead.sessionId, 'terminal');
+    // P373: 에이전트에게는 아무 글도 넣지 않는다(p373 시험)
     await tick(200);
-    assert.equal(notes().length, 1, '한 번만');
+    assert.equal(b.sent.filter((x) => x.sid === lead.sessionId).length, 0);
   } finally { await stop(); }
 });
 
