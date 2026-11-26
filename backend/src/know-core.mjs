@@ -1,6 +1,9 @@
 // P364: atrium know의 본체(동기). know-worker.mjs가 worker thread 안에서 부르고, 시험은 바로 부른다.
 // - refresh: 색인을 짓거나(처음·--full) 바뀐 것만 고친다(경로·크기·고친 시각 → 해시). git 이력, 파일, 판 DB 행
 // - search: FTS5 trigram BM25 상위 k개의 위치·날짜·단위·종류·짧은 발췌. 두 글자 낱말은 부분 문자열
+//   P371: 순위·포인터·발췌의 단위는 절(제목 경계)이다. 한 파일은 맞은 낱말이 가장 몰린 절 하나가 대표하고(다른 맞은 절은 꼬리표),
+//   발췌는 그 절 안에서 맞은 줄(줄 번호)과 그 둘레다. 같은 글의 복사본은 한 자리로 접고(같은 글 꼬리표), 부른 세션의 단위(selfUnit)에 딸린
+//   자기 파일(작업 파일·기록·판 일·done, 코드는 빼고)은 --self가 아니면 뺀다(지휘 세션·사람은 단위가 없어 그대로)
 // - open: 포인터의 원문(색인에 든 원천만), unit: 그 단위의 파일·기록·판 일·커밋을 순위와 상관없이
 // - format: 사람·에이전트가 읽는 글(첫 줄에 돌려준 글자 수) 또는 JSON(total_chars)
 // 결정 상태: 쓰는 쪽이 .atrium/know.json superseded에 선언한 것만 "대체됨 → 지금: …"으로 붙인다(LLM 판정 없음). 결과의 status 칸
@@ -8,8 +11,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { KnowIndex, boardRowsOf, boardRowText } from './store-know.mjs';
 import { listFiles, scanGitLog, readText, tokenOf, bornOf, ownerOf, sha1, boardSources, decisionText, gitOut } from './know-sources.mjs';
-import { mdChunks, commentChunks, unitsIn, lex, ftsExpr, shortTerms, excerpt, maskLine, parsePointer, parseWhen, normalizeRetired, retiredFlags, normalizeSuperseded, supersededOf, supersededLine, redact,
-  NO_CUT, PER_FILE_MAX, OPEN_LINES_MAX, KNOW_K_DEFAULT, KNOW_K_MAX, KNOW_KINDS, dayOf, minuteOf, parseUnit } from './know-text.mjs';
+import { mdChunks, commentChunks, unitsIn, lex, ftsExpr, shortTerms, sectionExcerpt, maskLine, parsePointer, parseWhen, normalizeRetired, retiredFlags, normalizeSuperseded, supersededOf, supersededLine, redact,
+  normLines, copyReason, NO_CUT, OPEN_LINES_MAX, KNOW_K_DEFAULT, KNOW_K_MAX, KNOW_KINDS, ALSO_MAX, dayOf, minuteOf, parseUnit } from './know-text.mjs';
 
 const kerr = (code, message) => Object.assign(new Error(message), { code });
 const indexes = new Map(); // 색인 파일 → KnowIndex(worker 안에서 열어 둔다)
@@ -32,10 +35,10 @@ function chunksOf(rel, kind, text) {
     let unit = null;
     if (kind === 'code') {
       const seen = new Set();
-      c.body.split('\n').forEach((l, i) => { const n = c.lines ? c.lines[i] : c.a; for (const u of unitsIn(l)) { seen.add(u); links.push([u, n, n]); } });
+      c.body.split('\n').forEach((l, i) => { const n = c.a + i; for (const u of unitsIn(l)) { seen.add(u); links.push([u, n, n]); } }); // P371: body의 i번째 줄 = 원문 a+i줄
       if (seen.size === 1) unit = [...seen][0];
     } else for (const u of unitsIn(`${c.heading}\n${c.body}`)) links.push([u, c.a, c.b]);
-    chunks.push({ heading: c.heading, a: c.a, b: c.b, body, unit });
+    chunks.push({ heading: c.heading, a: c.a, b: c.b, sa: c.sa, sb: c.sb, body, unit }); // P371: 절 범위
   }
   return { chunks, links };
 }
@@ -123,7 +126,7 @@ export function configOf(root) {
 // 결과의 상태 칸: 대체 선언에 맞으면 { state: 'superseded', now, pointer, id, since, scope, more }, 아니면 null
 const statusOf = (list) => (list.length ? { state: 'superseded', ...list[0], ...(list.length > 1 ? { more: list.slice(1) } : {}) } : null);
 
-// 찾기. a: { q, k, kind, before }
+// 찾기. a: { q, k, kind, before, self, selfUnit }
 export function search(o, a = {}) {
   const q = String(a.q || '').trim();
   if (!q) throw kerr('bad_request', '물음을 준다: atrium know "<물음>"');
@@ -143,28 +146,72 @@ export function search(o, a = {}) {
     if (shorts.length && rows.length) {
       mode = 'fts5+substring';
       const hits = (r) => { const t = `${r.path} ${r.heading} ${r.body}`.toLowerCase(); return shorts.filter((s) => t.includes(s)).length; };
-      rows = rows.map((r) => ({ r, s: r.score * (1 + 0.5 * hits(r)) })).sort((x, y) => x.s - y.s).map((x) => x.r);
+      rows = rows.map((r) => ({ ...r, score: r.score * (1 + 0.5 * hits(r)) })).sort((x, y) => x.score - y.score);
     }
   } else if (shorts.length) { rows = idx.substring(shorts, { kind, cut, limit: 240 }); mode = 'substring'; }
   else throw kerr('bad_request', '찾을 낱말이 없다(두 글자 이상의 낱말을 준다)');
   const conf = configOf(o.root);
-  const results = []; const perFile = new Map();
   const searchTerms = terms.length ? [...terms] : shorts;
-  for (const r of rows) {
-    if ((perFile.get(r.path) || 0) >= PER_FILE_MAX) continue;
-    const snip = excerpt(r.body, searchTerms);
-    if (!snip) continue;
-    perFile.set(r.path, (perFile.get(r.path) || 0) + 1);
+  const files = rankSections(rows, searchTerms, mode);
+  const selfUnit = a.self ? null : parseUnit(a.selfUnit);
+  const results = []; const kept = []; let hidden = 0;
+  for (const f of files) {
+    const r = f.rep.row;
+    // 자기 단위의 것(코드 주석은 남긴다): 부른 세션이 이미 가진 글이라 자리만 차지한다
+    if (selfUnit && r.kind !== 'code' && (r.sunit === selfUnit || (r.origin === 'db' && r.unit === selfUnit))) { hidden++; continue; }
+    const ex = sectionExcerpt(f.rep.parts, searchTerms);
+    if (!ex.text) continue;
+    const pointer = r.origin === 'db' ? r.path : `${r.path}:${f.rep.sa}-${f.rep.sb}`;
+    const me = { path: r.path, origin: r.origin, hash: r.hash, unit: r.sunit || null, lines: normLines(f.rep.parts.map((p) => p.body).join('\n')) };
+    const twin = kept.find((x) => copyReason(x.me, me));
+    if (twin) { (twin.res.copies ||= []).push(pointer); continue; }
+    const body = f.rep.parts.map((p) => p.body).join('\n');
+    const hit = { path: r.path, a: f.rep.sa, b: f.rep.sb, unit: r.unit, heading: f.rep.heading, body };
     const src = { path: r.path, changed: r.changed };
-    const flags = retiredFlags(conf.retired, src, r, cut);
-    const sup = supersededOf(conf.superseded, r, cut);
+    const flags = retiredFlags(conf.retired, src, hit, cut);
+    const sup = supersededOf(conf.superseded, hit, cut);
     if (sup.length) flags.unshift('대체됨');
     if (cut < NO_CUT && r.changed >= cut) flags.push(`뒤에 바뀜(${dayOf(r.changed)})`);
-    results.push({ pointer: r.origin === 'db' ? r.path : `${r.path}:${r.a}-${r.b}`, kind: r.kind, date: dayOf(r.changed), at: Math.round(r.changed), unit: r.unit || null,
-      ...(r.heading && r.origin !== 'db' ? { heading: r.heading.slice(0, 80) } : {}), flags, status: statusOf(sup), excerpt: snip, ...(sup.length ? { notes: sup.map(supersededLine) } : {}) });
+    const also = r.origin === 'db' ? [] : f.others.slice(0, ALSO_MAX).map((s) => `${s.sa}-${s.sb}`);
+    const res = { pointer, kind: r.kind, date: dayOf(r.changed), at: Math.round(r.changed), unit: r.unit || r.sunit || null,
+      ...(f.rep.heading && r.origin !== 'db' ? { heading: f.rep.heading.slice(0, 80) } : {}), flags, status: statusOf(sup), excerpt: ex.text,
+      ...(ex.line != null && r.origin !== 'db' ? { line: ex.line } : {}), ...(also.length ? { also } : {}), ...(sup.length ? { notes: sup.map(supersededLine) } : {}) };
+    results.push(res); kept.push({ me, res });
     if (results.length >= k) break;
   }
-  return { command: 'search', mode, q, k, kind, before: a.before || null, results, ...(built ? { built: brief(built) } : {}) };
+  return { command: 'search', mode, q, k, kind, before: a.before || null, results, ...(parseUnit(a.selfUnit) ? { self: { unit: parseUnit(a.selfUnit), included: !!a.self, hidden } } : {}), ...(built ? { built: brief(built) } : {}) };
+}
+// P371: 덩어리 행 → 파일 순위. 행은 이미 점수 순(작을수록 좋음)이다. 같은 절(경로·sa)의 덩어리를 묶고, 절마다 맞은 낱말 수(cov)를 센다.
+// 절 점수 = 가장 좋은 덩어리 점수 × (1 + 0.25 × (cov − 1)). 파일 대표 = cov가 가장 큰 절(같으면 점수), 파일 순위 = 대표 절의 점수.
+// → [{ rep: { row, sa, sb, heading, parts, score, cov }, others: [다른 맞은 절, 점수 순] }]
+export function rankSections(rows, terms, mode = 'fts5') {
+  const covers = (text, t) => text.includes(t) || (t.length >= 4 && /^[가-힣]+$/.test(t) && text.includes(t.slice(0, 3)));
+  const secs = new Map();
+  rows.forEach((r, i) => {
+    const s0 = mode === 'substring' ? i : r.score; // 부분 문자열은 이미 맞은 수 순이라 차례가 점수
+    const key = `${r.path}\n${r.sa ?? r.a}`;
+    let g = secs.get(key);
+    if (!g) { g = { row: r, sa: r.sa ?? r.a, sb: r.sb ?? r.b, heading: r.heading || '', parts: [], best: s0, hit: new Set() }; secs.set(key, g); }
+    if (s0 < g.best) { g.best = s0; g.row = r; }
+    g.parts.push({ a: r.a, body: r.body });
+    const text = `${r.heading || ''}\n${r.body || ''}`.toLowerCase();
+    for (const t of terms) if (covers(text, t)) g.hit.add(t);
+  });
+  const byFile = new Map();
+  for (const g of secs.values()) {
+    g.cov = g.hit.size;
+    g.score = mode === 'substring' ? g.best - 1000 * g.cov : g.best * (1 + 0.25 * Math.max(0, g.cov - 1));
+    g.parts.sort((x, y) => x.a - y.a);
+    const list = byFile.get(g.row.path) || [];
+    list.push(g); byFile.set(g.row.path, list);
+  }
+  const files = [];
+  for (const list of byFile.values()) {
+    list.sort((x, y) => y.cov - x.cov || x.score - y.score);
+    const [rep, ...rest] = list;
+    files.push({ rep, others: rest.filter((s) => s.cov > 0).sort((x, y) => x.score - y.score) }); // 경로만 맞은 절은 꼬리표에 넣지 않는다
+  }
+  return files.sort((x, y) => x.rep.score - y.rep.score);
 }
 const brief = (b) => ({ seconds: b.seconds, indexed: b.indexed, removed: b.removed, sources: b.sources });
 
@@ -241,7 +288,10 @@ function block(cmd, x) {
   if (cmd === 'open') return x.text;
   if (cmd === 'unit') return `${x.pointer}  [${x.kind} · ${x.date}] ${x.how}`;
   const meta = [x.kind, x.date, x.unit || '단위 없음', ...(x.flags || [])].join(' · ');
-  return `${x.pointer}  [${meta}]${x.heading ? ` § ${x.heading}` : ''}\n  ${x.excerpt}${(x.notes || []).map((n) => `\n  ${n}`).join('')}`;
+  // P371: 발췌 앞의 L<줄>은 맞은 줄의 원문 줄 번호. 같은 글(접은 복사본 자리)과 같은 파일의 다른 맞은 절은 꼬리표 한 줄씩
+  const copies = x.copies && x.copies.length ? `\n  같은 글: ${x.copies.slice(0, 3).map((p) => p.replace(/:\d+-\d+$/, '')).join(', ')}${x.copies.length > 3 ? ` 외 ${x.copies.length - 3}곳` : ''}` : '';
+  const also = x.also && x.also.length ? `\n  다른 절: ${x.also.join(', ')}` : '';
+  return `${x.pointer}  [${meta}]${x.heading ? ` § ${x.heading}` : ''}\n  ${x.line ? `L${x.line} ` : ''}${x.excerpt}${copies}${also}${(x.notes || []).map((n) => `\n  ${n}`).join('')}`;
 }
 // 결과 → { out(그대로 찍을 글), pointers: [{ pointer, chars }], total }. 첫 줄의 글자 수는 마지막 줄바꿈까지 센 out 전체의 글자 수다
 export function format(res, json = false) {
@@ -258,7 +308,8 @@ export function format(res, json = false) {
         : cmd === 'open' ? `총 ${n}자 · ${res.pointer}${res.kind ? ` [${res.kind} · ${res.date}]` : ''}`
         : `총 ${n}자 · ${cmd}`;
       const tail = cmd === 'search' && items.length ? '원문: atrium know open <포인터> [--context n] 또는 그 파일을 직접 연다' : cmd === 'search' ? '없다. 낱말을 바꾸거나 --kind를 뺀다' : null;
-      out = [head, ...blocks, ...(tail ? [tail] : []), ...(res.lines || [])].join('\n') + '\n';
+      const self = cmd === 'search' && res.self && res.self.hidden ? `자기 단위 ${res.self.unit}의 것 ${res.self.hidden}곳은 뺐다(--self로 넣는다)` : null; // P371
+      out = [head, ...blocks, ...(self ? [self] : []), ...(tail ? [tail] : []), ...(res.lines || [])].join('\n') + '\n';
     }
     if (out.length === n) break;
     n = out.length;

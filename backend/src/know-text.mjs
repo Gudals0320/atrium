@@ -6,7 +6,9 @@ export const KNOW_KINDS = Object.freeze(['doc', 'log', 'record', 'review', 'code
 export const KNOW_K_DEFAULT = 5;
 export const KNOW_K_MAX = 30;
 export const EXCERPT_MAX = 160; // 결과 하나의 발췌 글자 수 상한(결과 본문이 길어지지 않게)
-export const PER_FILE_MAX = 2; // 한 파일에서 돌려줄 결과 수(한 파일이 상위를 다 차지하지 않게)
+export const PER_FILE_MAX = 1; // P371: 한 파일에서 돌려줄 결과 수. 그 파일의 대표 절 하나이고 다른 맞은 절은 "다른 절" 꼬리표로 붙인다
+export const SECTION_LINES_MAX = 80; // P371: 이보다 긴 절(빈 줄 빼고 센 줄 수)은 절 대신 덩어리를 순위·포인터의 단위로 쓴다(포인터가 너무 넓지 않게)
+export const ALSO_MAX = 2; // P371: 결과 하나에 붙이는 "다른 절" 수
 export const OPEN_LINES_MAX = 400; // know open 한 번에 보이는 줄 수
 export const NO_CUT = 9e15; // --before 없음(밀리초)
 
@@ -46,31 +48,39 @@ const SPEECH_START = /^\s*(?:>|(?:[-*]\s*)?(?:사용자(?:의)?\s*(?:말|발언|
 const SPEAKER = /(?:사용자|사람|user|assistant|요청자)\s*(?:\([^)]{0,55}\))?\s*[:：]/i;
 export const isSpeech = (line) => SPEECH_START.test(line) || SPEAKER.test(line) || /사용자의 말|직접\s*(?:말|인용)/.test(line);
 export const SPEECH_MASK = '[대화 인용 생략]';
-// 한 줄을 내보낼 꼴로: 말을 옮긴 줄은 통째로 가리고, 긴 따옴표 인용(15낱말 넘음)은 그 인용만 가린다. 비밀은 늘 가린다
+// P371: 문서에 바꿀 문장을 옮긴 인용(줄에서 인용 바로 앞이 "ARCH(…):", "testing:", "BRIEF(정한 것):" 꼴)은 사람의 말이 아니라 워커가 쓴 글이라 가리지 않는다
+const DOC_LABEL = /(?:^|[\s(\-*·,])(?:ARCH|BRIEF|PLAN|README(?:\.ko)?(?:\.md)?|testing(?:\.md)?|CLAUDE\.md|CHANGELOG(?:\.md)?|help|K\d+|[A-Z]\d{1,2})(?:\s*\([^)]{0,40}\))?[^"“「]{0,12}[:：]\s*$/;
+export const docQuote = (line, at) => DOC_LABEL.test(String(line).slice(Math.max(0, at - 80), at));
+// 한 줄을 내보낼 꼴로: 말을 옮긴 줄은 통째로 가리고, 긴 따옴표 인용(15낱말 넘음)은 그 인용만 가린다(문서에 바꿀 문장 인용은 빼고). 비밀은 늘 가린다
 export function maskLine(line) {
   const s = String(line || '');
   if (isSpeech(s)) return SPEECH_MASK;
-  return redact(s).replace(/“[^”]*”|「[^」]*」|"[^"\n]*"/g, (q) => (q.split(/\s+/).length > 15 ? '[인용 생략]' : q));
+  const r = redact(s);
+  return r.replace(/“[^”]*”|「[^」]*」|"[^"\n]*"/g, (q, at) => (q.split(/\s+/).length > 15 && !docQuote(r, at) ? '[인용 생략]' : q));
 }
 export const maskText = (text) => String(text || '').split('\n').map(maskLine).join('\n');
 
 // ---------- 덩어리 나누기 ----------
 const CHUNK_CHARS = 1400;
 const CHUNK_LINES = 17;
-// 마크다운·글 → [{ heading, a, b, body }]. 제목에서 끊고, 길면(글자·줄 수) 끊는다. a·b는 1부터 센 원문 줄(빈 줄은 덩어리에 넣지 않는다)
+// 마크다운·글 → [{ heading, a, b, sa, sb, body }]. 제목에서 끊고, 길면(글자·줄 수) 끊는다. a·b는 1부터 센 원문 줄이고, body는 a~b 원문 그대로다
+// (P371: 가운데 빈 줄도 넣어 body의 i번째 줄이 원문 a+i줄이다. 발췌에 줄 번호를 붙인다).
+// sa·sb(P371)는 그 덩어리가 든 절(제목 줄부터 다음 제목 앞의 마지막 글 줄까지, 첫 제목 앞은 머리 절)이다. 제목 없는 글은 통째로 한 절이다.
+// 절이 SECTION_LINES_MAX(빈 줄 빼고)보다 길면 sa·sb는 덩어리 자신이다
 export function mdChunks(raw) {
-  const out = [];
+  const lines = String(raw || '').split('\n').map((l) => l.replace(/\r$/, ''));
+  const out = []; const secs = [];
   let heading = ''; let buf = []; let size = 0;
-  const flush = () => { if (buf.length) out.push({ heading, a: buf[0][0], b: buf[buf.length - 1][0], body: buf.map((x) => x[1]).join('\n') }); buf = []; size = 0; };
-  String(raw || '').split('\n').forEach((line, i) => {
-    const l = line.replace(/\r$/, '');
+  const flush = () => { if (buf.length) { const a = buf[0][0]; const b = buf[buf.length - 1][0]; out.push({ heading, a, b, body: lines.slice(a - 1, b).join('\n'), sec: secs[secs.length - 1] }); } buf = []; size = 0; };
+  lines.forEach((l, i) => {
     const isHead = /^#{1,6}\s/.test(l);
     if (isHead || size + l.length > CHUNK_CHARS || buf.length >= CHUNK_LINES) flush();
     if (isHead) heading = l.replace(/^#+\s*/, '').trim().slice(0, 160);
-    if (l.trim()) { buf.push([i + 1, l]); size += l.length; }
+    if (isHead || !secs.length) secs.push({ first: 0, last: 0, n: 0 });
+    if (l.trim()) { const s = secs[secs.length - 1]; if (!s.first) s.first = i + 1; s.last = i + 1; s.n++; buf.push([i + 1, l]); size += l.length; }
   });
   flush();
-  return out;
+  return out.map(({ sec, ...c }) => (sec && sec.n <= SECTION_LINES_MAX ? { ...c, sa: sec.first, sb: sec.last } : { ...c, sa: c.a, sb: c.b }));
 }
 const HASH_COMMENT = new Set(['.py', '.sh', '.ps1', '.psm1', '.rb', '.yml', '.yaml', '.toml']);
 // 코드 → 주석 덩어리 [{ heading: '', a, b, body }]. // 와 /* */(앞이 :이면 주소라 뺀다), 스크립트 언어는 #. 65줄 넘게 떨어지면 끊는다
@@ -78,7 +88,16 @@ export function commentChunks(raw, ext) {
   const hash = HASH_COMMENT.has(String(ext || '').toLowerCase());
   const out = [];
   let buf = []; let size = 0; let block = false;
-  const flush = () => { if (buf.length) out.push({ heading: '', a: buf[0][0], b: buf[buf.length - 1][0], body: buf.map((x) => x[1]).join('\n'), lines: buf.map((x) => x[0]) }); buf = []; size = 0; };
+  // P371: body는 a~b 줄 자리를 지킨다(주석이 아닌 줄은 빈 줄). 절은 그 덩어리 자신(코드에는 제목이 없다)
+  const flush = () => {
+    if (buf.length) {
+      const a = buf[0][0]; const b = buf[buf.length - 1][0];
+      const rows = new Array(b - a + 1).fill('');
+      for (const [n, t] of buf) rows[n - a] = t;
+      out.push({ heading: '', a, b, sa: a, sb: b, body: rows.join('\n'), lines: buf.map((x) => x[0]) });
+    }
+    buf = []; size = 0;
+  };
   String(raw || '').split('\n').forEach((line, i) => {
     const l = line.replace(/\r$/, '');
     let c;
@@ -134,21 +153,91 @@ export const shortTerms = (terms) => terms.filter((t) => t.length === 2);
 // ---------- 발췌 ----------
 const strength = (line, terms) => { const l = line.toLowerCase(); let n = 0; for (const t of terms) if (l.includes(t)) n += 1 + Math.min(12, t.length) * 0.15; return n; };
 const usable = (line) => { const x = line.trim(); return !!x && !/^(?:```|~~~|---|\|[-:| ]+\|?$)/.test(x) && !isSpeech(x); };
-const tidy = (s) => s.replace(/“[^”]*”|「[^」]*」|"[^"\n]*"/g, (q) => (q.split(/\s+/).length >= 4 && q.length > 22 ? '"…"' : q)).replace(/^[\s|#*>-]+/, '').replace(/\s+/g, ' ').trim();
+// 발췌 다듬기: 긴 따옴표 인용(4낱말 넘고 22자 넘음)은 "…"로 줄인다. P371: 물음 낱말이 든 인용은 15낱말까지 보이고(명령·오류 글이 인용으로 적힌 기록이 많다. maskLine과 같은 상한),
+// 문서에 바꿀 문장 인용(docQuote)은 길어도 보인다(긴 줄은 windowOf가 맞은 낱말 둘레만 자른다)
+const tidy = (s, terms = []) => s.replace(/“[^”]*”|「[^」]*」|"[^"\n]*"/g, (q, at) => { const w = q.split(/\s+/).length; if (w < 4 || q.length <= 22 || docQuote(s, at)) return q; const low = q.toLowerCase(); return w <= 15 && terms.some((t) => low.includes(t)) ? q : '"…"'; }).replace(/^[\s|#*>-]+/, '').replace(/\s+/g, ' ').trim();
+// 긴 줄에서 맞은 낱말이 가장 많이 든 창(max 자)을 고른다(첫 낱말 자리만 보지 않는다)
+function windowOf(line, terms, max) {
+  if (line.length <= max) return line;
+  const low = line.toLowerCase();
+  const hits = [];
+  for (const t of terms) { let i = low.indexOf(t); while (i >= 0 && hits.length < 200) { hits.push([i, t]); i = low.indexOf(t, i + 1); } }
+  let at = 0; let bestN = -1;
+  for (const [p] of hits) {
+    const s0 = Math.max(0, p - Math.floor(max / 4));
+    const n = new Set(hits.filter(([q, t]) => q >= s0 && q + t.length <= s0 + max - 2).map(([, t]) => t)).size;
+    if (n > bestN) { bestN = n; at = p; }
+  }
+  const span = max - 2; // 앞뒤 … 자리를 남긴다
+  const start = Math.max(0, Math.min(at - Math.floor(max / 4), line.length - span));
+  const end = Math.min(line.length, start + span);
+  return (start ? '…' : '') + line.slice(start, end) + (end < line.length ? '…' : '');
+}
+// P371: 절(덩어리 여럿)에서 물음에 가장 맞는 줄과 그 원문 줄 번호. parts: [{ a, body }](body의 i번째 줄 = 원문 a+i줄).
+// 맞은 줄이 짧으면 바로 뒤 글 줄을 " ⏎ "로 이어 둘레를 보인다. → { text, line } (쓸 줄이 없으면 text '')
+export function sectionExcerpt(parts, terms, max = EXCERPT_MAX) {
+  const all = [];
+  for (const p of parts || []) String(p.body || '').split('\n').forEach((l, i) => { if (usable(l)) all.push({ n: (p.a || 1) + i, raw: l }); });
+  all.sort((x, y) => x.n - y.n);
+  const uniq = all.filter((x, i) => !i || x.n !== all[i - 1].n);
+  const plain = uniq.filter((x) => !/^\s*#/.test(x.raw)); // 제목 줄은 결과의 § 제목으로 이미 보인다
+  const lines = (plain.length ? plain : uniq).map((x) => ({ n: x.n, t: tidy(redact(x.raw), terms) })).filter((x) => x.t.length > 3);
+  if (!lines.length) return { text: '', line: null };
+  let bi = 0; let bs = -1;
+  lines.forEach((x, i) => { const s = strength(x.t, terms) + Math.min(x.t.length, 90) * 0.003; if (s > bs) { bs = s; bi = i; } });
+  const best = lines[bi];
+  let text = windowOf(best.t, terms, max);
+  const next = lines[bi + 1];
+  if (text.length < 70 && next && next.n - best.n <= 2) {
+    const room = max - text.length - 3;
+    if (room > 12) text += ' ⏎ ' + (next.t.length > room ? next.t.slice(0, room - 1) + '…' : next.t);
+  }
+  return { text, line: best.n };
+}
 // 덩어리에서 물음에 가장 맞는 줄 하나를 짧게(EXCERPT_MAX 자). 쓸 줄이 없으면(모두 말 인용) ''
 export function excerpt(body, terms, max = EXCERPT_MAX) {
-  const all = String(body || '').split('\n').filter(usable);
-  const plain = all.filter((l) => !/^\s*#/.test(l)); // 제목 줄은 결과의 § 제목으로 이미 보인다
-  const lines = (plain.length ? plain : all).map((l) => tidy(redact(l))).filter((l) => l.length > 3);
-  if (!lines.length) return '';
-  let best = lines[0]; let bs = -1;
-  for (const l of lines) { const s = strength(l, terms) + Math.min(l.length, 90) * 0.003; if (s > bs) { bs = s; best = l; } }
-  if (best.length <= max) return best;
-  const low = best.toLowerCase();
-  const at = terms.map((t) => low.indexOf(t)).filter((i) => i >= 0).sort((x, y) => x - y)[0] ?? 0;
-  const start = Math.max(0, Math.min(at - Math.floor(max / 3), best.length - max + 1));
-  const end = Math.min(best.length, start + max - 1);
-  return (start ? '…' : '') + best.slice(start, end) + (end < best.length ? '…' : '');
+  return sectionExcerpt([{ a: 1, body }], terms, max).text;
+}
+
+// ---------- 복사본(P371) ----------
+// 같은 글이 여러 자리에 있다: 기록 사본(experiments/pNNN/x.md ↔ .atrium/records/<단위>-<일>/x.md), 지시 본문 사본(docs/log/pNNN-*.md ↔ experiments/head-tools/**/pNNN_body.md),
+// 통째 같은 파일(내용 해시), 같은 글을 담은 판 행(합치기 일 spec ↔ done 보고). 찾기는 이들을 한 자리로 접고 나머지 자리를 "같은 글" 꼬리표로 붙인다
+const RECORD_DIR = /^(?:experiments|\.atrium\/records)\//i;
+const BODY_COPY = /^p\d{1,4}[a-c]?[_-]body\.(?:md|txt)$/i;
+const baseOf = (p) => String(p || '').split('/').pop().toLowerCase();
+// 비교할 줄: 앞뒤 기호·공백을 걷고 8자 이상만
+export function normLines(text) {
+  const out = new Set();
+  for (const l of String(text || '').split('\n')) { const x = l.replace(/^[\s|#*>-]+|[\s|]+$/g, '').replace(/\s+/g, ' '); if (x.length >= 8) out.add(x); }
+  return out;
+}
+// 두 줄 묶음이 거의 같은가: 작은 쪽의 70% 넘게 겹침(작은 쪽이 한 줄이면 둘이 같을 때만)
+export function linesOverlap(A, B) {
+  if (!A || !B || !A.size || !B.size) return false;
+  let n = 0; for (const x of A) if (B.has(x)) n++;
+  const min = Math.min(A.size, B.size);
+  return min < 2 ? A.size === B.size && n === A.size : n / min >= 0.7;
+}
+// x·y: { path, origin, hash, unit, lines(normLines) } → 까닭('hash'|'name'|'body'|'text') | null
+export function copyReason(x, y) {
+  if (!x || !y || x.path === y.path) return null;
+  if (x.origin === 'file' && y.origin === 'file' && x.hash && x.hash === y.hash) return 'hash';
+  if (x.unit && x.unit === y.unit) {
+    const bx = baseOf(x.path); const by = baseOf(y.path);
+    if (RECORD_DIR.test(x.path) && RECORD_DIR.test(y.path) && bx === by) return 'name';
+    const task = (p) => /^docs\/log\//i.test(p) || BODY_COPY.test(baseOf(p));
+    if (task(x.path) && task(y.path) && BODY_COPY.test(bx) !== BODY_COPY.test(by)) return 'body';
+  }
+  return linesOverlap(x.lines, y.lines) ? 'text' : null;
+}
+// 부른 세션의 단위(P371): 세션 이름(p371, p371-fix)이 먼저, 없으면 판의 지금 일 글이 가리키는 작업 파일(docs/log/pNNN-…)이나 글 첫 줄 머리의 PNNN.
+// 일 글 가운데 지나가는 단위 번호(참고한 앞 단위)는 쓰지 않는다. 없으면 null(지휘 세션·사람)
+export function selfUnitOf(name, spec) {
+  const byName = ownerOfName(name);
+  if (byName) return byName;
+  const s = String(spec || '').slice(0, 4000);
+  const m = /docs[\\/]log[\\/][Pp](\d{1,4})([abcABC]?)-/.exec(s) || /^\s*\[?[Pp](\d{1,4})([abcABC]?)(?![A-Za-z0-9])/.exec(s.split('\n').find((l) => l.trim()) || '');
+  return m ? unitName(m[1], m[2]) : null;
 }
 
 // ---------- 포인터 ----------

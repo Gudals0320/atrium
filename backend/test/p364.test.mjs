@@ -330,7 +330,8 @@ test('P364 서비스: 사용 기록(시각·세션·일·명령·물음·옵션�
   try {
     const sA = { sessionId: 's-p12', name: 'p12', workspaceKey: a.key };
     const sB = { sessionId: 's-b', name: 'lead-b', workspaceKey: bKey };
-    const r = await know.verb(sA, { action: 'search', q: '증분 갱신', k: 2 });
+    // P371: p12 세션이 찾으면 P12 자기 기록(docs/log/p12-sleep.md)은 빠진다. 코드 주석은 남는다
+    const r = await know.verb(sA, { action: 'search', q: '잠재우기 판정', k: 2 });
     assert.match(r.out, /^총 \d+자/); assert.equal(r.total, r.out.length);
     assert.equal((await know.verb(sA, { action: 'search', q: 'yakword' })).result.results.length, 0, 'A의 색인에 B의 기록이 없다');
     assert.equal((await know.verb(sB, { action: 'search', q: 'yakword' })).result.results.length, 1);
@@ -345,7 +346,7 @@ test('P364 서비스: 사용 기록(시각·세션·일·명령·물음·옵션�
     const lines = fs.readFileSync(know.usageFile, 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(lines.length, 7);
     const l0 = lines[0];
-    assert.deepEqual(l0.session, { name: 'p12', id: 's-p12' }); assert.equal(l0.unit, 'u1'); assert.equal(l0.cmd, 'search'); assert.equal(l0.q, '증분 갱신'); assert.deepEqual(l0.opts, { k: 2 });
+    assert.deepEqual(l0.session, { name: 'p12', id: 's-p12' }); assert.equal(l0.unit, 'u1'); assert.equal(l0.cmd, 'search'); assert.equal(l0.q, '잠재우기 판정'); assert.deepEqual(l0.opts, { k: 2 });
     assert.ok(l0.pointers.length && l0.pointers.every((p) => typeof p.p === 'string' && p.chars > 0)); assert.equal(l0.total, r.total); assert.equal(l0.workspace, a.key);
     const raw = fs.readFileSync(know.usageFile, 'utf8');
     assert.doesNotMatch(raw, /0\.1초|velocity|excerpt|text/, '결과 본문(발췌·원문)은 남기지 않는다');
