@@ -17,15 +17,75 @@ import { orchPromptLines } from './orchestration.mjs';
 // P334: 동사가 아닌 새 안내(안내문에 더한 약속). 판 기록(stamp.news)에 없으면 다음 전달 앞에 한 줄로 한 번 알린다.
 //   news 칸이 없는 판(P334 전의 판이 남긴 기록)은 아무것도 모른다고 본다. 판 기록이 없는 옛 세션(P317 전)은 띄운 때로 어림한다(since)
 export const NEWS_HEAD = '[Atrium 보드] 판 안내가 늘었다:';
+// P375: 받는 쪽 거르기(P296 permOf와 같은 뜻). orch: false면 자체 오케스트레이션 세션(그 안내문에 이 약속이 없다)에는 알리지 않는다.
+//   needs: 그 세션이 쓸 수 있어야 하는 동사(permOf allowed. null이면 모두). since: 그 안내가 dev에 합쳐진 때(판 기록이 없는 옛 세션의 어림)
+//   한 줄은 짧게 쓴다(여럿이 한꺼번에 가면 " / "로 한 줄에 묶인다). 안내문을 바꾸면 BRIEF_LEDGER에도 한 줄(p375 시험이 지킨다)
 export const BRIEF_NEWS = [
-  { id: 'records', since: Date.parse('2026-11-22T00:00:00+09:00') /* 판 기록이 없는 세션은 P317 전에 떴다: 그 전이면 모른다 */, line: '저장소 문서는 지금 상태만 고친다. 조사·감사·제안·측정·인계 결과는 커밋하지 않고 `atrium done ok "<보고>" --record <파일>`로 붙인다(보드가 .atrium/records/에 둔다). 날짜별 결정 로그는 만들지 않는다' },
+  { id: 'records', orch: false, since: Date.parse('2026-11-22T00:00:00+09:00') /* 판 기록이 없는 세션은 P317 전에 떴다: 그 전이면 모른다 */, line: '조사·감사·제안·측정·인계 결과는 커밋하지 않고 `atrium done ok "<보고>" --record <파일>`로 붙인다(문서는 지금 상태만, 날짜별 결정 로그 없음)' }, // P375: 짧게
+  // P368(사용자 결정 2026-11-26): 시작할 때 한 번 찾고 막히면 다시. 자체 오케스트레이션 안내문에도 있다(KNOW_RULE_PLAIN)
+  { id: 'know-start', needs: ['know'], since: Date.parse('2026-11-26T01:49:16+09:00') /* Merge p368 */, line: '시작할 때 건드릴 부분을 `atrium know`로 한 번 찾고 막히면 다시 찾는다(필요한 파일만 연다)' },
+  // P368: 맡기기 전 1~3번 찾아 힌트로. 하위를 띄울 수 있는 세션만(자체 오케스트레이션 하네스에는 판이 하위를 주지 않는다)
+  { id: 'know-hint', orch: false, needs: ['child'], since: Date.parse('2026-11-26T01:49:16+09:00') /* Merge p368 */, line: '하위에게 맡기기 전에 그 일이 건드릴 부분을 `atrium know`로 1~3번 찾아 지시의 힌트로 적는다' },
 ];
 export const NEWS_IDS = BRIEF_NEWS.map((n) => n.id);
 // 그 판이 모르는 새 안내(id 목록)
-export const newNews = (stamp, ids = NEWS_IDS) => { const had = new Set((stamp && stamp.news) || []); return ids.filter((id) => !had.has(id)); };
+//   P375: 판 기록의 news 칸과 함께, 그 판의 안내문 해시가 장부(BRIEF_LEDGER)에 있으면 그 줄까지 등록된 안내도 안다고 본다
+//   (안내가 등록되기 전에 그 안내가 든 안내문으로 뜬 세션: 그 뒤 안내문이 또 바뀌어도 다시 알리지 않는다)
+export const newNews = (stamp, ids = NEWS_IDS) => { const had = new Set([...((stamp && stamp.news) || []), ...ledgerNews(stamp && stamp.hash)]); return ids.filter((id) => !had.has(id)); };
+// P375: 그 세션이 쓸 수 있는 안내만(s: 세션, perm: permOf 결과 | null)
+export function newsFits(id, s, perm = null) {
+  const n = BRIEF_NEWS.find((x) => x.id === id);
+  if (!n) return false;
+  if (n.orch === false && s && s.orch && (s.orch.on ?? true)) return false;
+  const allowed = perm && perm.allowed;
+  return !(n.needs && allowed && !n.needs.every((v) => allowed.includes(v)));
+}
 export function newsLine(ids) {
   const list = BRIEF_NEWS.filter((n) => (ids || []).includes(n.id));
   return list.length ? `${NEWS_HEAD} ${list.map((n) => n.line).join(' / ')}(자세히는 atrium help)` : null;
+}
+
+// P375: 판 안내문 해시 장부. 판·하네스·자체 오케스트레이션 안내문(briefVariants)의 글이 바뀌면 p375 시험이 끝에 새 줄을 요구한다:
+//   { by, hashes: 지금 해시들, news: [BRIEF_NEWS에 더한 id] | verbs: [새 동사] | quiet: '알릴 것 없음 까닭 한 줄' }.
+//   그 해시로 띄운 세션은 그 줄까지 등록된 안내를 안다고 본다(ledgerNews). 해시는 그 단위를 합친 dev의 글로 셌다
+export const BRIEF_LEDGER = [
+  { by: 'P334', hashes: { board: '94d7de42891f', harness: 'e5eed74ad557', 'orch-sub': 'ae502ba767a0', 'orch-sub-plain': '127950d5cff3', 'orch-free': 'c1f387cae658', 'orch-free-plain': '5bac1b96e522' }, news: ['records'] }, // Merge p334 2026-11-23 16:57
+  { by: 'P360', hashes: { board: 'db7919dc871a', harness: '6c29dfb1c977', 'orch-sub': 'ae502ba767a0', 'orch-sub-plain': '127950d5cff3', 'orch-free': 'c1f387cae658', 'orch-free-plain': '5bac1b96e522' }, verbs: ['revive', 'fork'] }, // REVIVE_RULE_SHORT(동사 알림이 뜻을 함께 싣는다)
+  { by: 'P364', hashes: { board: 'e1683b74c263', harness: '6d5dbb6491fc', 'orch-sub': 'ca7bf130ab11', 'orch-sub-plain': '44c77e5be734', 'orch-free': 'b251b8f6ea19', 'orch-free-plain': '9357f1b0d2a4' }, verbs: ['know'] }, // KNOW_RULE(막히면 먼저 찾기. P368이 바꿨다)
+  { by: 'P368', hashes: { board: '063492902ffc', harness: '6360c236dfc6', 'orch-sub': '146181d817c1', 'orch-sub-plain': '28d35f3580d9', 'orch-free': '30dc13fa5f8f', 'orch-free-plain': '3dd2642fa9f3' }, news: ['know-start', 'know-hint'] }, // KNOW_RULE 바꿈, KNOW_HINT_RULE
+];
+// P375: 장부 지킴(p375 시험). 지금 안내문 해시가 끝 줄과 다르거나 줄이 어긋나면 고칠 것을 말하는 글 목록([]면 됨)
+export function ledgerProblems(current = briefHashes(), ledger = BRIEF_LEDGER, { news = BRIEF_NEWS, verbs = VERB_NAMES } = {}) {
+  const out = [];
+  const last = ledger[ledger.length - 1] || { hashes: {} };
+  const changed = Object.keys(current).filter((k) => !last.hashes || last.hashes[k] !== current[k]);
+  if (changed.length) out.push(`판 안내문이 바뀌었다(${changed.map((k) => `${k} ${(last.hashes && last.hashes[k]) || '없음'}→${current[k]}`).join(', ')}). `
+    + 'backend/src/verbs-notice.mjs: 오래 도는 세션이 알아야 할 새 약속이면 BRIEF_NEWS에 { id, since: dev에 합친 때, line: 짧은 한 줄, 거르기 orch·needs }를 더하고, '
+    + `BRIEF_LEDGER 끝에 { by: '<단위>', hashes: ${JSON.stringify(current)}, news: ['<그 id>'] }를 더한다. 새 동사 때문이면 news 대신 verbs: ['<동사>'], `
+    + "알릴 것이 없으면(글 다듬기 등) quiet: '<알릴 것 없음 까닭 한 줄>'");
+  const seen = new Set();
+  ledger.forEach((e, i) => {
+    const at = `BRIEF_LEDGER[${i}](${e.by || '?'})`;
+    if (!e.by) out.push(`${at}: by(단위 번호)가 없다`);
+    if (!e.hashes || Object.keys(current).some((k) => !e.hashes[k])) out.push(`${at}: hashes에 안내문 꼴 ${Object.keys(current).join('·')}의 해시가 모두 있어야 한다`);
+    const n = (e.news || []).length, v = (e.verbs || []).length, q = String(e.quiet || '').trim().length;
+    if (!n && !v && !q) out.push(`${at}: news(BRIEF_NEWS id)·verbs(새 동사)·quiet(알릴 것 없음 까닭 한 줄) 가운데 하나가 있어야 한다`);
+    for (const id of e.news || []) {
+      if (!news.some((x) => x.id === id)) out.push(`${at}: news '${id}'가 BRIEF_NEWS에 없다`);
+      if (seen.has(id)) out.push(`${at}: news '${id}'는 앞 줄에 이미 있다(새 안내는 새 id로)`);
+      seen.add(id);
+    }
+    for (const vb of e.verbs || []) if (!verbs.includes(vb)) out.push(`${at}: verbs '${vb}'가 계약(VERB_NAMES)에 없다`);
+  });
+  for (const x of news) if (!seen.has(x.id)) out.push(`BRIEF_NEWS '${x.id}'가 장부(BRIEF_LEDGER)의 어느 줄에도 없다(안내문을 바꾼 줄의 news에 적는다)`);
+  return out;
+}
+// 그 해시가 든 마지막 장부 줄까지 등록된 안내(id 목록). 모르는 해시면 []
+export function ledgerNews(hash, ledger = BRIEF_LEDGER) {
+  if (!hash) return [];
+  let at = -1;
+  ledger.forEach((e, i) => { if (e.hashes && Object.values(e.hashes).includes(hash)) at = i; });
+  return at < 0 ? [] : ledger.slice(0, at + 1).flatMap((e) => e.news || []);
 }
 
 export const NOTICE_HEAD = '[Atrium 보드] 판 명령이 늘었다:';
@@ -40,7 +100,7 @@ export const VERB_BRIEF = {
   todo: '사람에게 넘기는 일·명령·확인·미룬 일을 할 일 카드로 남기기',
   plan: '리포의 목표·마일스톤 레인',
   revive: '닫힌·보관된·끝난 세션을 같은 대화로 되살리기(사람이 시킬 때만)', fork: '세션의 대화를 이어받는 새 세션(SDK면 API 크레딧, 사람이 시킬 때만)', // P360
-  know: '이 리포의 예전 기록·문서·주석·판 일에서 찾기(막혔을 때 먼저)', // P364
+  know: '이 리포의 예전 기록·문서·주석·판 일에서 찾기', // P364. P375: 언제 찾는지는 새 안내(know-start)가 함께 간다
 };
 // 동사가 dev에 합쳐진 때(판 기록이 없는 옛 세션의 어림. 여기 없는 동사는 그보다 오래되어 안다고 본다)
 export const VERB_SINCE = {
@@ -63,6 +123,15 @@ export function boardPromptOf(s, scope = null) {
   if (s && s.orch) { const l = orchPromptLines(scope || 'free'); return claude ? l.join('\n') : l.join(' '); }
   return claude ? BOARD_SYSTEM_PROMPT : HARNESS_PROMPT;
 }
+// P375: 판이 세션에 넣는 안내문의 모든 꼴(장부 해시의 이름). claude 오케스트레이션은 줄바꿈, 그 밖은 띄어쓰기로 잇는다
+export function briefVariants() {
+  return {
+    board: boardPromptOf({ kind: 'claude' }), harness: boardPromptOf({ kind: 'codex' }),
+    'orch-sub': boardPromptOf({ kind: 'claude', orch: { on: true } }, 'sub'), 'orch-sub-plain': boardPromptOf({ kind: 'hermes', orch: { on: true } }, 'sub'),
+    'orch-free': boardPromptOf({ kind: 'claude', orch: { on: true } }, 'free'), 'orch-free-plain': boardPromptOf({ kind: 'hermes', orch: { on: true } }, 'free'),
+  };
+}
+export const briefHashes = () => Object.fromEntries(Object.entries(briefVariants()).map(([k, t]) => [k, promptHash(t)]));
 export const promptHash = (text) => crypto.createHash('sha256').update(String(text || '')).digest('hex').slice(0, 12);
 // 지금 판(띄울 때 남기는 값) → { contract, verbs, hash, at, why }
 export function stampOf({ text = '', verbs = VERB_NAMES, at = Date.now(), why = 'launch' } = {}) {
@@ -137,7 +206,7 @@ export class BriefNotices {
     if (sameStamp(old, cur)) return null;
     let perm = null; try { perm = this.permOf(s); } catch {}
     const list = newVerbs(old, { verbs: cur.verbs, allowed: perm && perm.allowed ? perm.allowed : null });
-    const news = newNews(old); // P334: 동사가 아닌 새 안내
+    const news = newNews(old).filter((id) => newsFits(id, s, perm)); // P334: 동사가 아닌 새 안내. P375: 쓸 수 있는 것만
     const prev = s.briefStamp || null;
     this.save(s, list.length || news.length ? cur : { ...cur, why: 'quiet' });
     if (!list.length && !news.length) { try { this.b.store.addEvent(s.sessionId, 'brief_stamp', { why: 'quiet', contract: cur.contract, hash: cur.hash }); } catch {} return null; }

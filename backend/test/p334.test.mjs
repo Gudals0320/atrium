@@ -157,7 +157,7 @@ test('P334 안내문 한 줄: 판 안내·하네스 안내·일 머리·스킬·
 
 test('P334 새 안내 알림: news 칸이 없는 판(옛 세션)은 한 번 알림, 지금 판은 앎', () => {
   assert.deepEqual(newNews(stampOf({ text: 'x' })), []);
-  assert.deepEqual(newNews({ contract: 9, verbs: [], hash: 'h' }), ['records']);
+  assert.deepEqual(newNews({ contract: 9, verbs: [], hash: 'h' }), NEWS_IDS); // P375: news 칸이 없는 판은 뒤에 더한 안내(know-start·know-hint)도 모른다
   assert.deepEqual(newNews(assumedStamp(1)), NEWS_IDS);
   assert.deepEqual(newNews(assumedStamp(Date.now() + 86400000)), [], '판 기록 없이 나중에 뜬 세션은 안다고 어림');
   const l = newsLine(['records']);
