@@ -5,11 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const KNOW_SCHEMA_VERSION = 'know-1';
+export const KNOW_SCHEMA_VERSION = 'know-2'; // P371: 덩어리에 절 범위(sa·sb), body가 원문 줄 자리를 지킨다(바뀌면 처음부터 다시 짓는다)
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS source (path TEXT PRIMARY KEY, origin TEXT NOT NULL, kind TEXT NOT NULL, token TEXT, hash TEXT NOT NULL, born REAL NOT NULL, changed REAL NOT NULL, unit TEXT, size INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS chunk (id INTEGER PRIMARY KEY, path TEXT NOT NULL, a INTEGER NOT NULL, b INTEGER NOT NULL, heading TEXT NOT NULL, body TEXT NOT NULL, unit TEXT);
+CREATE TABLE IF NOT EXISTS chunk (id INTEGER PRIMARY KEY, path TEXT NOT NULL, a INTEGER NOT NULL, b INTEGER NOT NULL, sa INTEGER NOT NULL, sb INTEGER NOT NULL, heading TEXT NOT NULL, body TEXT NOT NULL, unit TEXT);
 CREATE INDEX IF NOT EXISTS chunk_path ON chunk(path);
 CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(path, heading, body, content='chunk', content_rowid='id', tokenize='trigram');
 CREATE TABLE IF NOT EXISTS unitlink (unit TEXT NOT NULL, path TEXT NOT NULL, a INTEGER NOT NULL, b INTEGER NOT NULL, PRIMARY KEY (unit, path, a, b)) WITHOUT ROWID;
@@ -53,12 +53,12 @@ export class KnowIndex {
     this.st('DELETE FROM unitlink WHERE path = ?').run(p);
     this.st('DELETE FROM source WHERE path = ?').run(p);
   }
-  // src: { path, origin, kind, token, hash, born, changed, unit, size }, chunks: [{ heading, a, b, body, unit }], links: [[unit, a, b]]
+  // src: { path, origin, kind, token, hash, born, changed, unit, size }, chunks: [{ heading, a, b, sa, sb, body, unit }], links: [[unit, a, b]]
   putSource(src, chunks, links) {
     this.removeSource(src.path);
     this.st('INSERT INTO source (path, origin, kind, token, hash, born, changed, unit, size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(src.path, src.origin, src.kind, src.token ?? null, src.hash, src.born, src.changed, src.unit ?? null, src.size | 0);
     for (const c of chunks) {
-      const r = this.st('INSERT INTO chunk (path, a, b, heading, body, unit) VALUES (?, ?, ?, ?, ?, ?)').run(src.path, c.a, c.b, c.heading || '', c.body, c.unit ?? src.unit ?? null);
+      const r = this.st('INSERT INTO chunk (path, a, b, sa, sb, heading, body, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(src.path, c.a, c.b, c.sa ?? c.a, c.sb ?? c.b, c.heading || '', c.body, c.unit ?? src.unit ?? null);
       this.st('INSERT INTO fts (rowid, path, heading, body) VALUES (?, ?, ?, ?)').run(Number(r.lastInsertRowid), src.path, c.heading || '', c.body);
     }
     for (const [u, a, b] of links) this.st('INSERT OR IGNORE INTO unitlink (unit, path, a, b) VALUES (?, ?, ?, ?)').run(u, src.path, a, b);
@@ -75,16 +75,16 @@ export class KnowIndex {
   commit(prefix) { return this.st('SELECT * FROM commits WHERE sha LIKE ? ORDER BY t DESC LIMIT 2').all(`${prefix}%`); }
 
   // ---------- 찾기 ----------
-  // FTS5 trigram BM25(경로 2, 제목 3, 본문 1). cut 앞에 생긴 원천만
+  // FTS5 trigram BM25(경로 2, 제목 3, 본문 1). cut 앞에 생긴 원천만. P371: 절 범위(sa·sb), 원천의 해시·단위(sunit)도
   match(expr, { kind = null, cut, limit }) {
-    return this.st(`SELECT c.id, c.path, c.a, c.b, c.heading, c.body, c.unit, s.kind, s.born, s.changed, s.origin, bm25(fts, 2.0, 3.0, 1.0) AS score
+    return this.st(`SELECT c.id, c.path, c.a, c.b, c.sa, c.sb, c.heading, c.body, c.unit, s.unit AS sunit, s.hash, s.kind, s.born, s.changed, s.origin, bm25(fts, 2.0, 3.0, 1.0) AS score
       FROM fts JOIN chunk c ON c.id = fts.rowid JOIN source s ON s.path = c.path
       WHERE fts MATCH ? AND (? IS NULL OR s.kind = ?) AND s.born < ? ORDER BY score LIMIT ?`).all(expr, kind, kind, cut, limit);
   }
   // 두 글자 낱말: 부분 문자열(맞은 낱말 수가 많은 것부터)
   substring(terms, { kind = null, cut, limit }) {
     const hit = terms.map(() => "(instr(lower(c.path || ' ' || c.heading || ' ' || c.body), ?) > 0)").join(' + ');
-    return this.db.prepare(`SELECT c.id, c.path, c.a, c.b, c.heading, c.body, c.unit, s.kind, s.born, s.changed, s.origin, (${hit}) AS n
+    return this.db.prepare(`SELECT c.id, c.path, c.a, c.b, c.sa, c.sb, c.heading, c.body, c.unit, s.unit AS sunit, s.hash, s.kind, s.born, s.changed, s.origin, (${hit}) AS n
       FROM chunk c JOIN source s ON s.path = c.path WHERE (? IS NULL OR s.kind = ?) AND s.born < ? AND n > 0 ORDER BY n DESC, s.changed DESC, c.id LIMIT ?`).all(...terms, kind, kind, cut, limit);
   }
   chunkSpan(p) { return this.st('SELECT min(a) AS a, max(b) AS b FROM chunk WHERE path = ?').get(p); }

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Worker } from 'node:worker_threads';
-import { redact, parseWhen, dayOf, KNOW_KINDS } from './know-text.mjs';
+import { redact, parseWhen, dayOf, KNOW_KINDS, selfUnitOf } from './know-text.mjs';
 
 const kerr = (code, message) => Object.assign(new Error(message), { code });
 export const KNOW_TIMEOUT_MS = 180000; // 처음 짓기가 큰 저장소에서 길 수 있다
@@ -83,7 +83,7 @@ export class KnowService {
   }
 
   // ---------- 동사 ----------
-  // body: { action: search|open|unit|build|usage, q, k, kind, before, pointer, context, unit, full, json, since }. who: { session?, workspace }
+  // body: { action: search|open|unit|build|usage, q, k, kind, before, self, pointer, context, unit, full, json, since }. who: { session?, unit?, selfUnit?, workspace }
   async handle(body = {}, who = {}) {
     const action = body.action || 'search';
     const t0 = Date.now();
@@ -91,10 +91,10 @@ export class KnowService {
     if (!['search', 'open', 'unit', 'build'].includes(action)) throw kerr('bad_request', `알 수 없는 know 낱말: ${action}`);
     if (body.kind != null && body.kind !== '' && !KNOW_KINDS.includes(String(body.kind))) throw kerr('bad_request', `--kind는 ${KNOW_KINDS.join('|')}`);
     const ws = who.workspace;
-    const args = { ctx: this.ctxOf(ws), json: !!body.json, q: body.q, k: body.k, kind: body.kind || null, before: body.before || null, pointer: body.pointer, context: body.context, unit: body.unit, full: !!body.full };
+    const args = { ctx: this.ctxOf(ws), json: !!body.json, q: body.q, k: body.k, kind: body.kind || null, before: body.before || null, self: !!body.self, selfUnit: who.selfUnit || null, pointer: body.pointer, context: body.context, unit: body.unit, full: !!body.full };
     const rec = { t: new Date(t0).toISOString(), session: who.session ? { name: who.session.name, id: who.session.sessionId } : null, unit: who.unit || null, workspace: ws.key, cmd: action,
       q: body.q ? redact(String(body.q)).slice(0, QUESTION_LOG_MAX) : action === 'open' ? String(body.pointer || '') : action === 'unit' ? String(body.unit || '') : null,
-      opts: Object.fromEntries(Object.entries({ k: body.k, kind: body.kind, before: body.before, context: body.context, full: body.full, json: body.json }).filter(([, v]) => v != null && v !== '' && v !== false)) };
+      opts: Object.fromEntries(Object.entries({ k: body.k, kind: body.kind, before: body.before, self: body.self, context: body.context, full: body.full, json: body.json }).filter(([, v]) => v != null && v !== '' && v !== false)) };
     try {
       const r = await this.run(action, args);
       Object.assign(rec, { pointers: (r.pointers || []).map((p) => ({ p: p.pointer, chars: p.chars })), total: r.total ?? (r.out || '').length, ms: Date.now() - t0 });
@@ -102,12 +102,15 @@ export class KnowService {
     } catch (e) { Object.assign(rec, { error: e.code || 'error', pointers: [], total: 0, ms: Date.now() - t0 }); throw e; }
     finally { this.log(rec); }
   }
-  // 에이전트(atrium know). s: 부른 세션
+  // 에이전트(atrium know). s: 부른 세션. P371: 그 세션의 단위(세션 이름, 없으면 판의 지금 일 글의 PNNN)를 찾기에 넘겨 자기 파일을 뺀다
   async verb(s, body = {}) {
-    let unit = null;
-    try { const tr = this.b.store.openTryOf ? this.b.store.openTryOf(s.sessionId) : null; unit = tr ? tr.unitId : null; } catch {}
+    let unit = null; let spec = null;
+    try {
+      const tr = this.b.store.openTryOf ? this.b.store.openTryOf(s.sessionId) : null; unit = tr ? tr.unitId : null;
+      const u = unit && this.b.store.getUnit ? this.b.store.getUnit(unit) : null; spec = u ? u.spec : null;
+    } catch {}
     if (body.action === 'usage') return this.usageVerb(body);
-    return this.handle(body, { session: s, unit, workspace: this.wsOfSession(s) });
+    return this.handle(body, { session: s, unit, selfUnit: selfUnitOf(s && s.name, spec), workspace: this.wsOfSession(s) });
   }
   log(rec) {
     try { fs.mkdirSync(this.dir, { recursive: true }); fs.appendFileSync(this.usageFile, JSON.stringify(rec) + '\n'); } catch (e) { if (this.b && this.b.log) this.b.log(`know usage log failed: ${e.message}`); }
