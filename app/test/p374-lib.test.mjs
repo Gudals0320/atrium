@@ -29,10 +29,11 @@ function board() {
 const { g, groups } = board();
 const lay = (o = {}) => lineageLayout(g, { vgroups: groups, noFolder: 'No folder', routing: false, ...o });
 
-test('접지 않는다: 7단계 사슬과 하위 7개(절전 5)가 모두 카드, 접기 칩·얇은 줄 없음', () => {
+test('접지 않는다: 7단계 사슬과 하위 7개(절전 5)가 모두 보인다(접기 칩 없음, P376: 절전 하위 5는 얇은 줄)', () => {
   const L = lay();
   assert.equal(L.cards.size, g.nodes.length);
-  for (const [id, c] of L.cards) { assert.equal(c.fold, 0, id); assert.ok(!c.thin, id); }
+  for (const [id, c] of L.cards) assert.equal(c.fold, 0, id);
+  assert.deepEqual([...L.cards].filter(([, c]) => c.thin).map(([id]) => id).sort(), ['s:w3', 's:w4', 's:w5', 's:w6', 's:w7']);
   assert.equal(L.cards.get('s:d6').depth, 6);
 });
 
@@ -49,16 +50,15 @@ test('목표 비 기본은 보이는 칸 비(4:3~16:9로 좁힘), 판 비가 그
   assert.ok(lay({ columns: 'auto', view: { w: 1620, h: 860 }, aspect: 4 / 3 }).ncol <= lay({ columns: 'auto', view: { w: 1620, h: 860 } }).ncol);
 });
 
-test('창: 처음 화면은 읽히는 배율(OPEN_K 0.85)로 응답 필요·오류·가장 바쁜 띠, 맞춤은 판 전체, 휠은 끌기, 숨은 조정 열쇠', () => {
+test('창: 처음 화면은 읽히는 배율(OPEN_K 0.85)로 응답 필요·오류·가장 바쁜 띠, 맞춤은 판 전체, 휠은 확대(P376), 숨은 조정 열쇠', () => {
   const ml = read('MissionLineage.jsx');
   assert.match(ml, /const OPEN_K = 0\.85;/);
   assert.ok(!/READ_K/.test(ml), '옛 폭 맞춤 하한 없음');
   assert.match(ml, /\['turn', 'alert'\]\.map\(\(t\) => L\.order\.find/);
   assert.match(ml, /const fitOf = /);
-  assert.match(ml, /if \(e\.ctrlKey \|\| e\.metaKey\) \{ const p = local\(e\); paint\(zoomAt/, 'Ctrl·⌘+휠 = 확대');
-  assert.match(ml, /paint\(panBy\(v, -dx, -dy\)\)/, '휠 = 끌기');
+  assert.ok(!/paint\(panBy\(v, -dx, -dy\)\)/.test(ml), 'P376: 휠 끌기 없음');
   assert.match(ml, /const ASPECT_KEY = 'atrium\.sessionMap\.aspect';/);
-  assert.match(ml, /columns: 'auto', view: fitArea, aspect,/);
+  assert.match(ml, /today, view: fitArea, aspect,/);
   assert.match(ml, /localStorage\.removeItem\('atrium\.sessionMap\.expanded'\)/);
   const css = read('styles.css');
   assert.match(css, /\.mt-sm\[data-layout="lineage"\] \.mt-ta-full \.cst, [^{]*\{ font-size: 13px; \}/);

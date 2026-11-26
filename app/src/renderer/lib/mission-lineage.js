@@ -71,8 +71,10 @@ export function headBox(name, chips, px, minW = LINE.HEADW) {
 // P202: today = 오늘 일한 워크스페이스 키들(Set·배열, todayWorkspaces). 폴더 차례는 오늘 일한 폴더들(이름순) → 나머지 폴더들(이름순), 사이드바 손 차례(order)는 쓰지 않는다.
 //   columns = 1 | n | 'auto'(PC만, P374: 폴더 띠를 n열로 흘린다. auto = 판 비가 목표 비 aspect(SHEET.ASPECT, view = 보이는 칸 { w, h })에 가장 가까운 열 수, pickColumns). → sections(오늘·이전 구분 줄 자리), ncol, colDx, measure
 export function lineageLayout(graph, opts = {}) {
-  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, keepKeys = null, mergers = null, tags = null } = opts; // P335: tags = 카드 id → 꼬리표 수(1~2, PC만). P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
-  if (!phone && columns === 'auto') {
+  const { vgroups = [], tiers = null, names = null, routing = true, noFolder = 'No folder', expanded = new Set(), spineText = null, phone = false, view = null, pages = 0, label = 1, chipText = null, foldOpen = null, today = null, columns = 1, keepKeys = null, mergers = null, tags = null, plan = null } = opts; // P335: tags = 카드 id → 꼬리표 수(1~2, PC만). P251: keepKeys = 세션이 없어도 줄을 둘 워크스페이스. P276: mergers = lib/merger.js mapMergers 결과(세션 id)
+  // P376: plan = 기억한 열 나누기 { cols: [[띠 열쇠(bandKey)…]…] }(PC만, mapPlan). 주면 열 판단(auto)·오늘·이전 구분 줄 없이 그 차례·열 그대로 놓는다
+  const usePlan = !phone && !!plan && Array.isArray(plan.cols) && plan.cols.length > 0;
+  if (!phone && columns === 'auto' && !usePlan) {
     // P253: 열 판단은 이름표 계단(label, 배율에 따라 바뀐다)과 상관없이 바탕 글 크기(label 1)의 한 열 배치로 한다.
     //   전에는 그 계단의 배치로 재서, 줌인·줌아웃으로 계단이 바뀌면 열이 하나·둘로 바뀌며 밀렸다. 이제 열 수는 그래프와 보기 칸(창 크기)으로만 바뀐다
     // P374: 열은 오늘·이전 둘이 아니라 폴더 띠를 n열로 흘린다(pickColumns: 판 비가 목표 비 SHEET.ASPECT에 가장 가까운 열 수)
@@ -86,8 +88,9 @@ export function lineageLayout(graph, opts = {}) {
   const sidOf = new Map(tree.nodes.map((n) => [n.sessionId, n.id]));
   const L = { ...LINE, CW: mapCardW(graph, tree) };
   if (phone) { L.CW = Math.min(PHONE.CW_MAX, Math.max(PHONE.CW_MIN, Math.round(L.CW * PHONE.CW_K))); L.GX = PHONE.GX; L.FOLD = PHONE.FOLD; }
-  // P374: PC 세션 맵은 접지 않는다(사용자 2026-11-26: 모든 정보를 늘 보인다). 깊이 접기(FOLD)와 절전 하위 얇은 줄(THINMIN)을 끈다. 휴대폰 맵은 그대로
-  else { L.FOLD = Infinity; L.THINMIN = Infinity; }
+  // P374: PC 세션 맵은 깊이 접기를 하지 않는다(사용자 2026-11-26: 모든 정보를 늘 보인다). 휴대폰 맵은 그대로
+  // P376: 절전 하위 얇은 줄(THINMIN, P163)은 PC에도 되살렸다(사용자 2026-11-26). 얇은 줄은 이름·상태가 늘 보여 접기·숨기기가 아니다
+  else L.FOLD = Infinity;
   const tierOf = (id) => (tiers && tiers.has(id) ? tiers.get(id) : nodeTier(byId.get(id)));
   const wsOf = (id) => (byId.get(id) || {}).workspaceKey || '';
   const nameOf = (key) => (names && names.get(key)) || (key ? keyName(key) : '');
@@ -96,21 +99,12 @@ export function lineageLayout(graph, opts = {}) {
   const chipStr = (c) => (chipText ? chipText(c.tier, c.n) : `${c.n} ${c.tier}`);
 
   // ---- 소속(사이드바와 같다)과 차례(P202: 오늘 일한 폴더 → 나머지, 각각 이름순. 폴더 안 워크스페이스도 이름순) ----
-  const folderOf = new Map();
-  (vgroups || []).forEach((g, gi) => (g.members || []).forEach((m, mi) => { const k = normKey(m); if (k && !folderOf.has(k)) folderOf.set(k, { g, gi, mi }); }));
   const present = [...new Set([...tree.nodes.map((n) => wsOf(n.id)), ...(keepKeys || []).filter(Boolean)])];
-  const byWsName = (a, b) => (!a) - (!b) || nameCmp(nameOf(a), nameOf(b)) || nameCmp(a, b);
-  const groups0 = [];
-  for (const [gi, g] of (vgroups || []).entries()) {
-    const keys = present.filter((k) => k && folderOf.has(normKey(k)) && folderOf.get(normKey(k)).gi === gi).sort(byWsName);
-    if (keys.length) groups0.push({ id: g.id, name: g.name, keys });
-  }
-  const loose = present.filter((k) => !k || !folderOf.has(normKey(k))).sort(byWsName);
-  if (loose.length) groups0.push({ id: null, name: noFolder, keys: loose });
-  const allGroups = folderOrder(groups0, today);
+  const allGroups = groupsOf(present, { vgroups, nameOf, noFolder, today });
+  // P376: 기억한 배열을 쓰면 오늘·이전 구분이 없다(띠 차례가 상태 따라 바뀌지 않게)
   const groups = allGroups;
   const nToday = groups.filter((g) => g.today).length;
-  const split = nToday > 0 && nToday < groups.length; // 오늘 칸과 이전 칸이 둘 다 있다
+  const split = !usePlan && nToday > 0 && nToday < groups.length; // 오늘 칸과 이전 칸이 둘 다 있다
   // P280: 휴대폰도 columns: 2면 PC처럼 오늘 칸 오른쪽에 이전 칸(열마다 위 머리). 휴대폰 두 열은 단 나누기를 하지 않는다(PhoneMap.jsx는 늘 2를 준다)
   // P374: PC는 오늘·이전 두 열 대신 폴더 띠를 n열로 흘린다(flowCols, 아래). 오늘·이전은 한 줄 구분 줄로 남는다
   const two = phone && split && columns === 2;
@@ -291,10 +285,11 @@ export function lineageLayout(graph, opts = {}) {
   if (split) measure.earlier = y - secTop; else if (nToday) measure.today = y - secTop; else measure.earlier = y - secTop;
   measure.h = y;
   // P374: 열 흘리기 단위 = 폴더 띠(앞 틈 lead: 띠 사이 BANDGAP 또는 오늘·이전 구분 줄 SEP). 열 맨 위에 오면 BANDGAP은 버리고 구분 줄은 남긴다
-  measure.units = phone ? [] : bands.map((b, i) => { const lead = i ? b.y - (bands[i - 1].y + bands[i - 1].h) : 0; return { h: b.h, lead, sep: !!sections.find((s) => s.mode === 'line' && rows.some((r) => r.key === s.before && (r.band || null) === (b.id || null))) }; });
+  measure.units = phone ? [] : bands.map((b, i) => { const lead = i ? b.y - (bands[i - 1].y + bands[i - 1].h) : 0; return { key: bandKey(b.id), h: b.h, lead, sep: !!sections.find((s) => s.mode === 'line' && rows.some((r) => r.key === s.before && (r.band || null) === (b.id || null))) }; });
   measure.cgap = COLS2.GAP;
   let ncolPC = 1;
-  if (nflow > 1 && bands.length > 1) ncolPC = flowCols(nflow);
+  if (usePlan) ncolPC = flowPlan(plan.cols);
+  else if (nflow > 1 && bands.length > 1) ncolPC = flowCols(nflow);
   // P166: 휴대폰은 보이는 칸 비율에 맞춰 줄들을 단(page)으로 나눌 수 있다(신문처럼 위 → 아래, 왼 → 오른)
   let nPages = 1;
   if (phone && !two) { nPages = flowPages(); y = Math.max(1, ...bands.map((b) => b.y + b.h)); }
@@ -397,7 +392,7 @@ export function lineageLayout(graph, opts = {}) {
   const rowIdx = new Map(rows.map((r, i) => [r.key, i]));
   const order = [...cards.entries()].sort((p, q) => rowIdx.get(p[1].ws) - rowIdx.get(q[1].ws) || p[1].x - q[1].x || p[1].y - q[1].y).map(([id]) => id);
   const BW = two ? DX + W : phone ? nPages * W + (nPages - 1) * PHONE.PGAP : ncolPC > 1 ? ncolPC * W + (ncolPC - 1) * COLS2.GAP : W;
-  const BH = two || ncolPC > 1 ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
+  const BH = two || ncolPC > 1 || usePlan ? Math.max(1, ...bands.map((b) => b.y + b.h)) : Math.max(1, y);
   return { cards, bands, rows, cols, edges, bounds: { x: 0, y: 0, w: BW, h: BH }, sections, ncol: two ? 2 : ncolPC, colDx: ncolPC > 1 ? W + COLS2.GAP : DX, measure, order, tree, cw: L.CW, W, spine: L.SPINE, headx: L.HEADX, seq, vkids, label: phone ? 1 : label, px, headW: L.HEADW2 || LINE.HEADW, heads, ...(phone ? { phone: true, pages: nPages } : {}) };
 
   // ---- P260: 줄 안 쌓기(PC·휴대폰 같은 규칙). 시작 칸 뿌리의 나무 → 다른 워크스페이스에서 온 것(1단계 칸) → 솔로(시작 칸, 차례 = 만든 차례).
@@ -436,6 +431,27 @@ export function lineageLayout(graph, opts = {}) {
   function flowCols(n) {
     const parts = splitUnits(measure.units, n);
     if (parts.length < 2) return 1;
+    return flowParts(parts);
+  }
+  // P376: 기억한 열 나누기(띠 열쇠)대로 옮긴다. 판에 없는 띠는 건너뛰고(그 자리만 빈다), 판에 있는데 plan에 없는 띠는 가장 짧은 열 끝에 둔다.
+  //   빈 열도 자리를 지킨다(오른쪽 열이 왼쪽으로 당겨지지 않게). 끝의 빈 열만 폭에서 뺀다. 띠 줄무늬(odd)는 열 안 차례로
+  function flowPlan(cols) {
+    const at = new Map(bands.map((b, i) => [bandKey(b.id), i]));
+    const parts = cols.map((c) => (Array.isArray(c) ? c : []).map((k) => at.get(k)).filter((i) => i != null));
+    const used = new Set(parts.flat());
+    for (let i = 0; i < bands.length; i++) if (!used.has(i)) {
+      let best = 0, bh = Infinity;
+      parts.forEach((p, c) => { const h = colHeight(measure.units, p); if (h < bh - 1e-9) { bh = h; best = c; } });
+      parts[best].push(i); used.add(i);
+    }
+    for (const i of parts.flat()) measure.units[i] = { ...measure.units[i], lead: L.BANDGAP, sep: false };
+    flowParts(parts);
+    parts.forEach((p) => p.forEach((i, j) => { bands[i].odd = j % 2 === 1; }));
+    let n = parts.length;
+    while (n > 1 && !parts[n - 1].length) n--;
+    return n;
+  }
+  function flowParts(parts) {
     const old = bands.map((b) => ({ y: b.y }));
     parts.forEach((idx, c) => {
       const dx = c * (W + COLS2.GAP);
@@ -537,6 +553,85 @@ export function nameCmp(a, b) {
   const c = COLLATE ? COLLATE.compare(x, y) : x.localeCompare(y, 'en', { numeric: true, sensitivity: 'base' });
   return c || (x < y ? -1 : x > y ? 1 : 0);
 }
+// P376: 폴더 띠 묶기(lineageLayout과 mapBands가 같이 쓴다). present = 맵에 있는 워크스페이스 키들 → 폴더 차례(folderOrder)의 { id, name, keys, today }
+function groupsOf(present, { vgroups = [], nameOf, noFolder = 'No folder', today = null }) {
+  const folderOf = new Map();
+  (vgroups || []).forEach((g, gi) => (g.members || []).forEach((m, mi) => { const k = normKey(m); if (k && !folderOf.has(k)) folderOf.set(k, { g, gi, mi }); }));
+  const byWsName = (a, b) => (!a) - (!b) || nameCmp(nameOf(a), nameOf(b)) || nameCmp(a, b);
+  const groups0 = [];
+  for (const [gi, g] of (vgroups || []).entries()) {
+    const keys = present.filter((k) => k && folderOf.has(normKey(k)) && folderOf.get(normKey(k)).gi === gi).sort(byWsName);
+    if (keys.length) groups0.push({ id: g.id, name: g.name, keys });
+  }
+  const loose = present.filter((k) => !k || !folderOf.has(normKey(k))).sort(byWsName);
+  if (loose.length) groups0.push({ id: null, name: noFolder, keys: loose });
+  return folderOrder(groups0, today);
+}
+// P376: 띠 열쇠(폴더 id, 폴더 없음 = '')
+export const bandKey = (id) => (id == null ? '' : String(id));
+// P376: 맵의 폴더 띠와 그 워크스페이스들(폴더 차례). → [{ key, ws: [워크스페이스 키…] }]
+export function mapBands(graph, { vgroups = [], names = null, noFolder = 'No folder', today = null, keepKeys = null } = {}) {
+  const tree = missionTree(graph);
+  const present = [...new Set([...tree.nodes.map((n) => n.workspaceKey || ''), ...(keepKeys || []).filter(Boolean)])];
+  const nameOf = (key) => (names && names.get(key)) || (key ? keyName(key) : '');
+  return groupsOf(present, { vgroups, nameOf, noFolder, today }).map((g) => ({ key: bandKey(g.id), ws: g.keys }));
+}
+
+// P376: 배열 고정(사용자 2026-11-26: "배열은 고정. 새 워크스페이스가 생길 때에만 정렬을 점검하고 고친다").
+//   열 나누기(어느 띠가 어느 열 몇 번째)를 한 번 정해 기기에 기억하고(MissionLineage.jsx localStorage atrium.sessionMap.plan), 배율·창 크기·세션 상태·카드 높이로는 바꾸지 않는다.
+//   plan = { v, cols: [[띠 열쇠…]…], ws: [이 배열이 아는 워크스페이스 키…], aspect }.
+//   - 처음(기억 없음·형식이 다름·목표 비 열쇠가 바뀜)이나 force(손 정리): 폴더 차례(오늘 먼저)를 목표 비에 가장 가까운 열 수로 나눈다(pickColumns·splitUnits)
+//   - 새 워크스페이스(ws에 없는 키)나 plan에 없는 띠가 생기면: 새 띠는 가장 짧은 열 끝에 넣고(기존 띠는 움직이지 않는다), 판 비가 목표 비에서
+//     DRIFT배보다 더 어긋나고 다시 나누면 나아질 때만 지금 차례 그대로 다시 나눈다
+//   - 워크스페이스·띠가 사라지면 아무것도 바꾸지 않는다(그 자리만 빈다. 다시 생기면 제자리)
+//   높이는 늘 바탕 글 크기(label 1)·한 열 배치로 잰다(배율과 상관없다, P253). 바뀐 것이 없으면 prev를 그대로 돌려준다
+export const PLAN = { V: 1, DRIFT: 1.5, MAXWS: 600 };
+export function planUnits(graph, opts = {}) {
+  const order = mapBands(graph, opts).map((b) => b.key);
+  const one = lineageLayout(graph, { ...opts, phone: false, columns: 1, routing: false, label: 1, plan: { cols: [order] } });
+  return { W: one.measure.W, cgap: one.measure.cgap, units: new Map(one.measure.units.map((u) => [u.key, { h: u.h, lead: u.lead }])) };
+}
+// cols(띠 열쇠)로 놓았을 때 판 비와 목표 비의 로그 차이(맵에 있는 띠만 센다)
+export function planMiss(cols, m, want) {
+  const parts = cols.map((c) => c.filter((k) => m.units.has(k)));
+  let n = parts.length;
+  while (n > 1 && !parts[n - 1].length) n--;
+  const h = Math.max(1, ...parts.map((p) => p.reduce((s, k, j) => s + m.units.get(k).h + (j ? m.units.get(k).lead : 0), 0)));
+  const w = n * m.W + (n - 1) * (m.cgap || COLS2.GAP);
+  return Math.abs(Math.log((w / h) / want));
+}
+function splitPlan(order, m, view, aspect) {
+  const units = order.map((k) => ({ ...m.units.get(k), sep: false }));
+  const n = pickColumns({ units, W: m.W, cgap: m.cgap }, view, { aspect });
+  return splitUnits(units, n).map((p) => p.map((i) => order[i]));
+}
+export function mapPlan(prev, graph, opts = {}, { force = false } = {}) {
+  const { view = null, aspect = SHEET.ASPECT } = opts;
+  const bands = mapBands(graph, opts);
+  const wsNow = bands.flatMap((b) => b.ws);
+  const valid = !!prev && prev.v === PLAN.V && Array.isArray(prev.cols) && prev.cols.length > 0 && prev.cols.every(Array.isArray) && Array.isArray(prev.ws) && prev.aspect === aspect;
+  if (!force && valid) {
+    const known = new Set(prev.ws), inPlan = new Set(prev.cols.flat());
+    const fresh = wsNow.filter((k) => !known.has(k)), missing = bands.filter((b) => !inPlan.has(b.key));
+    if (!fresh.length && !missing.length) return prev;
+    const m = planUnits(graph, opts);
+    const cols = prev.cols.map((c) => c.slice());
+    const colH = (c) => c.filter((k) => m.units.has(k)).reduce((s, k, j) => s + m.units.get(k).h + (j ? m.units.get(k).lead : 0), 0);
+    for (const b of missing) { let best = 0; cols.forEach((c, i) => { if (colH(c) < colH(cols[best]) - 1e-9) best = i; }); cols[best].push(b.key); }
+    let out = cols, why = 'insert';
+    const want = sheetAspect(aspect, view);
+    const now = planMiss(cols, m, want);
+    if (now > Math.log(PLAN.DRIFT)) {
+      const order = [...prev.cols.flat(), ...missing.map((b) => b.key)].filter((k) => m.units.has(k)); // 지금 배열 차례 + 새 띠
+      const re = splitPlan(order, m, view, aspect);
+      if (planMiss(re, m, want) < now - 1e-9) { out = re; why = 'resplit'; }
+    }
+    return { v: PLAN.V, cols: out, ws: [...new Set([...prev.ws, ...wsNow])].slice(-PLAN.MAXWS), aspect, why };
+  }
+  const m = planUnits(graph, opts);
+  return { v: PLAN.V, cols: splitPlan(bands.map((b) => b.key), m, view, aspect), ws: wsNow.slice(-PLAN.MAXWS), aspect, why: force ? 'force' : 'new' };
+}
+
 // 이 PC 시각 자정(ms)
 export const dayStart = (now = Date.now()) => { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.getTime(); };
 // 다음 자정까지 ms(맵을 연 채 자정이 지나면 차례를 다시 센다)
