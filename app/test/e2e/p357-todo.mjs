@@ -1,6 +1,7 @@
 // P357 창 시험: 할 일 카드의 종류 꼬리표(PC 할 일 목록, 세션 맵 미니 창, 캔버스 알약, 휴대폰 홈·세션 화면), 결정 카드 알림을 눌러 카드로 가기,
 // 터미널에서 답함 줄(다시 열기). 따로 띄운 개발용 판(atrium-dev-p357, 48102)만 쓴다. 휴대폰·노트북 흉내 프록시 48202. 실제 대화는 쓰지 않는다.
-// 판: 셸 둘(lead, ops)이 atrium ask·todo로 결정·확인·실행·나중에 카드를 남긴다. 자동 카드·폭주 카드·터미널에서 답함 줄은 페이지 안 흉내(decision.changed, phone.cards).
+// 판: 말을 걸지 않는 haiku 둘(lead, ops)의 신원으로 lib/board-agent.mjs가 atrium ask·todo를 불러 결정·확인·실행·나중에 진짜 카드를 남긴다(카드가 모자라면 멈춘다).
+//   P372: 옛 길(셸 둘에 atrium ask를 치게 함)은 셸이 판 하위 명령을 못 써 카드가 0장이었고 흉내로 메웠다. 자동 카드·폭주 카드·터미널에서 답함 줄만 페이지 안 흉내(decision.changed, phone.cards).
 // 실행: node app/test/e2e/p357-todo.mjs <setup|shots|stop>
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,6 +31,8 @@ fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(CONVOS, { recursive: true }
 const { logger, sleep, until } = await import('./harness.mjs');
 const { assertTestBoard } = await import('./p9-guard.mjs');
 assertTestBoard(ENV, { root: DEV });
+const { boardAgent } = await import('./lib/board-agent.mjs'); // P372: 판 명령은 haiku 리드 신원으로
+const ag = boardAgent({ env: ENV });
 const pwDir = path.join(process.env.LOCALAPPDATA || '', 'ms-playwright');
 const chromeExe = (() => { try { return fs.readdirSync(pwDir).filter((x) => /^chromium-\d+$/.test(x)).sort().reverse().map((x) => path.join(pwDir, x, 'chrome-win64', 'chrome.exe')).find((f) => fs.existsSync(f)); } catch { return null; } })();
 const log = logger('p357-' + WHAT);
@@ -48,12 +51,16 @@ async function setupBoard() {
   call('workspace.open', { path: F, select: true });
   call('settings.set', { key: 'language', value: 'ko' });
   const have = new Set(list().map((x) => x.name));
-  for (const name of ['lead', 'ops']) if (!have.has(name)) { call('session.spawn', { cwd: F, kind: 'shell', name }); await sleep(600); }
-  await until(() => list().filter((x) => x.kind === 'shell' && x.state !== 'starting').length >= 2, 90000, 2000).catch(() => log('셸 준비 기다림 넘김'));
-  await sleep(2500);
-  for (const n of ['lead', 'ops']) { try { atrium('input', n, 'cls\r'); } catch {} }
-  const cards = call('decision.list').cards || [];
-  log('판: 진짜 카드 ' + cards.length + '장(셸은 atrium ask를 쓸 수 없어 카드는 그림 단계에서 흉내로 넣는다)');
+  for (const name of ['lead', 'ops']) if (!have.has(name)) await ag.lead(name, { cwd: F });
+  // 진짜 카드 넷: lead 결정·확인·나중(조건), ops 실행(명령)
+  if (!(call('decision.list').cards || []).length) {
+    await ag.ask('lead', 'P356 휴대폰 맵을 이대로 dev에 합칠까요?', { options: ['합치기', '보류'] });
+    await ag.todo('lead', '휴대폰에서 첫 화면이 뜨는지 확인', { check: true });
+    await ag.todo('lead', 'dev 빌드가 나오면 iPhone으로 열어 보기', { later: 'dev 빌드가 나오면' });
+    await ag.todo('ops', '키 다시 만들기', { cmds: ['secret-run set DEMO_KEY'] });
+  }
+  const cards = await ag.expectCards(4);
+  check('판: 진짜 카드 넷(lead 셋, ops 하나)', cards.filter((c) => c.name === 'lead').length === 3 && cards.filter((c) => c.name === 'ops').length === 1, cards.map((c) => [c.id, c.name, c.kind]));
 }
 
 const toUrl = (p) => 'file:///' + p.replace(/\\/g, '/');
@@ -78,12 +85,7 @@ const pcCtx = { viewport: { width: 1500, height: 940 }, deviceScaleFactor: 1, lo
 function fakeOf(real, ids) {
   const now = Date.now();
   const base = { options: [], why: null, cmds: [], deferred: false };
-  real = [
-    { ...base, id: 9010, sessionId: ids.lead, name: 'lead', question: 'P356 휴대폰 맵을 이대로 dev에 합칠까요?', options: ['합치기', '보류'], createdAt: now - 12 * 60000, kind: 'decide' },
-    { ...base, id: 9011, sessionId: ids.lead, name: 'lead', question: '휴대폰에서 첫 화면이 뜨는지 확인', createdAt: now - 9 * 60000, kind: 'check' },
-    { ...base, id: 9012, sessionId: ids.lead, name: 'lead', question: 'dev 빌드가 나오면 iPhone으로 열어 보기', createdAt: now - 30 * 60000, kind: 'later', cond: 'dev 빌드가 나오면', later: 'dev 빌드가 나오면', deferred: true },
-    { ...base, id: 9013, sessionId: ids.ops, name: 'ops', question: '키 다시 만들기', cmds: ['secret-run set DEMO_KEY'], createdAt: now - 7 * 60000, kind: 'do' },
-  ];
+  // P372: 진짜 카드(decision.list) 그대로 + 흉내 카드(자동·폭주)와 터미널에서 답함 한 줄
   const auto = { id: 9001, sessionId: ids.ops, name: 'ops', question: 'npm run build 다시 돌리기', options: [], why: null, createdAt: now - 4 * 60000, kind: 'do', auto: true, cmds: ['npm run build'], deferred: false };
   const guard = { id: 9002, sessionId: ids.ops, name: 'ops', question: 'guard', options: [], createdAt: now - 2 * 60000, kind: 'guard', guard: { kind: 'cpu', paused: false, cpu: 96, mem: 1200 }, deferred: false };
   const recent = [{ id: 9003, sessionId: ids.lead, name: 'lead', question: '이 방향(카드에 꼬리표)으로 갈까요?', options: ['예', '아니오'], createdAt: now - 40 * 60000, state: 'answered', via: 'terminal', answeredAt: now - 6 * 60000, kind: 'decide' }];
@@ -93,9 +95,9 @@ function fakeOf(real, ids) {
 async function shots() {
   const pw = await import('playwright');
   const ids = Object.fromEntries(list().map((s) => [s.name, s.sessionId]));
-  const real = call('decision.list').cards || [];
+  const real = await ag.expectCards(4); // P372: 카드가 모자라면 그림을 찍지 않는다
   const fake = fakeOf(real, ids);
-  const realCards = fake.cards.filter((d) => d.id >= 9010);
+  const realCards = real;
   await withSim(async () => {
     const browser = await pw.chromium.launch({ headless: true, ...(chromeExe ? { executablePath: chromeExe } : {}) });
     try {
