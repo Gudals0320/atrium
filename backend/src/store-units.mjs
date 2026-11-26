@@ -17,7 +17,8 @@ CREATE INDEX IF NOT EXISTS work_units_from ON work_units(from_session, created_a
 CREATE TABLE IF NOT EXISTS unit_tries (id TEXT PRIMARY KEY, unit_id TEXT NOT NULL, session_id TEXT NOT NULL, header INTEGER NOT NULL DEFAULT 0, delivery_id TEXT, started_at INTEGER NOT NULL, ended_at INTEGER, result TEXT, done_text TEXT, stop_reason TEXT, notified_at INTEGER, claimed_by TEXT, notice_delivery_id TEXT) STRICT;
 CREATE INDEX IF NOT EXISTS unit_tries_session ON unit_tries(session_id, ended_at);
 CREATE INDEX IF NOT EXISTS unit_tries_unit ON unit_tries(unit_id);
-`;
+CREATE INDEX IF NOT EXISTS unit_tries_delivery ON unit_tries(delivery_id);
+`; // P369: 전달 → 시도(끝난 일의 머리 전달 거르기)
 
 // P182: 옛 board.db의 unit_tries에 더하는 열. quiet_at: 나무 전체가 쉼(tree_quiet)을 알린 때(나무에 움직임이 생기면 지운다. 다시 떠도 되풀이하지 않게)
 // P267: work_units의 source_unit(합치기 일이 나온 원래 일)과 meta(합치기 일의 git 값과 결과, JSON)
@@ -71,6 +72,10 @@ export function installUnits(Store) {
     pendingMergeSummaries() { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND status IN ('done', 'failed') ORDER BY closed_at").all().map(unitRow).filter((u) => u.meta && u.meta.summary === 'pending'); },
     // P334: 그 세션이 맡아 기록을 남긴 마지막 일
     lastRecordUnitTo(sessionId) { return unitRow(this.st('SELECT * FROM work_units WHERE to_session = ? AND records IS NOT NULL ORDER BY closed_at DESC LIMIT 1').get(sessionId)); },
+    // P369: 그 전달로 머리를 넣은 시도(끝난 일의 머리 전달을 거른다)
+    tryByDelivery(deliveryId) { return deliveryId ? tryRow(this.st('SELECT * FROM unit_tries WHERE delivery_id = ? LIMIT 1').get(deliveryId)) : null; },
+    // P369: 그 하위의 합치기 일(최근 것부터). meta.childId로 찾는다
+    mergeUnitsOfChild(childId) { return this.st("SELECT * FROM work_units WHERE origin = 'merge' AND meta LIKE ? ORDER BY created_at DESC LIMIT 50").all(`%"childId":${JSON.stringify(String(childId))}%`).map(unitRow).filter((u) => u.meta && u.meta.childId === childId); },
     lastTryOfUnit(unitId) { return tryRow(this.st('SELECT * FROM unit_tries WHERE unit_id = ? ORDER BY started_at DESC LIMIT 1').get(unitId)); },
   });
 }

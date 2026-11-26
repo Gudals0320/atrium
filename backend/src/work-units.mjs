@@ -60,6 +60,7 @@ export class WorkUnits {
     this.waiters = new Map(); // `${위}>${하위}` → Set<{ got }>(그 하위를 기다리는 atrium wait·prompt --wait)
     this.prev = new Map(); // 세션 ID → 마지막으로 본 상태(턴 끝 판정)
     this.queued = new Set(b.store.queuedUnitSessions ? b.store.queuedUnitSessions() : []); // 판이 붙잡아 둔 일이 있는 세션
+    this.pumping = new Set(); // P369: 붙잡아 둔 일을 넣는 중인 세션(같은 세션의 pump가 안에서 다시 불리지 않게)
     this.onDispatch = null; // (unit, delivery, header) → 붙잡아 둔 일을 나중에 넣을 때(연결 기록)
     this.stops = new UnitStops(b, this, noticeBatchMs != null ? { batchMs: noticeBatchMs } : {}); // P181
   }
@@ -89,16 +90,19 @@ export class WorkUnits {
     if (hold) { this.queued.add(t.sessionId); return { unit, held: true, ahead: st.queuedUnitsOf(t.sessionId).length - 1 + (st.openTryOf(t.sessionId) ? 1 : 0) }; }
     return { unit, ...this.dispatch(unit) };
   }
-  // 일의 새 시도: 머리를 붙여 대기열에 넣고 시도를 적는다
+  // 일의 새 시도: 시도를 적고 머리를 붙여 대기열에 넣는다.
+  // P369: 시도를 먼저 적는다. 넣기(enqueue)의 delivery 이벤트가 그 자리에서 세션 방송 → onSession → pump를 부르는데, 그때 시도가 없으면
+  //   같은 일이 아직 줄 선 일로 보여 다시 넣었다(스택이 넘칠 때까지 시도·전달 수백 개). 시도가 있으면 열린 시도가 있어 pump가 넣지 않는다
   dispatch(unit, { later = false } = {}) {
     const b = this.b; const st = this.store();
     const header = this.headerOf(unit);
     const tail = unit.origin === 'merge' && b.merger ? b.merger.tailFor(unit) : ''; // P267: 그 merger의 처음 일이면 merger 안내를 붙인다
-    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}${tail}`, { origin: { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션)
-    const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: d.deliveryId, startedAt: Date.now() };
+    const tr = { id: newId('t', 4), unitId: unit.id, sessionId: unit.to, header: true, deliveryId: null, startedAt: Date.now() };
     st.insertTry(tr);
-    st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
     if (!st.queuedUnitsOf(unit.to).length) this.queued.delete(unit.to);
+    const d = b.queue.enqueue(unit.to, `${header}\n\n${unit.spec}${tail}`, { origin: { kind: 'agent', session: unit.from } }); // P182: 출처(맡긴 세션)
+    st.updateTry(tr.id, { deliveryId: d.deliveryId });
+    st.addEvent(unit.to, 'unit_try', { unitId: unit.id, tryId: tr.id, deliveryId: d.deliveryId, later });
     if (later && this.onDispatch) try { this.onDispatch(unit, d, header); } catch (e) { b.log('unit dispatch hook error', e.stack); }
     return { d, tryRow: st.getTry(tr.id), header };
   }
@@ -111,13 +115,37 @@ export class WorkUnits {
     return unitHeader({ merge: b.merger ? b.merger.childTail(t) : null, /* P267 */ parent: this.nameOf(unit.from), unitId: unit.id, kind: t ? t.kind || 'claude' : null, docs: b.docs ? b.docs.headerTail(t) : null }); // P208. P257: 문서 한 마디
   }
   // 붙잡아 둔 일을 넣을 차례인가(열린 시도가 없을 때 먼저 온 것 하나)
+  // P369: 넣는 동안 같은 세션의 pump가 다시 불리면(넣기 → 방송 → onSession) 아무것도 하지 않는다
   pump(sessionId) {
     const st = this.store();
+    if (this.pumping.has(sessionId)) return null;
     if (!this.b.sessions.has(sessionId) || st.openTryOf(sessionId)) return null;
     if (this.b.merger && this.b.merger.retiring.has(sessionId)) return null; // P267: 닫을 merger에게는 넣지 않는다(새 merger가 받는다)
     const q = st.queuedUnitsOf(sessionId);
     if (!q.length) { this.queued.delete(sessionId); return null; }
-    return this.dispatch(q[0], { later: true });
+    this.pumping.add(sessionId);
+    try { return this.dispatch(q[0], { later: true }); } finally { this.pumping.delete(sessionId); }
+  }
+  // P369: 끝난 일(done·failed·cancelled)의 머리 전달은 넣지 않는다(대기열의 판 손 stale) → 까닭 'unit_closed' | null.
+  //   일에 붙는 이어지는 지시(보통 글)는 그대로 들어간다(P215: done 뒤에도 들어간다)
+  staleDelivery(d) {
+    if (!d || d.origin !== 'agent') return null;
+    const st = this.store();
+    const tr = st.tryByDelivery ? st.tryByDelivery(d.deliveryId) : null;
+    if (!tr) return null;
+    const u = st.getUnit(tr.unitId);
+    return tr.result || (u && u.status !== 'open') ? 'unit_closed' : null;
+  }
+  // P369: 스티어링(--steer)이 아직 대기열에 있는 같은 일의 머리 전달을 붙잡는다. 그 전달을 지금 턴에 넣는 스티어링으로 바꾸고 끝에 스티어링 글을 붙인다.
+  //   일은 받는 세션에 한 번만 들어간다(머리와 할 일, 그 뒤 스티어링 글). 그 전달이 이미 들어갔거나 스티어링을 받을 수 없으면 null(지금처럼 따로 보낸다)
+  steerHeld(tr, text) {
+    const q = this.b.queue;
+    const d = tr && tr.deliveryId && q.items ? q.items.get(tr.deliveryId) : null;
+    if (!d || d.status !== 'queued' || d.editing) return null;
+    try { q.sendNow(d.deliveryId); q.update(d.deliveryId, `${d.text}\n\n${text}`); } catch { return null; }
+    this.store().addEvent(tr.sessionId, 'unit_steer_held', { unitId: tr.unitId, tryId: tr.id, deliveryId: d.deliveryId, chars: String(text).length });
+    this.b.log(`unit ${tr.unitId} steer joined its queued header (${d.deliveryId})`);
+    return d;
   }
   // 이어지는 지시를 그 시도에 적는다
   noteFollowup(tryRow, caller, deliveryId, { now = false } = {}) {

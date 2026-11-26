@@ -476,7 +476,7 @@ async function unitVerb(cmd) {
   const x = r.result;
   if (cmd === 'done') {
     // P267: merger = 브랜치에서 일한 결과라 보드가 합치기를 merger에게 맡겼다. 합치기 일의 ok(retire 칸이 있음)는 부모를 깨우지 않는다
-    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, merger: `보드가 병합을 ${x.merge && x.merge.merger ? '@' + x.merge.merger : 'merger'}에게 맡겼다(일 ${x.merge ? x.merge.unit : '?'}). 너는 이 턴이 끝나면 보드가 재운다`, record: x.retire != null && x.result === 'ok' ? `병합을 보드가 소식에 남기고 @${x.parent}의 items에 보인다(@${x.parent}를 깨우지 않는다)` : x.parentOpen ? '네가 너에게 맡긴 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
+    const how = { wait: `@${x.parent}가 기다리던 atrium wait가 받았다`, queue: `보드가 @${x.parent} 차례에 한 번 넣는다`, merger: x.merge && x.merge.dup ? `같은 끝 커밋의 병합은 이미 ${x.merge.merger ? '@' + x.merge.merger : 'merger'}에게 맡겼다(일 ${x.merge.unit}). 새로 맡기지 않았다. 너는 이 턴이 끝나면 보드가 재운다` /* P369 */ : `보드가 병합을 ${x.merge && x.merge.merger ? '@' + x.merge.merger : 'merger'}에게 맡겼다(일 ${x.merge ? x.merge.unit : '?'}). 너는 이 턴이 끝나면 보드가 재운다`, record: x.retire != null && x.result === 'ok' ? `병합을 보드가 소식에 남기고 @${x.parent}의 items에 보인다(@${x.parent}를 깨우지 않는다)` : x.parentOpen ? '네가 너에게 맡긴 일이라 기록만 남겼다' : `@${x.parent}는 닫혀 있어 기록만 남겼다` }[x.claimedBy] || x.claimedBy;
     say(`일 ${x.unit}을 닫았다(${x.result}). ${how}. 다른 길로 따로 보고하지 않는다.`);
     if (x.records) say(`기록 ${x.records.files.length}개를 보드가 ${x.records.dir}/에 두었다(git 밖, 보고에 경로가 붙는다).`); // P334
     if (x.next) say(`줄 서 있던 다음 일 ${x.next.unit}을 보드가 넣는다.`); else if (x.retire) say('다섯 번째 병합 일이다. 이제 쉰다: 보드가 너를 닫고 남은 일은 새 merger가 받는다.'); else say('이제 쉰다.');
