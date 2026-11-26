@@ -65,13 +65,11 @@ async function setup() {
   const del = call('delivery.list', { session: 'om1', limit: 10 });
   fs.writeFileSync(path.join(OUT, 'deliveries-om1.json'), JSON.stringify(del, null, 2));
   check('om1에 간 글이 머리 없이 "/session"', del.some((d) => d.text === '/session'), del.map((d) => ({ text: d.text.slice(0, 80), status: d.status })));
-  const it = await ag.run('om1x', 'item').catch(() => null);
   const items = await ag.run('lead', 'items');
   fs.writeFileSync(path.join(OUT, 'lead-items.txt'), items.stdout + items.stderr);
   check('리드의 items에 om1 일(--raw로 맡긴 일)', /om1/.test(items.stdout) && /\/session/.test(items.stdout), items.stdout.slice(0, 600));
   const scr = atrium('get', 'om1', '--lines', '40'); fs.writeFileSync(path.join(OUT, 'om1-screen.txt'), scr);
   const omoModels = await ag.run('lead', 'models'); fs.writeFileSync(path.join(OUT, 'lead-models.txt'), omoModels.stdout);
-  void it;
 }
 
 async function shots() {
