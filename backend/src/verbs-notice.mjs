@@ -26,6 +26,8 @@ export const BRIEF_NEWS = [
   { id: 'know-start', needs: ['know'], since: Date.parse('2026-11-26T01:49:16+09:00') /* Merge p368 */, line: '시작할 때 건드릴 부분을 `atrium know`로 한 번 찾고 막히면 다시 찾는다(필요한 파일만 연다)' },
   // P368: 맡기기 전 1~3번 찾아 힌트로. 하위를 띄울 수 있는 세션만(자체 오케스트레이션 하네스에는 판이 하위를 주지 않는다)
   { id: 'know-hint', orch: false, needs: ['child'], since: Date.parse('2026-11-26T01:49:16+09:00') /* Merge p368 */, line: '하위에게 맡기기 전에 그 일이 건드릴 부분을 `atrium know`로 1~3번 찾아 지시의 힌트로 적는다' },
+  // P384(사용자 결정 2026-11-27): 하위의 질문은 부모가 받는다. 하위는 질문 창 대신 부모에게 묻는다(자체 오케스트레이션 하위 안내문에도 있다)
+  { id: 'ask-parent', needs: ['prompt'], since: Date.parse('2026-11-27T09:00:00+09:00') /* P384을 시작한 때 */, line: '하위 세션은 사람에게 묻는 질문 창 대신 `atrium prompt <부모>`로 부모에게 묻는다(하위의 질문 창은 보드가 부모에게 보낸다)' },
 ];
 export const NEWS_IDS = BRIEF_NEWS.map((n) => n.id);
 // 그 판이 모르는 새 안내(id 목록)
@@ -53,6 +55,7 @@ export const BRIEF_LEDGER = [
   { by: 'P360', hashes: { board: 'db7919dc871a', harness: '6c29dfb1c977', 'orch-sub': 'ae502ba767a0', 'orch-sub-plain': '127950d5cff3', 'orch-free': 'c1f387cae658', 'orch-free-plain': '5bac1b96e522' }, verbs: ['revive', 'fork'] }, // REVIVE_RULE_SHORT(동사 알림이 뜻을 함께 싣는다)
   { by: 'P364', hashes: { board: 'e1683b74c263', harness: '6d5dbb6491fc', 'orch-sub': 'ca7bf130ab11', 'orch-sub-plain': '44c77e5be734', 'orch-free': 'b251b8f6ea19', 'orch-free-plain': '9357f1b0d2a4' }, verbs: ['know'] }, // KNOW_RULE(막히면 먼저 찾기. P368이 바꿨다)
   { by: 'P368', hashes: { board: '063492902ffc', harness: '6360c236dfc6', 'orch-sub': '146181d817c1', 'orch-sub-plain': '28d35f3580d9', 'orch-free': '30dc13fa5f8f', 'orch-free-plain': '3dd2642fa9f3' }, news: ['know-start', 'know-hint'] }, // KNOW_RULE 바꿈, KNOW_HINT_RULE
+  { by: 'P384', hashes: { board: 'aa193f11aacb', harness: '8edd88cf90c9', 'orch-sub': '5d6d6e5927d8', 'orch-sub-plain': 'e4ea0a52d2fa', 'orch-free': '30dc13fa5f8f', 'orch-free-plain': '3dd2642fa9f3' }, news: ['ask-parent'], verbs: ['answer'] }, // 하위는 질문 창 대신 부모에게, 부모는 atrium answer
 ];
 // P375: 장부 지킴(p375 시험). 지금 안내문 해시가 끝 줄과 다르거나 줄이 어긋나면 고칠 것을 말하는 글 목록([]면 됨)
 export function ledgerProblems(current = briefHashes(), ledger = BRIEF_LEDGER, { news = BRIEF_NEWS, verbs = VERB_NAMES } = {}) {
@@ -100,6 +103,7 @@ export const VERB_BRIEF = {
   todo: '사람에게 넘기는 일·명령·확인·미룬 일을 할 일 카드로 남기기',
   plan: '리포의 목표·마일스톤 레인',
   revive: '닫힌·보관된·끝난 세션을 같은 대화로 되살리기(사람이 시킬 때만)', fork: '세션의 대화를 이어받는 새 세션(SDK면 API 크레딧, 사람이 시킬 때만)', // P360
+  answer: '하위의 질문 창에 답하기(일상 구현·설계는 직접, 기능 없앰·입력/기본값·범위/비용·되돌리기 어려움·BRIEF와 다름은 atrium ask로 사람에게)', // P384
   know: '이 리포의 예전 기록·문서·주석·판 일에서 찾기', // P364. P375: 언제 찾는지는 새 안내(know-start)가 함께 간다
 };
 // 동사가 dev에 합쳐진 때(판 기록이 없는 옛 세션의 어림. 여기 없는 동사는 그보다 오래되어 안다고 본다)
@@ -114,6 +118,7 @@ export const VERB_SINCE = {
   todo: Date.parse('2026-11-21T11:55:07+09:00'), // P292
   plan: Date.parse('2026-11-21T21:58:40+09:00'), // P304
   revive: Date.parse('2026-11-25T12:00:00+09:00'), fork: Date.parse('2026-11-25T12:00:00+09:00'), // P360
+  answer: Date.parse('2026-11-27T09:00:00+09:00'), // P384(일을 시작한 때. 판 기록이 있는 세션은 이 값을 쓰지 않는다)
   know: Date.parse('2026-11-26T00:00:00+09:00'), // P364(일을 시작한 때. 띄울 때 판 기록이 있는 세션은 이 값을 쓰지 않는다)
 };
 

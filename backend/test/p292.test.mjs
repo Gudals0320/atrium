@@ -371,7 +371,7 @@ test('P292 CLI: atrium todo(--cmd 둘·--check·--later·--tell), --list(열린 
 });
 
 test('P292 안내: 계약 8과 todo 동사, 허용 규칙, 판·하네스 안내문 한 줄(줄 수 그대로), 스킬 절', () => {
-  assert.equal(CONTRACT_VERSION, 13); // P364: know로 12. // P360: revive·fork로 11. // P346: docs init·on·off로 10. // P296: 오케스트레이션 허용 동사로 9. assert.ok(VERB_NAMES.includes('todo'));
+  assert.equal(CONTRACT_VERSION, 14); // P384: answer로 14. // P364: know로 12. // P360: revive·fork로 11. // P346: docs init·on·off로 10. // P296: 오케스트레이션 허용 동사로 9. assert.ok(VERB_NAMES.includes('todo'));
   assert.ok(ATRIUM_ALLOW.includes('Bash(atrium todo *)')); assert.ok(ATRIUM_ALLOW.includes('PowerShell(atrium todo *)'));
   const lines = BOARD_SYSTEM_PROMPT.split('\n').filter((l) => l.includes('atrium todo'));
   assert.equal(lines.length, 1); assert.match(lines[0], /atrium ask/, '결정 카드 줄에 더했다');

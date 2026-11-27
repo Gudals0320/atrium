@@ -56,7 +56,7 @@ export function workspaceCounts(sessions, key) {
     c.sessions++;
     if (s.kind === 'shell') c.shells++;
     if (s.state === 'working') c.working++;
-    if (s.state === 'waiting' || s.state === 'trust_wait') c.needsYou++;
+    if ((s.state === 'waiting' || s.state === 'trust_wait') && !(s.askRoute && !s.askRoute.escalated)) c.needsYou++; // P384: 부모가 처리 중인 하위 질문은 세지 않는다
     if (s.unseen) c.review++;
   }
   return c;

@@ -10,7 +10,7 @@ import { useStore, toast } from './store.js';
 import { useMobile, getMobile, call, setCardsLocal, noteFail } from './mobile-store.js';
 import { useT, errText } from './lib/i18n.js';
 import { STATE_LABEL, shellStateText } from './lib/labels.js';
-import { homeOf, listOf, toneOf, needsYou, isDone, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, togglePin, readList, choiceButtons, shortChoice, uiFactor, pageBox, layScreen, OVERLAY_CHOICE_CHARS } from './lib/mobile.js';
+import { homeOf, listOf, toneOf, needsYou, heldByParent, isDone, PINS_KEY, TAB_KEY, OPEN_GROUPS_KEY, togglePin, readList, choiceButtons, shortChoice, uiFactor, pageBox, layScreen, OVERLAY_CHOICE_CHARS } from './lib/mobile.js';
 import { kbOpenOf } from './lib/phone.js';
 import { SessionScreen } from './MobileSession.jsx'; // P355: 세션 화면
 import { noteLayout } from './lib/phone-telemetry.js'; // P355: 배치 값 한 번(아래 잘림을 숫자로)
@@ -240,7 +240,7 @@ function Home({ home, onOpen, onTab, focus = null }) {
           <button key={k} type="button" className="mt-mp-tile" data-k={k} data-role="mp-tile" onClick={() => onTab(tab, f)}><b>{n}</b><span>{t(`mobile.count_${k}`)}</span></button>
         ))}
       </div>
-      {home.needs.length > 0 && <div className="mt-mp-sec need"><h2>{t('mobile.count_need')}</h2><b>{home.needs.length}</b></div>}
+      {home.needs.length > 0 && <div className="mt-mp-sec need"><h2>{t('mobile.count_need')}</h2><b>{home.counts.need}</b></div>} {/* P384: 부모가 처리 중인 하위 질문은 세지 않는다 */}
       {home.needs.map((s) => <NeedCard key={s.sessionId} s={s} ws={ws} now={now} onOpen={onOpen} todo={todo.get(s.sessionId) || 0} />)}
       <div className="mt-mp-sec"><h2>{t('mobile.todo')}</h2><b>{active.length}</b></div>
       {gone && <div className="mt-mp-gone" data-role="mp-card-gone" role="status">{t('mobile.cardGone')}</div>}
@@ -272,10 +272,12 @@ function NeedCard({ s, ws, now, onOpen, todo = 0 }) {
   const btns = s.state === 'trust_wait' ? [] : choiceButtons(a);
   const title = s.state === 'trust_wait' ? t('phone.ask_trust') : a && a.kind === 'permission' ? t('phone.ask_permission', { tool: a.tool || '' }) : a && a.question ? a.question : t(`phone.ask_${(s.line && s.line.key) || 'screen'}`);
   const sub = s.line && s.line.text;
+  const held = heldByParent(s); // P384: 부모가 처리 중(흐리게만, 수에서 뺌). 사람도 답할 수는 있다
   return (
-    <div className={'mt-mp-card need mt-mp-face' + faceCls(face)} data-role="mp-need" data-name={s.name} data-tier={face.tier}>
+    <div className={'mt-mp-card need mt-mp-face' + faceCls(face) + (held ? ' held' : '')} data-role="mp-need" data-name={s.name} data-tier={face.tier} data-held={held ? 'parent' : undefined}>
       <FaceTags t={t} face={face} todo={todo} />
       <div className="mt-mp-face-in"><FaceTop s={s} face={face} /><FaceMeta face={face}><span className="dotsep">/</span><span>{wsNameOf(ws, s.workspaceKey)}</span></FaceMeta></div>
+      {held && <div className="mt-mp-held" data-role="mp-held">{t('p384.held', { parent: (s.held && s.held.parent) || '?' })}</div>} {/* P384 */}
       <div className="mt-mp-q">{title}</div>
       {sub && <div className="mt-mp-sub">{sub}</div>}
       <div className="mt-mp-acts">

@@ -35,7 +35,7 @@ export const ORCH_SUB_VERBS = Object.freeze(['help', 'prompt', 'done', 'item', '
 // P346: 지휘 세션만 쓰는 낱말(동사 → 낱말). 판이 막고(doc-watch.mjs mayWrite) help가 보인다
 export const LEAD_ONLY_SUBS = Object.freeze({ docs: Object.freeze(['init', 'on', 'off']) });
 // atrium 동사 → /branch 요청 이름(cli-contract의 동사와 atrium-child.mjs의 길)
-export const VERB_OP = Object.freeze({ child: 'child', children: 'children', 'child-kill': 'kill', 'child-wait': 'wait', wake: 'wake', models: 'models', me: 'me', prompt: 'prompt', wait: 'turn', read: 'read', relate: 'relate', done: 'done', guide: 'guide', item: 'item', items: 'items', log: 'log', news: 'news', ask: 'ask', todo: 'todo', docs: 'docs', usage: 'usage', plan: 'plan', revive: 'revive', fork: 'fork', know: 'know' }); // P364: know // P360: revive·fork // P304: plan(하위 오케스트레이션 세션의 허용 동사에는 없다)
+export const VERB_OP = Object.freeze({ child: 'child', children: 'children', 'child-kill': 'kill', 'child-wait': 'wait', wake: 'wake', models: 'models', me: 'me', prompt: 'prompt', wait: 'turn', read: 'read', relate: 'relate', done: 'done', guide: 'guide', item: 'item', items: 'items', log: 'log', news: 'news', ask: 'ask', todo: 'todo', docs: 'docs', usage: 'usage', plan: 'plan', revive: 'revive', fork: 'fork', know: 'know', answer: 'answer' }); // P384: answer // P364: know // P360: revive·fork // P304: plan(하위 오케스트레이션 세션의 허용 동사에는 없다)
 export const OP_VERB = Object.freeze(Object.fromEntries(Object.entries(VERB_OP).map(([v, o]) => [o, v])));
 // 권한과 상관없이 늘 받는 요청: perm(CLI의 help가 허용 동사를 묻는다), usage-report(판의 상태 줄 명령)
 export const ALWAYS_OPS = Object.freeze(['perm', 'usage-report']);
@@ -126,7 +126,7 @@ export function orchPromptLines(scope) {
   const head = '너는 Atrium 보드가 띄운 세션 안에서 돈다. 이 세션은 자체 오케스트레이션 하네스다: 일은 평소처럼 하네스 안에서 나눠 돌린다(하위 에이전트, 위임, DAG, 팀 모두 하네스의 방식대로 쓴다). atrium 명령은 보드와 말할 때만 쓴다(보드의 다른 세션에게 보내기, 맡은 일 보고 atrium done). 보드는 하위 세션을 만들어 주지 않는다(atrium child 없음). 하위로 내려가는 작업은 네가 하네스 안에서 서브에이전트를 만들어 나눠 맡긴다. 보드에서 하위 세션을 만들 필요가 없다.'; // P309: 사용자 요청 문장
   const tail = '[Atrium 보드]로 시작하는 글은 보드 알림이다. 지금 쓸 수 있는 atrium 명령은 `atrium help`가 보인다(관계가 바뀌면 달라진다). 보드에 없는 명령은 보드가 거절한다. ' + KNOW_RULE_PLAIN; // P364: 읽기만이라 어느 범위든
   if (scope === 'sub') return [head,
-    '너는 보드에서 부모 세션의 하위다. 보드와는 셸의 atrium 명령으로 부모하고만 말한다: 맡은 일 보기 `atrium item`, 부모에게 묻거나 넘기기 `atrium prompt <부모 이름> <따옴표로 묶은 글>`(부모 이름은 `atrium me`), 끝나면 `atrium done ok|failed <따옴표로 묶은 보고>`로 닫는다. 읽기 전용 `atrium me`·`atrium usage`. 사람에게 물을 것도 부모에게 묻는다.',
+    '너는 보드에서 부모 세션의 하위다. 보드와는 셸의 atrium 명령으로 부모하고만 말한다: 맡은 일 보기 `atrium item`, 부모에게 묻거나 넘기기 `atrium prompt <부모 이름> <따옴표로 묶은 글>`(부모 이름은 `atrium me`), 끝나면 `atrium done ok|failed <따옴표로 묶은 보고>`로 닫는다. 읽기 전용 `atrium me`·`atrium usage`. 사람에게 물을 것도 하네스의 질문 도구(Ask user 등) 대신 `atrium prompt <부모 이름> <따옴표로 묶은 질문>`로 부모에게 묻는다(부모가 정하거나 사람에게 올린다).',
     tail];
   return [head,
     '보드와는 셸의 atrium 명령으로 말한다. 다른 보드 세션에게 보낼 때는 `atrium prompt <이름> <따옴표로 묶은 글>`, 화면은 `atrium read <이름>`, 연결 기록은 `atrium me`. 맡은 일이 있으면 끝나면 `atrium done ok|failed <보고>`로 닫는다.',

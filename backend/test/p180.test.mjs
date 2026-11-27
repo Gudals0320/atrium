@@ -131,7 +131,7 @@ test('P180 머리: 세 줄(관계·일·약속), done이 다른 보고 지시를
 });
 
 test('P180 계약: done·item·items를 더하고 계약은 3 그대로, 승인 규칙에 새 동사', () => {
-  assert.equal(CONTRACT_VERSION, 13); // P364: know로 12. // P360: revive·fork로 11. // P346: docs init·on·off로 10. // P296: 오케스트레이션 허용 동사로 9. // P292. P284. P269: rig를 걷어 6
+  assert.equal(CONTRACT_VERSION, 14); // P384: answer로 14. P380: 13. // P364: know로 12. // P360: revive·fork로 11. // P346: docs init·on·off로 10. // P296: 오케스트레이션 허용 동사로 9. // P292. P284. P269: rig를 걷어 6
   for (const v of ['done', 'item', 'items']) assert.ok(VERB_NAMES.includes(v), v);
   const done = VERBS.find((v) => v.name === 'done');
   assert.deepEqual(done.args.slice(0, 2), ['ok|failed', '"<보고>"']); // P185

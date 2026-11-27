@@ -263,8 +263,8 @@ test('P380 prompt --raw: 붙잡아 둔 일(받는 세션에 다른 위 세션의
 });
 
 test('P380 CLI: atrium prompt --raw가 raw를 넘기고, 계약 13·help에 --raw와 슬래시 명령 까닭', async () => {
-  assert.equal(CONTRACT_VERSION, 13);
-  assert.equal(contractJson().contract, 13);
+  assert.equal(CONTRACT_VERSION, 14);
+  assert.equal(contractJson().contract, 14);
   const p = VERBS.find((v) => v.name === 'prompt');
   assert.ok(p.args.includes('[--raw]')); assert.match(p.does, /슬래시 명령/); assert.match(p.does, /맨 앞/); assert.match(p.does, /atrium item으로 안다/);
   assert.match(shortHelp(), /--raw/);

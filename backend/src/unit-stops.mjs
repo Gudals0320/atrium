@@ -167,6 +167,9 @@ export class UnitStops {
     if (quiet) {
       st.addEvent(s.sessionId, 'unit_stop_quiet', { unitId: tr.unitId, tryId: tr.id, why, because: quiet });
       this.b.log(`unit stop not noticed: ${this.units.nameOf(s.sessionId)} ${tr.unitId} ${why} (${quiet})`);
+    } else if (why === 'needs_human' && this.b.childAsks && this.b.childAsks.routedKey(s.sessionId) && this.b.childAsks.routedKey(s.sessionId) === needKey({ state: sum.state, ask: sum.ask })) {
+      // P384: 질문 창은 부모가 받는다(child-asks.mjs가 질문 본문·보기·답하는 법을 담은 알림을 따로 보낸다). 멈춤 알림은 겹쳐 보내지 않는다
+      st.addEvent(s.sessionId, 'unit_stop_quiet', { unitId: tr.unitId, tryId: tr.id, why, because: 'child_ask' });
     } else if (why === 'needs_human') {
       // P381: 질문이면 본문·보기·추천·마감을 붙인다. 하네스 기록에서 읽은 질문(omo)은 보낼 때 같은 질문을 아직 기다리는지 다시 본다
       const ask = sum.ask || null;

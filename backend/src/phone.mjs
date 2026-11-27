@@ -61,6 +61,7 @@ export function rowOf(s) {
   if (s.effort) r.effort = String(s.effort).slice(0, 12); // P356: 카드의 모델·노력 수준(판 세션 맵과 같은 글)
   if (s.waitingSince) r.waitingSince = s.waitingSince;
   if (s.state === 'waiting' && s.ask) r.ask = askOf(s.ask);
+  if (s.askRoute && !s.askRoute.escalated) r.held = { parent: s.askRoute.parent || null }; // P384: 하위 질문을 부모가 처리 중(흐리게, 수에서 뺌)
   if (s.kind === 'shell' && s.shell) r.shell = { atPrompt: s.shell.atPrompt, program: !!s.shell.program };
   if (s.lastAnswerAt) r.lastAnswerAt = s.lastAnswerAt;
   if (s.cwdNow && s.git && s.git.isWorktree && s.git.branch) r.branch = String(s.git.branch).slice(0, 60);

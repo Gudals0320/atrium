@@ -48,7 +48,9 @@
 // P371: know의 --self(부른 세션 자기 단위의 것도 넣기)와 결과의 line·copies·also 칸, 응답의 self 칸을 더했다. 순위·포인터·발췌가 절 단위다(더하기만이라 12 그대로)
 // 13(P380): prompt --raw(보드 머리 줄과 앞에 붙는 사람의 답 없이 글을 그대로 맨 앞에. 하위에게 새 일이면 일은 만들고 머리는 판 기록에만)를 더했다.
 //   부른 세션이 OmO(omo)면 사람 글 출력에서 홀로 선 위험 낱말(risky-words.mjs)을 다른 표기로 바꾸고(--json·경로·플래그 값은 그대로), child --kind는 대소문자를 가리지 않는다. 보내는 글의 모양을 바꾸는 새 약속이라 올렸다
-export const CONTRACT_VERSION = 13;
+// 14(P384): answer 동사(하위의 질문 창에 부모가 번호·글로 답한다, 일 부모만 = 그 밖은 not_parent)를 더하고, 하위 세션의 질문 창은 사람 대신 부모에게 판 알림으로 간다.
+//   부모가 사람 대신 하위의 질문에 답하는 새 약속이라 올렸다. wait의 ask에 answer 칸(답하는 명령)
+export const CONTRACT_VERSION = 14;
 // P284: 결정 카드의 상한(질문·보기·맥락 글자 수, 보기 수, 세션당 열린 카드, 사람의 답 글자 수)
 export const ASK_QUESTION_MAX = 300;
 export const ASK_OPTION_MAX = 80;
@@ -108,6 +110,8 @@ export const VERBS = [
   { name: 'fork', args: ['<이름|세션 ID|대화 ID>', '[--launcher 런처]', '[--name 새 이름]', '[--model 모델]', '[--effort 수준]', '[--peer]', '[--json]'], does: 'Claude Code 세션(살아 있든 닫혔든)의 대화를 이어받는 새 세션을 원래 세션 곁에 띄운다(원래 세션은 그대로). 기본 런처는 원래 세션의 것, --launcher claude-sdk면 SDK 세션(API 크레딧 과금, 키가 없으면 거절). 모델·노력은 원래 세션의 지금 값이 기본. 관계는 기본 독립(--peer면 너의 동료). 응답에 과금과 대화 크기(첫 턴에 대화 전체를 캐시에 새로 쓴다). 사람이 갈라 열라고 할 때만', out: ['name', 'sessionId', 'from', 'billing', 'sdk', 'model', 'effort', 'relation', 'size', 'lines'] },
   // P364: 작업 지식 찾기(읽기만)
   { name: 'know', args: ['"<물음>"', '[-k N]', '[--kind doc|log|record|review|code|db]', '[--before <시각|커밋>]', '[--self]', '| open <포인터> [--context n]', '| unit <PNNN>', '| build [--full]', '| --usage [--since <날짜|7d>]', '[--json]'], does: '작업 지식 찾기: 이 워크스페이스(리포)의 지우지 않은 원문(문서, docs/log·experiments·.atrium/records 기록, 코드 주석, 판의 일 spec·done 보고·결정·할 일 카드)을 전문 검색(trigram BM25)해 상위 N개(기본 5)의 위치(경로:줄-줄 또는 db:<표>/<행>)·날짜·단위 번호·종류와 짧은 발췌를 돌려준다. 첫 줄은 돌려준 글자 수. 결과 하나는 한 파일에서 맞은 낱말이 가장 몰린 절(제목 경계)이고 발췌 앞 L<줄>은 맞은 줄이다. 같은 파일의 다른 맞은 절(다른 절)과 같은 글의 다른 자리(같은 글)는 꼬리표로 붙는다. 부른 세션 단위(세션 이름·지금 일의 PNNN)의 작업 파일·기록·판 일·done은 빼고 --self면 넣는다. 시작할 때 건드릴 부분을 한 번 찾고 막히면 다시 찾고, 필요한 파일만 연다. 하위에게 맡기기 전에는 그 일이 건드릴 부분을 1~3번 찾아 지시의 힌트로 적는다. open <포인터>는 원문(--context n줄 더), unit <PNNN>은 그 단위의 작업 파일·기록·검토·판 일·코드 주석·커밋을 순위와 상관없이. --kind로 종류를, --before <시각|커밋>으로 그 뒤에 생긴 원천을 뺀다. 걷어낸 기능의 것이면 걷어냄, 대체된 결정이면 대체됨 → 지금: <문장>(<포인터>) 표시와 status 칸(둘 다 저장소의 .atrium/know.json 선언대로). build [--full]은 색인 다시 짓기, --usage [--since]는 사용 집계. 읽기만', out: ['total_chars', 'mode', 'results', 'pointer', 'kind', 'date', 'unit', 'flags', 'status', 'excerpt', 'line', 'copies', 'also', 'self', 'text', 'usage'] },
+  // P384: 하위의 질문 창에 답하기(일 부모만)
+  { name: 'answer', args: ['<이름>', '<번호|"글">', '[<번호|"글">]…', '[--json]'], does: '너의 하위가 띄운 질문 창(Claude Code AskUserQuestion, OmO ask_user_question)에 답한다. 보드가 사람 대신 너에게 질문 본문·번호 붙인 보기·추천을 판 알림으로 보낸다. 번호는 그 보기, 보기 밖의 답은 따옴표로 묶은 글, 여러 개 고르기는 1,3, 질문이 여럿이면 차례로 하나씩. 보드가 그 답을 질문 창에 치고 질문이 닫혔는지(answered)를 돌려준다. 일상적인 구현·설계 질문은 네가 정해 답하고, 기능을 없앰·입력이나 기본값을 바꿈·범위나 비용이 바뀜·되돌리기 어려움·BRIEF 결정과 다름이면 atrium ask로 사람에게 묻고 그 답으로 답한다. 정해진 시간(보드 설정, 기본 10분) 안에 답하지 않으면 보드가 그 질문을 사람에게 올린다. 일 부모만 쓴다(그 밖은 not_parent). 권한 승인·신뢰 질문은 사람이 답한다', out: ['name', 'answered', 'label', 'state', 'next'] },
 ];
 // 종료 코드: 0 성공, 1 보드가 거절하거나 실패(이유는 stderr와 --json의 error), 2 명령을 잘못 씀, 3 기다리는 시간이 끝남(일은 계속된다. 다시 atrium wait)
 export const EXIT = { ok: 0, refused: 1, usage: 2, timeout: 3 };
