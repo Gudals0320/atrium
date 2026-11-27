@@ -69,6 +69,9 @@ export function foldOmoLine(st, o) {
     } else if (m.role === 'toolResult' && QUESTION_TOOLS.has(m.toolName) && m.toolCallId) {
       const id = String(m.toolCallId);
       const d = m.details || {};
+      // P385: 기다리지 않는 질문(waitForAnswer:false)은 곧바로 "받았다" 결과(details { accepted, status: 'pending' })가 오고 답은 나중에 사람 글로 온다.
+      //   그 결과로 닫으면 질문 창이 떠 있는데도 판이 질문을 모른다(자동 할 일 카드가 같은 질문을 또 만들던 것). 생명 주기 waitingOn.human에 있는 동안 연다(openQuestionIds)
+      if (d.status === 'pending' && !m.isError && (st.calls[id] || st.asks[id])) { if (st.calls[id]) st.calls[id] = { ...st.calls[id], accepted: at || true }; if (st.asks[id]) st.asks[id] = { ...st.asks[id], accepted: at || true }; return; }
       delete st.calls[id]; delete st.asks[id];
       st.resolved = { id, status: d.status || (m.isError ? 'error' : 'answered'), by: d.resolvedBy || null, at };
     }
@@ -134,6 +137,7 @@ export function openQuestionIds(st) {
   const lc = st.lifecycle;
   const atOf = (id) => Math.max((st.calls[id] && st.calls[id].at) || 0, (st.asks[id] && st.asks[id].at) || 0);
   const open = ids.filter((id) => {
+    if ((st.calls[id] && st.calls[id].accepted) || (st.asks[id] && st.asks[id].accepted)) return !!lc && lc.human.some((h) => h.id === id); // P385: 받아 둔(기다리지 않는) 질문은 생명 주기가 사람을 기다리는 동안만
     if (!lc || lc.at == null) return true;
     if (lc.at < atOf(id)) return true; // 생명 주기가 아직 이 질문을 모른다
     return lc.human.some((h) => h.id === id);

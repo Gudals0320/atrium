@@ -97,15 +97,40 @@ const NOTIFIED_MAX = 20;
 // P357: 두 질문이 같은 뜻인가(문장부호·띄어쓰기·대소문자를 빼고 같거나, 두 글자 조각이 SAME_QUESTION_MIN 넘게 겹친다)
 export const SAME_QUESTION_MIN = 0.7;
 const bareText = (s) => String(s ?? '').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+const grams = (s) => { const g = new Set(); for (let i = 0; i < s.length - 1; i++) g.add(s.slice(i, i + 2)); return g; };
 export function sameQuestion(a, b) {
   const x = bareText(a); const y = bareText(b);
   if (!x || !y) return false;
   if (x === y) return true;
-  const grams = (s) => { const g = new Set(); for (let i = 0; i < s.length - 1; i++) g.add(s.slice(i, i + 2)); return g; };
   const gx = grams(x); const gy = grams(y);
   if (!gx.size || !gy.size) return false;
   let both = 0; for (const g of gx) if (gy.has(g)) both++;
   return both / (gx.size + gy.size - both) >= SAME_QUESTION_MIN;
+}
+// P385: 자동 카드 후보가 이미 보이는 질문(응답 필요 질문·열린 손 카드)과 같은가. sameQuestion에 더해
+//   짧은 쪽 글의 두 글자 조각이 ASK_CONTAIN_MIN 넘게 긴 쪽에 있거나(작은 모델이 질문을 줄여 다시 쓴 것, 짧은 쪽이 CONTAIN_GRAMS_MIN 조각 이상일 때),
+//   카드의 보기(2개 이상)가 모두 그 질문의 보기다.
+export const ASK_CONTAIN_MIN = 0.8;
+export const CONTAIN_GRAMS_MIN = 8;
+export function sameAsk(card, shown) {
+  if (!card || !shown) return false;
+  if (sameQuestion(card.question, shown.question)) return true;
+  const x = bareText(card.question); const y = bareText(shown.question);
+  if (x && y) {
+    const gx = grams(x); const gy = grams(y);
+    const [small, big] = gx.size <= gy.size ? [gx, gy] : [gy, gx];
+    if (small.size >= CONTAIN_GRAMS_MIN) { let both = 0; for (const g of small) if (big.has(g)) both++; if (both / small.size >= ASK_CONTAIN_MIN) return true; }
+  }
+  const opt = (o) => bareText(String(o ?? '').replace(/…$/, '').replace(/[(（[]\s*(추천|권장|recommended)\s*[)）\]]/gi, '')); // 추천 꼬리표(omo-record.mjs RECOMMENDED_RE)는 빼고 본다
+  const co = (card.options || []).map(opt).filter(Boolean);
+  const so = (shown.options || []).map(opt).filter(Boolean);
+  if (co.length >= 2 && so.length && co.every((o) => so.some((t) => t === o || (o.length >= 3 && t.startsWith(o))))) return true;
+  return false;
+}
+// P385: 응답 필요 질문(훅 질문 AskUserQuestion, OmO 기록의 열린 질문 ask_user_question) → [{ question, options }]
+export function askQuestions(a) {
+  if (!a || a.kind !== 'question' || !Array.isArray(a.questions)) return [];
+  return a.questions.map((q) => ({ question: String((q && (q.question || q.header)) || ''), options: Array.isArray(q && q.options) ? q.options.map((o) => String(o ?? '')) : [] })).filter((q) => q.question.trim());
 }
 // 세션에 들어가는 답 글: "[결정] <질문 줄임> → <답>"
 export function answerText(question, answer, kind = 'decide') { return `${HEADS[kind] || ANSWER_HEAD} ${clip(oneLine(question), QUESTION_SHORT)} → ${String(answer ?? '').trim()}`; } // P292: 종류마다 머리
@@ -121,6 +146,7 @@ export class Decisions {
     this.prev = new Map(); // P286: 세션 ID → 마지막으로 본 상태(턴 끝 판정)
     this.pending = new Map(); // P286: 세션 ID → 화면 답을 기다리는 턴 끝 { timer, off }
     this.autoSetting = null; // 시험이 바꾼다(없으면 판 설정 autoDecisions)
+    this.askSeen = new Map(); // P385: 세션 ID → 마지막으로 본 응답 필요 질문의 열쇠(바뀔 때만 자동 카드와 견준다)
     this.rides = new Map(); // P295: 전달 ID → 그 전달에 실은 카드 ID들(실패·취소되면 다시 붙잡는다)
     this.wireQueue(b.queue);
   }
@@ -587,6 +613,7 @@ export class Decisions {
   onSession(s, sum) {
     if ((s.kind || 'claude') === 'shell') return;
     const sid = s.sessionId;
+    try { this.onAsk(s); } catch (e) { this.b.log('decision ask dup error', e && e.stack); } // P385
     const prev = this.prev.get(sid);
     this.prev.set(sid, sum.state);
     if (prev && prev !== 'working' && sum.state === 'working' && this.activeOpen(sid).some((d) => d.kind === 'decide' && !d.timing)) this.changed(); // P295: 새 턴이 열리면 결정 카드의 기본 보내는 때(now → next)가 바뀐다
@@ -647,9 +674,40 @@ export class Decisions {
       return this.autoCards(s, findAsks(t), { since, tidy: false, fallback: r.fallback || null });
     }).catch((e) => { this.b.log('decision tidy error', e && e.stack); try { this.autoAsk(s, t, since); } catch {} return null; });
   }
+  // P385: 이 세션에 이미 보이는 질문 → [{ question, options, why: ask | card }]. ask = 응답 필요 질문(훅 질문, OmO 기록의 열린 질문),
+  //   card = 열린 손 카드(종류 무관: 결정·확인은 autoBlocked가 막지만 실행·나중에 손 카드는 막지 않는다). OmO는 기록을 한 번 더 읽는다
+  //   (터미널이 쉼으로 바뀐 뒤 기록이 늦게 적혀 자동 카드가 먼저 만들어지던 것, backend.mjs omoRecordLater)
+  shownAsks(s) {
+    if (s.kind === 'omo' && typeof this.b.refreshOmoRecord === 'function') { try { this.b.refreshOmoRecord(s); } catch {} }
+    const rt = s.rt || {};
+    const out = [...askQuestions(rt.pendingAsk), ...askQuestions(rt.recordAsk)].map((q) => ({ ...q, why: 'ask' }));
+    for (const d of this.store().openDecisions(s.sessionId)) if (!d.auto && d.kind !== 'guard') out.push({ question: d.question, options: d.options || [], why: 'card' });
+    return out;
+  }
+  // P385: 응답 필요 질문이 새로 떴다(OmO 기록이 늦게 읽힘, 훅 질문). 그 세션의 열린 자동 카드가 같은 질문이면 closed(via dup)로 닫는다
+  onAsk(s) {
+    const rt = s.rt || {};
+    const a = [rt.pendingAsk, rt.recordAsk].filter((x) => x && x.kind === 'question');
+    const key = a.length ? a.map((x) => x.toolUseId || JSON.stringify(askQuestions(x))).join('|') : null;
+    const sid = s.sessionId;
+    if ((this.askSeen.get(sid) ?? null) === key) return 0;
+    if (key) this.askSeen.set(sid, key); else this.askSeen.delete(sid);
+    if (!key) return 0;
+    const shown = a.flatMap(askQuestions);
+    const dup = this.activeOpen(sid).filter((d) => d.auto && shown.some((q) => sameAsk(d, q)));
+    if (!dup.length) return 0;
+    const at = this.now();
+    for (const d of dup) this.store().endDecision(d.id, { state: 'closed', via: 'dup', at });
+    this.b.store.addEvent(sid, 'decision_end', { ids: dup.map((d) => d.id), autoIds: dup.map((d) => d.id), state: 'closed', via: 'dup' });
+    this.b.log(`decision dup ${s.name} #${dup.map((d) => d.id).join(',')} (same as needs-response question)`);
+    this.settle(sid, 'replaced');
+    this.changed();
+    return dup.length;
+  }
   // 카드 후보들 → 만든 카드들 | null. cards: [{ kind, question, options, cmds, context, timing?, when? }]
   autoCards(s, cards, { since = 0, tidy = false, fallback = null } = {}) {
     const sid = s.sessionId;
+    if (!this.autoEligible(s)) return null; // P385: 하위 세션(일 상위가 있음)·merger·셸은 어느 길로도 자동 카드를 만들지 않는다(turnEnded가 먼저 거르지만 여기서도 지킨다)
     if (this.autoBlocked(sid, since)) return null;
     const open = this.store().openDecisions(sid);
     const now = this.now();
@@ -670,6 +728,22 @@ export class Decisions {
       want.push({ kind, question, options, cmds, why, timing: TIMINGS.includes(f.timing) ? f.timing : null, cond });
     }
     if (!want.length) return null;
+    // P385: 이미 보이는 질문(응답 필요 질문·열린 손 카드)과 같은 후보는 만들지 않는다(같은 질문이 할 일 목록에 두 번 뜨던 것)
+    const shown = this.shownAsks(s);
+    if (shown.length) {
+      const dup = { ask: 0, card: 0 };
+      for (let i = want.length - 1; i >= 0; i--) { const m = shown.find((q) => sameAsk(want[i], q)); if (m) { dup[m.why]++; want.splice(i, 1); } }
+      if (dup.ask || dup.card) this.b.store.addEvent(sid, 'decision_dup', { ask: dup.ask, card: dup.card, tidy, kind: s.kind || 'claude' });
+      if (!want.length) {
+        // 이 턴의 질문은 다른 자리에 이미 떠 있다: 앞 턴의 자동 카드는 새 질문에 바뀐 것과 같이 닫는다
+        const stale = active.filter((d) => d.auto);
+        if (!stale.length) return null;
+        const at = this.now();
+        for (const d of stale) { this.store().endDecision(d.id, { state: 'closed', via: 'replaced', at }); this.b.store.addEvent(sid, 'decision_end', { id: d.id, state: 'closed', via: 'replaced', auto: true }); }
+        this.settle(sid, 'replaced'); this.changed();
+        return null;
+      }
+    }
     const old = active.filter((d) => d.auto); // 사람이 미룬 자동 카드는 바꾸지 않는다
     const same = (a, w) => a.question === w.question && a.kind === w.kind && JSON.stringify(a.options) === JSON.stringify(w.options) && JSON.stringify(a.cmds) === JSON.stringify(w.cmds);
     if (old.length === want.length && want.every((w, i) => same(old[i], w))) return null; // 같은 카드가 그대로 열려 있다
