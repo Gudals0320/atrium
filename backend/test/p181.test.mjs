@@ -19,6 +19,7 @@ import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { HARNESS_PROMPT } from '../src/harness.mjs';
 import { relationHeader, relationLine } from '../src/branch-relations.mjs';
 import { VERBS, shortHelp } from '../src/cli-contract.mjs';
+import { limitOf } from './text-limits.mjs'; // P387: 글 크기 상한의 한 원본(npm run check:skill도 같은 값)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p181-'));
@@ -101,7 +102,7 @@ const stopNotices = (b, p) => toParent(b, p).filter((d) => d.text.startsWith('[A
 const doneNotices = (b, p) => toParent(b, p).filter((d) => /^\[Atrium 보드\] @\S+가 일 u/.test(d.text));
 const working = (s) => deriveState(s.rt).state === 'working';
 const ready = (s) => deriveState(s.rt).state === 'ready';
-const BOARD_LEN_P180 = 2070; const HARNESS_LEN_P180 = 1217; // P384: 두 안내문의 결정 카드 줄에 하위 질문 창은 부모가 atrium answer로 답한다는 한 마디와 기준을 더했다(1925·1072) // P368: 두 안내문에 맡기기 전 atrium know로 힌트 찾기 한 마디를 더하고 know 한 마디를 시작할 때 찾기로 바꿨다(1857·1004) // P364: 두 안내문에 막히면 atrium know로 먼저 찾기 한 마디를 더했다(1772·913) // P360: 두 안내문에 되살리기·갈라 열기 한 마디를 더했다(1704·845) // P334: 두 안내문에 일 기록(--record) 한 마디를 더했다(1626·767) // P295: 결정 카드 줄에 "기다리지 않는 질문·확인은 `--no-wait`"를 더했다(1598·739) // P292: 결정 카드 줄에 "사람에게 넘기는 일·명령·확인·미룬 일은 `atrium todo`로"를 더했다(1559·700) // P286: 결정 카드 줄을 "턴을 끝낼 때는 그 질문을"으로 분명하게 했다(1533·674) // P284: 두 안내문에 결정 카드(atrium ask) 한 줄을 더했다(1419·566) // P248: 판 안내문에 대기열·스티어링 한 줄(사용자 결정 2026-11-19)을 더했다(P180 때 1323) // P180 때 길이(P169: 판 안내문은 매 요청에 든다)
+const BOARD_LEN_P180 = limitOf('p181-board'); const HARNESS_LEN_P180 = limitOf('p181-harness'); // P387: 두 상한과 늘린 까닭(P180 1323·P248…P384)은 text-limits.mjs의 p181-board·p181-harness 줄
 const STOP_TEXT = '[Atrium 보드] 맡긴 일이 멈췄다';
 
 // ---------- 알림 글 ----------

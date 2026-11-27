@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boardSkill, delegateSkill, CHILD_NAME_RE } from '../src/branch.mjs';
+import { limitOf } from './text-limits.mjs'; // P387: 글 크기 상한의 한 원본(npm run check:skill도 같은 값)
 
 test('P46: 스킬 글 — 이름은 맡긴 일·역할을 말하고, 번호 이름은 하찮은 일에만, 예는 몇 개만', () => {
   const s = boardSkill();
@@ -18,5 +19,5 @@ test('P46: 스킬 글 — 이름은 맡긴 일·역할을 말하고, 번호 이�
   assert.match(s, /영문 소문자로 시작, 소문자·숫자·-·_ 만, 32자까지, 판 전체에서 하나/);
   assert.match(s, /`name_taken`\)이 오면 다른 이름으로 다시 짓는다/);
   assert.equal(delegateSkill().split('\n---\n')[1], s.split('\n---\n')[1], '옛 이름 스킬도 같은 글');
-  assert.ok(Buffer.byteLength(s) < 11000 + 900 + 450 + 300 + 400 + 150 /* P382 */ + 400 /* P384 */, `스킬 글 ${Buffer.byteLength(s)}바이트`); // P380: 슬래시 명령 --raw·OmO 계획 검토자 두 줄로 400바이트. P364: 힌트는 atrium know로 찾기 한 마디로 300바이트. P360: 되살리기·갈라 열기 한 줄로 450바이트. P304: 목표·마일스톤 레인 절로 900바이트를 더 둔다. P295: 보내는 때 두 줄로 300바이트를 더 둔다. P292: 사용자 몫 절(사람에게 넘기기)로 1000바이트를 더 둔다. P284: 결정 카드 절(사람에게 묻기)로 1000바이트를 더 둔다. P267: merger 문구(판 스킬 9절)로 400바이트를 더 둔다. P248: 대기열·스티어링 한 줄로 300바이트를 더 둔다(전 8000). P156: 관계 고르기 절. P204: 동료에게 보낼 때(다섯 경우)와 동료 소식
+  assert.ok(Buffer.byteLength(s) < limitOf('p46'), `스킬 글 ${Buffer.byteLength(s)}바이트`); // P387: 상한과 늘린 까닭은 text-limits.mjs의 p46 줄(cd backend && npm run check:skill)
 });

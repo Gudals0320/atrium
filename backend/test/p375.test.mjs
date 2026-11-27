@@ -18,6 +18,7 @@ import { CONTRACT_VERSION, VERB_NAMES, KNOW_RULE, KNOW_HINT_RULE } from '../src/
 import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { HARNESS_PROMPT } from '../src/harness.mjs';
 import { orchPromptLines } from '../src/orchestration.mjs';
+import { limitOf } from './text-limits.mjs'; // P387: 글 크기 상한의 한 원본(npm run check:skill도 같은 값)
 import { NEWS_HEAD, NOTICE_HEAD, NEWS_IDS, BRIEF_NEWS, BRIEF_LEDGER, newNews, newsFits, newsLine, ledgerNews, ledgerProblems, briefHashes, briefVariants, assumedStamp, promptHash, noticeLine } from '../src/verbs-notice.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p375-'));
@@ -139,8 +140,8 @@ test('P375 순수 함수: 빠진 안내 두 줄, 장부로 아는 안내, 받는
   assert.ok(all.startsWith(NEWS_HEAD + ' ') && all.endsWith('(자세히는 atrium help)'), all);
   assert.ok(!all.includes('\n'), '한 줄');
   assert.equal(all.split(' / ').length, 4);
-  assert.ok(all.length <= 400, `짧게: ${all.length}자`); // P384: 네 줄
-  for (const n of BRIEF_NEWS) assert.ok(n.line.length <= 110 && !n.line.includes('\n'), n.id);
+  assert.ok(all.length <= limitOf('p375-news-all'), `짧게: ${all.length}자`); // P384: 네 줄. P387: 상한은 text-limits.mjs
+  for (const n of BRIEF_NEWS) assert.ok(n.line.length <= limitOf('p375-news-line') && !n.line.includes('\n'), n.id);
   assert.ok(all.length < BOARD_SYSTEM_PROMPT.length / 4);
   assert.equal(newsLine(['know-start']), `${NEWS_HEAD} ${BRIEF_NEWS[1].line}(자세히는 atrium help)`);
 });
