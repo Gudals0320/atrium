@@ -21,6 +21,7 @@
 //       atrium todo "<할 일>" [--cmd "<명령>"]… [--check] [--later "<날짜 또는 조건>"] [--why "<맥락>"] [--tell] [--no-wait | --wait] | --done <번호> | --list [--json]   (P292: 사용자 몫. P295: 보내는 때)
 //       atrium revive <이름|ID> [--json] · atrium fork <이름|ID> [--launcher 런처] [--name 새 이름] [--model m] [--effort e] [--peer] [--json]   (P360: 되살리기·갈라 열기, 사람이 시킬 때만)
 //       atrium plan [show|list|new|goal|metric|ms|focus|item|check|owner|status|import|export|log] … [--plan <이름|번호>] [--json]   (P304: 리포별 목표·마일스톤 레인. 사용법 atrium help plan)
+//       atrium answer <이름> <번호|"글"> [<번호|"글">]… [--json]   (P384: 하위의 질문 창에 답하기, 일 부모만)
 //       atrium know "<물음>" [-k N] [--kind 종류] [--before 시각|커밋] [--self] [--json] | know open <포인터> [--context n] | know unit <PNNN> | know build [--full] | know --usage [--since 날짜|7d]   (P364: 작업 지식 찾기)
 import http from 'node:http';
 import fs from 'node:fs';
@@ -73,6 +74,11 @@ const HELP = `atrium(보드가 띄운 세션의 명령. 옛 이름 mtask도 같�
   atrium models                 띄울 수 있는 런처와 모델(하네스 모델, 별칭, 게이트웨이 모델)과 각각을 띄우는 atrium child 명령
   atrium child-kill <이름> [--only]   너의 하위 세션을 끈다(하위 관계로만 그 아래도 함께. --only면 그것만). 동료·독립은 끄지 않고 남긴 이름을 적는다. 사람이 끄라고 할 때만 쓴다
   atrium wake <이름>   잠든(sleeping) 세션을 깨운다. 혼자 잠든 세션은 그 세션만, 리포째 잠들었으면 그 리포에서 리포째 잠든 세션을 모두 깨운다. 같은 대화로 이어 가고 그 세션이 준비되면 돌려준다. atrium prompt는 잠든 세션을 깨운 뒤 넣으므로 미리 깨울 때만 쓴다
+  atrium answer <이름> <번호|"글"> [<번호|"글">]…
+      너의 하위가 띄운 질문 창(Claude Code AskUserQuestion, OmO ask_user_question)에 답한다. 보드가 사람 대신 너에게 질문 본문·번호 붙인 보기·추천을 알림으로 보낸다.
+      번호는 그 보기, 보기 밖의 답은 따옴표로 묶은 글, 여러 개 고르기는 1,3, 질문이 여럿이면 차례로. 보드가 질문 창에 치고 닫혔는지 돌려준다. 일 부모만 쓴다.
+      일상적인 구현·설계 질문은 네가 정해 답하고, 기능 없앰·입력이나 기본값 바꿈·범위나 비용 바뀜·되돌리기 어려움·BRIEF 결정과 다름이면 atrium ask로 사람에게 묻는다.
+      보드 설정의 시간(기본 10분) 안에 답하지 않으면 보드가 그 질문을 사람에게 올린다. 권한 승인·신뢰 질문은 사람이 답한다
   atrium done ok|failed "<보고>" [--file 경로] [--record 파일]…
       보드가 맡긴 지금 일(첫 요청 앞에 "[Atrium 보드] … 맡긴 일 u…" 머리가 붙은 일)을 닫는다. ok는 끝냈다, failed는 못 했다.
       값과 보고는 맡긴 세션에게 한 번 간다(그 세션이 atrium wait로 기다리는 중이면 그 기다림이 받고, 아니면 보드가 그 세션 차례에 넣는다).
@@ -210,6 +216,7 @@ async function main() {
   if (cmd === 'plan') return planVerb(); // P304
   if (cmd === 'revive' || cmd === 'fork') return reviveVerb(cmd); // P360
   if (cmd === 'know') return knowVerb(); // P364
+  if (cmd === 'answer') return answerVerb(); // P384
   if (cmd === 'docs') { // P257: 문서 점검 결과. P346: init | on | off
     const action = rest[0] || 'status';
     if (!['status', 'init', 'on', 'off'].includes(action)) fail(`알 수 없는 docs 낱말: ${action}. 사용: atrium docs [init [--dir 폴더] [--only brief,arch,plan] | on [--dir 폴더] | off]`, 2);
@@ -513,6 +520,16 @@ async function unitVerb(cmd) {
   }
 }
 // ---------- P182: atrium guide ----------
+// ---------- P384: atrium answer <이름> <번호|"글">… ----------
+async function answerVerb() {
+  const [name, ...answers] = rest;
+  if (!name || !answers.length) fail('사용법: atrium answer <이름> <번호|"글"> [<번호|"글">]… (보기 번호, 보기 밖의 답은 따옴표로 묶은 글, 여러 개 고르기는 1,3, 질문이 여럿이면 차례로)', 2);
+  const r = await call('answer', { name, answers }, 40000);
+  if (flags.json) { say(JSON.stringify(r.result ?? { error: r.error }, null, 2)); if (r.error) process.exit(1); return; }
+  if (r.error) fail(`답하지 않았다(${r.error.code}): ${r.error.message}`);
+  const x = r.result;
+  say(x.answered ? `@${x.name}의 질문에 답했다: ${x.label}. 질문 창이 닫혔다(지금 ${x.state}).` : `@${x.name}의 질문 창에 답을 쳤다(${x.label}). 아직 닫히지 않았다(지금 ${x.state}). 화면 보기: ${x.next.read}`);
+}
 // ---------- P364: atrium know ----------
 // atrium know "<물음>" [-k N] [--kind 종류] [--before 시각|커밋] [--self] | open <포인터> [--context n] | unit <PNNN> | build [--full] | --usage [--since 날짜|7d]
 // 보드가 그대로 찍을 글(out)을 돌려준다(첫 줄에 돌려준 글자 수, --json이면 JSON 한 줄)
@@ -646,7 +663,13 @@ function printTurn(x, t) {
     case 'error': say(`@${n}: 턴이 오류로 끝났다${t.error ? `(${t.error.type}: ${t.error.message || ''})` : ''}.`); printAnswer(x, t.answer); break;
     case 'idle': say(`@${n}: 지금 일하지 않는다(기다릴 턴 없음, 상태 ${t.state}).`); printAnswer(x, t.answer); break;
     case 'sleeping': say(`@${n}: 잠들어 있다(기다릴 턴 없음). 시키면 보드가 깨운 뒤 넣는다.`); printAnswer(x, t.answer); break;
-    case 'waiting': say(`@${n}: 사람의 답을 기다린다${t.ask && t.ask.summary ? `(${t.ask.summary})` : ''}. 대신 답하지 않는다. 사용자에게 "보드에서 @${n}에 답해 주세요"라고 알린다. 답한 뒤 다시 기다리기: ${t.next.wait}`); break;
+    case 'waiting':
+      if (t.ask && t.ask.answer) { // P384: 질문 창은 부모(너)가 답한다
+        say(`@${n}: 질문 창을 띄웠다. 사람 대신 네가 답한다.`);
+        for (const [i, q] of (t.ask.questions || []).entries()) { say(`${t.ask.questions.length > 1 ? `질문 ${i + 1}: ` : '질문: '}${q.question}`); (q.options || []).forEach((o, k) => say(`  ${k + 1}. ${o}`)); }
+        say(`답하기: ${t.ask.answer} · 일상적인 구현·설계는 네가 정하고, 기능 없앰·입력이나 기본값 바꿈·범위나 비용 바뀜·되돌리기 어려움·BRIEF 결정과 다름이면 atrium ask로 사람에게 묻는다.`); break;
+      }
+      say(`@${n}: 사람의 답을 기다린다${t.ask && t.ask.summary ? `(${t.ask.summary})` : ''}. 대신 답하지 않는다. 사용자에게 "보드에서 @${n}에 답해 주세요"라고 알린다. 답한 뒤 다시 기다리기: ${t.next.wait}`); break;
     case 'timeout': say(`@${n}: 아직 일하는 중이다(${secs(t.ms)} 기다림, 상태 ${t.state}). 일은 계속된다. 다시 기다리기: ${t.next.wait}`); break;
     case 'unconfirmed':
       if (t.delivery && t.delivery.reason === 'input_box_other') fail(boxOther(n, t.next, t.delivery.deliveryId ? `전달 ${t.delivery.deliveryId}` : ''));

@@ -215,7 +215,7 @@ function GeneralTab({ settings }) {
 }
 
 // P338: 알림·사용량(옛 일반 탭에서 옮김): 사용량 알림(P211), 사용량 직접 묻기(P314)와 딸린 칸, 목표 레인 알림(P306)
-function AlertsTab({ settings }) {
+function AlertsTab({ settings, schema }) {
   const t = useT();
   return (
     <div className="mt-set-grid" data-role="alerts-settings">
@@ -223,6 +223,7 @@ function AlertsTab({ settings }) {
       {'usageAlerts' in settings && <UsageAlertSetting settings={settings} />}
       {'usageProbe' in settings && <UsageProbeSetting settings={settings} />}
       {'planNotify' in settings && <><SetSub>{t('setNav.sub.goals')}</SetSub><PlanNotifySetting settings={settings} /></>}
+      {'childAskEscalateMin' in settings && <><SetSub>{t('p384.sub')}</SetSub><SleepMinutes settings={settings} schema={schema} k="childAskEscalateMin" label="p384.escName" hint="p384.escHint" set="p384.escSet" off="p384.escOff" note="p384.escNote" /></>} {/* P384: 하위 질문을 사람에게 올리기까지 */}
     </div>
   );
 }
@@ -359,7 +360,7 @@ export function SettingsDialog({ onClose, tab: tab0 = null, newLauncher = false 
             {settings && cur === 'sleep' && <SleepSetting settings={settings} schema={schema} />}
             {settings && cur === 'resources' && <ResourcesTab settings={settings} schema={schema} />}
             {settings && cur === 'recall' && <RecallSettings settings={settings} schema={schema} />}
-            {settings && cur === 'alerts' && <AlertsTab settings={settings} />}
+            {settings && cur === 'alerts' && <AlertsTab settings={settings} schema={schema} />}
             {settings && cur === 'bots' && <BotsTab settings={settings} table={agents} onClose={onClose} />}
             {cur === 'devices' && <DevicesTab />}
             {cur === 'terminal' && <TerminalTab />}

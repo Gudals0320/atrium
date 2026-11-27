@@ -38,7 +38,7 @@ export function headBadges(c, open) {
 // 상태 묶음: 거르기 칩과 세는 값에 쓴다
 export function bucketOf(s) {
   const st = s && s.state;
-  if (st === 'waiting' || st === 'trust_wait') return 'need';
+  if (st === 'waiting' || st === 'trust_wait') return s.askRoute && !s.askRoute.escalated ? 'idle' : 'need'; // P384: 부모가 처리 중인 하위 질문은 응답 필요로 세지 않는다
   if (st === 'error' || problemExit(s)) return 'error'; // P125: 사람이 닫은(user)·판이 끈(normal) 끝남은 오류가 아니다
   if (st === 'working' || st === 'shell_running' || st === 'starting') return 'working';
   if (st === 'sleeping') return 'sleeping';

@@ -7,6 +7,8 @@
 // - P355: 세션 화면의 키 줄(늘 보이는 한 줄 + 펼치는 두 줄), 화면 높이(pageBox)
 // - P358: 세션 화면은 터미널만. 응답(기다리는 요청·할 일 카드)은 오른쪽 아래 작은 단추(overlayButton) → 겹친 카드 넘기기(overlayPages)
 import { needsYou, isBusy, toneOf, lastLineOf, screenBox, kbOpenOf, TALL_GAP_MAX } from './phone.js';
+import { heldByParent, needsHuman } from './attention.js'; // P384: 부모가 처리 중인 하위 질문
+export { heldByParent };
 
 // P355: 키 줄. 늘 보이는 한 줄(KEY_MAIN, 앞에 펼침 단추)과 펼치면 보이는 두 줄(KEY_MORE). 모두 session.keys 이름으로 보낸다
 // (판이 패널 바이트로 바꾼다. 터미널을 붙이지 않은 답 보기에서도 된다). 숫자는 응답 필요일 때 노랗게
@@ -97,10 +99,10 @@ const byRecent = (a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0) || 
 // 홈: 응답 필요·작업 중·작업 완료
 export function homeOf(rows) {
   const all = [...rows.values()];
-  const needs = all.filter(needsYou).sort((a, b) => waitAt(a) - waitAt(b) || byName(a, b));
+  const needs = all.filter(needsYou).sort((a, b) => (heldByParent(a) - heldByParent(b)) || waitAt(a) - waitAt(b) || byName(a, b)); // P384: 부모가 처리 중인 하위 질문은 묶음 끝에 흐리게
   const working = all.filter((s) => !needsYou(s) && isBusy(s)).sort(byStart);
   const done = all.filter((s) => !needsYou(s) && isDone(s)).sort(byRecent);
-  return { needs, working, done, counts: { need: needs.length, work: working.length, done: done.length } };
+  return { needs, working, done, counts: { need: needs.filter((s) => !heldByParent(s)).length, work: working.length, done: done.length } }; // P384: 수에서는 뺀다
 }
 
 // 찾기: 이름·워크스페이스 이름·마지막 한 줄(대소문자 무시)
@@ -126,7 +128,7 @@ export function listOf(rows, workspaces = [], { query = '', pins = [], filter = 
   const groups = [...by.entries()].map(([key, list]) => {
     const live = list.filter((s) => !asleep(s)).sort((a, b) => rank(a) - rank(b) || byStart(a, b));
     const sleeping = list.filter(asleep).sort(byRecent);
-    return { key, name: key ? wsName(key) : null, live, sleeping, total: list.length, need: list.filter(needsYou).length };
+    return { key, name: key ? wsName(key) : null, live, sleeping, total: list.length, need: list.filter(needsHuman).length }; // P384
   }).sort((a, b) => (a.key == null) - (b.key == null) || (order.get(a.key) ?? 1e9) - (order.get(b.key) ?? 1e9) || String(a.name).localeCompare(String(b.name)));
   return { pinned, groups, total: all.length, pinSet };
 }
@@ -162,7 +164,7 @@ export function treeOf(rows, workspaces = []) {
     // 살아 있는 뿌리 먼저, 잠든 뿌리는 뒤로(나무 안의 차례는 띄운 순)
     roots.sort((a, b) => (asleep(a) ? 1 : 0) - (asleep(b) ? 1 : 0) || byStart(a, b)).forEach((r) => walk(r, 0, []));
     for (const s of list) if (!seen.has(s.sessionId)) walk(s, 0, []); // 고리(부모가 서로)는 뿌리로
-    out.push({ key, name: key ? names.get(key) || String(key).split('/').filter(Boolean).slice(-1)[0] : null, items, need: list.filter(needsYou).length });
+    out.push({ key, name: key ? names.get(key) || String(key).split('/').filter(Boolean).slice(-1)[0] : null, items, need: list.filter(needsHuman).length }); // P384
   }
   return out.sort((a, b) => (a.key == null) - (b.key == null) || (order.get(a.key) ?? 1e9) - (order.get(b.key) ?? 1e9));
 }

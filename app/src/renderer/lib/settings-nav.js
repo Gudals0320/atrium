@@ -18,7 +18,7 @@ const PAGE_HAS = {
   sleep: (s) => !!s && s.sleepAfterMin != null,
   recall: (s) => !!s && s.archiveDays != null,
   resources: (s) => !!s && 'guardDetect' in s, // P341
-  alerts: (s) => !!s && ('usageAlerts' in s || 'usageProbe' in s || 'planNotify' in s),
+  alerts: (s) => !!s && ('usageAlerts' in s || 'usageProbe' in s || 'planNotify' in s || 'childAskEscalateMin' in s), // P384
   bots: (s, l, bots) => !!bots,
   devices: () => true,
   terminal: (s) => !!s,
@@ -63,6 +63,7 @@ export const ITEMS = [
   { id: 'usageProbe', page: 'alerts', name: 'usageProbe.name', hint: 'usageProbe.hint' },
   { id: 'usageProbeMin', page: 'alerts', name: 'usageProbe.minName', hint: 'usageProbe.minHint', parent: 'usageProbe' },
   { id: 'planNotify', page: 'alerts', name: 'plan.notifyName', hint: 'plan.notifyHint' },
+  { id: 'childAskEscalateMin', page: 'alerts', name: 'p384.escName', hint: 'p384.escHint', note: 'p384.escNote' }, // P384
   { id: 'bot-merge', page: 'bots', name: 'bots.name.merge', hint: 'merger.desc', note: 'merger.modeNote' },
   { id: 'bot-merge-repos', page: 'bots', name: 'bots.repos', hint: 'merger.repoNote', parent: 'bot-merge' },
   { id: 'bot-todoTidy', page: 'bots', name: 'bots.name.todoTidy', hint: 'todoTidy.desc', note: 'todoTidy.modeNote' },

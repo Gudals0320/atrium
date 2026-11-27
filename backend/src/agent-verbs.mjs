@@ -333,7 +333,7 @@ export class AgentVerbs {
     const got = waiter && waiter.got ? waiter.got : null;
     const unit = got ? { ...this.units().view(b.store.getTry(got.tryId)), claimedBy: 'wait', alreadyDelivered: false } : prior || null;
     const answer = got ? { text: clip(got.text, ANSWER_MAX), clipped: got.text.length > ANSWER_MAX, source: 'done', at: Date.now() } : ['done', 'idle', 'error', 'sleeping', 'unconfirmed'].includes(status) ? this.answerOf(t) : null;
-    const out = { status, state: st, ms, answer, unit, ask: status === 'waiting' && s && s.ask ? askOut(s.ask) : null,
+    const out = { status, state: st, ms, answer, unit, ask: status === 'waiting' && s && s.ask ? { ...askOut(s.ask), ...(s.askRoute && s.askRoute.parentId === caller.sessionId ? { answer: `atrium answer ${t.name} <번호|"글">` } : {}) } : null, // P384: 질문 창은 부모가 답한다
       error: status === 'error' && s && s.error ? { type: s.error.type || null, message: clip(s.error.message, 300) } : null,
       delivery: row ? { deliveryId, status: row.status, reason: row.reason ?? null } : null, next: verbLines(t.name) };
     if (status !== 'aborted' && b.sessions.has(caller.sessionId)) {

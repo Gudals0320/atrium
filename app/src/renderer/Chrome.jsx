@@ -67,7 +67,7 @@ function SidebarButton() {
 
 export function TopLeft() {
   const t = useT();
-  const { needsYou, review, problems, working } = useInbox();
+  const { needsYou, review, problems, working, held } = useInbox();
   const fit = useTopFit();
   return (
     <div className={`mt-cluster tl${fit === 'full' ? '' : ' compact'}${fit === 'stack' ? ' stack' : ''}`} data-role="top-left" data-fit={fit}>
@@ -80,7 +80,7 @@ export function TopLeft() {
       {review.length > 0 && <ListPill list={review} label={t('top.review')} cls="review" role="review" line={(s) => (s.lastAnswer || '').replace(/\s+/g, ' ').slice(0, 120)} empty={t('top.reviewEmpty')} readAll />}
       <DecisionPill />{/* P284: 할 일 n(P305, 응답 필요와 따로 센다) */}
       <PlanPanelHost />
-      <TurnPill needsYou={needsYou} />
+      <TurnPill needsYou={needsYou} held={held || []} />
       {problems.length > 0 && <ListPill list={problems} label={t('top.issues')} cls="problem" role="problems" line={(s) => (s.state === 'exited' ? [EXIT_LABEL[s.exit && s.exit.kind], s.exit && s.exit.error].filter(Boolean).join(': ') /* P337: 끝 화면의 오류 문장 */ : STATE_LABEL[s.state]) || ''} empty={t('top.issuesEmpty')} />}
     </div>
   );
@@ -156,25 +156,32 @@ function SessionsPill() {
 const wsTag = (s, currentWs) => <span className={`mt-chip-ws${(s.workspaceKey || null) === (currentWs || null) ? '' : ' other'}`} data-ws={s.workspaceKey || ''}>{wsName(s.workspaceKey)}</span>;
 
 // 내 차례 알약과 그 목록(BRIEF 4절, ARCH 4절 A1). 목록의 줄을 누르거나 N을 누르면 노드를 옮기지 않고 화면이 그 세션으로 간다
-function TurnPill({ needsYou }) {
+function TurnPill({ needsYou, held = [] }) {
   const t = useT();
   const [open, setOpen, ref] = useDropdown();
   const focusId = useStore((st) => st.focusId);
   const currentWs = useStore((st) => st.currentWs);
   const now = useNow();
-  const n = needsYou.length;
-  if (!n) return null; // P214: 0이면 숨긴다(값이 생기면 나타난다)
+  const need = needsYou.length; // P384: 알약 수는 사람에게 온 것만(부모가 처리 중인 하위 질문은 흐린 줄로만)
+  const n = need + held.length;
+  if (!n) return null; // P214: 0이면 숨긴다(값이 생기면 나타난다). P384: 부모가 처리 중인 하위 질문만 있으면 hot 없이 0으로
   return (
     <div className="mt-drop" ref={ref}>
-      <button className={`mt-cp turn${n ? ' hot' : ''}${open ? ' on' : ''}`} data-role="inbox" data-count={n} title={n ? t('top.turnTitle') : t('top.turnNone')} onClick={() => setOpen((o) => !o)}>
-        <span className="mt-turn-dot" /><span className="mt-cp-label">{t('top.turn')}</span> <b className="mono">{n}</b>
+      <button className={`mt-cp turn${need ? ' hot' : ''}${open ? ' on' : ''}`} data-role="inbox" data-count={need} title={need ? t('top.turnTitle') : t('top.turnNone')} onClick={() => setOpen((o) => !o)}>
+        <span className="mt-turn-dot" /><span className="mt-cp-label">{t('top.turn')}</span> <b className="mono">{need}</b>
       </button>
       {open && (
         <div className="mt-dropdown" data-role="inbox-list">
-          <div className="mt-dropdown-head"><span>{t('top.turn')}</span>{n > 0 && <span className="mt-kbd">{t('top.nextKey')}</span>}</div>
+          <div className="mt-dropdown-head"><span>{t('top.turn')}</span>{need > 0 && <span className="mt-kbd">{t('top.nextKey')}</span>}</div>
           {needsYou.map((s) => (
             <button key={s.sessionId} className={`mt-chip need${focusId === s.sessionId ? ' current' : ''}`} data-session={s.sessionId} data-name={s.name} onClick={() => { setOpen(false); go(s.sessionId); }} title={askLine(s)}>
               <span className="mt-chip-line"><b>@{s.name}</b> {wsTag(s, currentWs)} <span className="mt-chip-time">{ago(s.waitingSince || (s.ask && s.ask.since) || s.createdAt, now)}</span></span>
+              <span className="mt-chip-what">{askLine(s)}</span>
+            </button>
+          ))}
+          {held.map((s) => ( /* P384: 부모가 처리 중인 하위 질문(흐리게만, 수·N 키에서 뺌) */
+            <button key={s.sessionId} className="mt-chip need mt-chip-held" data-session={s.sessionId} data-name={s.name} data-held="parent" onClick={() => { setOpen(false); go(s.sessionId); }} title={t('p384.heldTitle', { parent: (s.askRoute && s.askRoute.parent) || '?', min: s.askRoute && s.askRoute.escalateAt ? Math.max(1, Math.round((s.askRoute.escalateAt - now) / 60000)) : '-' })}>
+              <span className="mt-chip-line"><b>@{s.name}</b> {wsTag(s, currentWs)} <span className="mt-chip-held-tag">{t('p384.held', { parent: (s.askRoute && s.askRoute.parent) || '?' })}</span></span>
               <span className="mt-chip-what">{askLine(s)}</span>
             </button>
           ))}

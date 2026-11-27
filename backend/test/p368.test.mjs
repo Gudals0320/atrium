@@ -17,7 +17,7 @@ test('P368 know 안내: 시작할 때 한 번, 막히면 다시(두 꼴 모두).
   assert.match(KNOW_RULE, /atrium know "<물음>"/);
   assert.ok(!/[\r\n"]/.test(KNOW_RULE_PLAIN));
   assert.ok(!/[\r\n"]/.test(KNOW_HINT_RULE));
-  assert.equal(CONTRACT_VERSION, 13, '새 동사가 아니라 계약은 그대로');
+  assert.equal(CONTRACT_VERSION, 14, '새 동사가 아니라 계약은 그대로');
   const know = VERBS.find((v) => v.name === 'know');
   assert.match(know.does, /시작할 때 건드릴 부분을 한 번 찾고 막히면 다시/);
   assert.match(know.does, /1~3번/);

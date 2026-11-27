@@ -6,10 +6,14 @@ export const NOTIFY_DELAY_MS = 1200; // waiting이 된 뒤 이만큼 기다렸�
 export const NOTIFY_MIN_VISIBLE_PX = 200; // 노드가 화면에서 이만큼 넓어야(중간 얼굴 이상, 승인 카드가 보임) "보인다"로 친다
 
 const NEEDS_YOU = new Set(['waiting', 'trust_wait']);
+// P384: 하위의 질문 창을 일 부모가 처리 중(판 요약 askRoute, 휴대폰 줄 held). 사람에게 올리기(escalated) 전에는 응답 필요 목록에 흐리게만 보이고
+//   알약 수·N 키·영역 수·OS 알림에서 뺀다
+export const heldByParent = (s) => !!s && ((!!s.askRoute && !s.askRoute.escalated) || !!s.held);
+export const needsHuman = (s) => !!s && NEEDS_YOU.has(s.state) && !heldByParent(s);
 
 // 같은 대기에 한 번만 띄우기 위한 열쇠. 요청(tool_use_id 또는 시작 시각)이 바뀌면 새 대기다.
 export function notifyKey(s) {
-  if (!s || !NEEDS_YOU.has(s.state)) return null;
+  if (!s || !NEEDS_YOU.has(s.state) || heldByParent(s)) return null; // P384: 부모가 처리 중이면 띄우지 않는다(올리면 새로)
   const a = s.ask;
   return `${s.sessionId}|${s.state}|${(a && (a.toolUseId || a.since)) || 'x'}`;
 }

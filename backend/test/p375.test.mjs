@@ -105,25 +105,28 @@ const MERGE_P368 = Date.parse('2026-11-26T01:49:16+09:00');
 const ORCH = { on: true, via: 'kind', reportFallback: 'last_answer', busy: ['proctree'] };
 
 test('P375 순수 함수: 빠진 안내 두 줄, 장부로 아는 안내, 받는 쪽 거르기, 여러 항목 한 줄', () => {
-  assert.deepEqual(NEWS_IDS, ['records', 'know-start', 'know-hint']);
+  assert.deepEqual(NEWS_IDS, ['records', 'know-start', 'know-hint', 'ask-parent']); // P384: ask-parent
   // P364 판: 해시가 장부의 P364 줄 → records까지 안다. P368 두 줄은 모른다
   assert.deepEqual(ledgerNews(entry('P364').hashes.board), ['records']);
-  assert.deepEqual(newNews(P364()), ['know-start', 'know-hint']);
+  assert.deepEqual(newNews(P364()), ['know-start', 'know-hint', 'ask-parent']);
   // P368 판(지금 안내문)으로 뜬 세션: news 칸이 옛 판의 것(records만)이어도 해시로 안다(뒤에 안내문이 또 바뀌어도 다시 알리지 않는다)
-  assert.deepEqual(newNews({ ...P364(), hash: entry('P368').hashes.board }), []);
-  assert.deepEqual(newNews({ ...P364(), hash: entry('P368').hashes['orch-sub-plain'] }), []);
+  assert.deepEqual(newNews({ ...P364(), hash: entry('P368').hashes.board }), ['ask-parent']); // P384: P368 판은 그 뒤 안내(ask-parent)를 모른다
+  assert.deepEqual(newNews({ ...P364(), hash: entry('P384').hashes.board }), []);
+  assert.deepEqual(newNews({ ...P364(), hash: entry('P384').hashes['orch-sub-plain'] }), []);
   assert.deepEqual(ledgerNews('unknown00000'), []);
   assert.deepEqual(ledgerNews(null), []);
   // 판 기록이 없는 옛 세션의 어림: P368 합치기 전이면 모른다
-  assert.deepEqual(newNews(assumedStamp(MERGE_P368 - 1000)), ['know-start', 'know-hint']);
-  assert.deepEqual(newNews(assumedStamp(MERGE_P368 + 1000)), []);
+  assert.deepEqual(newNews(assumedStamp(MERGE_P368 - 1000)), ['know-start', 'know-hint', 'ask-parent']);
+  assert.deepEqual(newNews(assumedStamp(MERGE_P368 + 1000)), ['ask-parent']); // P384
+  assert.deepEqual(newNews(assumedStamp(Date.now())), []);
   // 받는 쪽 거르기(P296 permOf): 보통 세션은 모두, 자체 오케스트레이션 독립(child 없음)·하위(know만)는 know-start만
   const normal = { kind: 'claude' }, orch = { kind: 'hermes', orch: ORCH };
   assert.ok(NEWS_IDS.every((id) => newsFits(id, normal, { allowed: null })));
   const free = { allowed: VERB_NAMES.filter((v) => !['child', 'child-kill', 'relate', 'child-wait', 'revive', 'fork'].includes(v)) };
-  assert.deepEqual(NEWS_IDS.filter((id) => newsFits(id, orch, free)), ['know-start']);
-  assert.deepEqual(NEWS_IDS.filter((id) => newsFits(id, orch, { allowed: ['help', 'prompt', 'done', 'item', 'me', 'usage', 'know'] })), ['know-start']);
-  assert.deepEqual(NEWS_IDS.filter((id) => newsFits(id, orch, { allowed: ['help', 'prompt', 'done'] })), [], 'know가 없는 하위는 know 안내도 없다');
+  assert.deepEqual(NEWS_IDS.filter((id) => newsFits(id, orch, free)), ['know-start', 'ask-parent']);
+  assert.deepEqual(NEWS_IDS.filter((id) => newsFits(id, orch, { allowed: ['help', 'prompt', 'done', 'item', 'me', 'usage', 'know'] })), ['know-start', 'ask-parent']);
+  assert.deepEqual(NEWS_IDS.filter((id) => newsFits(id, orch, { allowed: ['help', 'prompt', 'done'] })), ['ask-parent'], 'know가 없는 하위는 know 안내도 없다');
+  assert.ok(briefVariants()['orch-sub'].includes('질문 도구(Ask user 등) 대신'), 'P384: 자체 오케스트레이션 하위 안내문에 부모에게 묻기');
   assert.equal(newsFits('nope', normal, null), false);
   // 각 안내가 실제로 그 꼴의 안내문에 있다(거르기가 안내문과 맞는다)
   const v = briefVariants();
@@ -135,8 +138,8 @@ test('P375 순수 함수: 빠진 안내 두 줄, 장부로 아는 안내, 받는
   const all = newsLine(NEWS_IDS);
   assert.ok(all.startsWith(NEWS_HEAD + ' ') && all.endsWith('(자세히는 atrium help)'), all);
   assert.ok(!all.includes('\n'), '한 줄');
-  assert.equal(all.split(' / ').length, 3);
-  assert.ok(all.length <= 300, `짧게: ${all.length}자`);
+  assert.equal(all.split(' / ').length, 4);
+  assert.ok(all.length <= 400, `짧게: ${all.length}자`); // P384: 네 줄
   for (const n of BRIEF_NEWS) assert.ok(n.line.length <= 110 && !n.line.includes('\n'), n.id);
   assert.ok(all.length < BOARD_SYSTEM_PROMPT.length / 4);
   assert.equal(newsLine(['know-start']), `${NEWS_HEAD} ${BRIEF_NEWS[1].line}(자세히는 atrium help)`);
@@ -153,7 +156,7 @@ test('P375 장부 지킴: 안내문 해시가 바뀌었는데 장부에 줄이 �
   const changed = { ...cur, board: 'changed00000' };
   const p1 = ledgerProblems(changed);
   assert.equal(p1.length, 1);
-  assert.match(p1[0], /board 0634[0-9a-f]+→changed00000/);
+  assert.match(p1[0], /board aa19[0-9a-f]+→changed00000/);
   assert.match(p1[0], /BRIEF_NEWS에 \{ id/);
   assert.match(p1[0], /BRIEF_LEDGER 끝에/);
   assert.match(p1[0], /quiet: '<알릴 것 없음 까닭 한 줄>'/);
@@ -184,12 +187,12 @@ test('P375 P364 판 세션: 다음 전달 앞에 새 안내 한 줄 한 번, 두
     await until(() => s.texts.length === 1);
     const lines = s.texts[0].split('\n'); // 판이 앞에 붙인 줄, 빈 줄, 글
     assert.equal(lines.length, 3, s.texts[0]);
-    assert.equal(lines[0], newsLine(['know-start', 'know-hint']));
+    assert.ok(!s.texts[0].includes(NOTICE_HEAD), '새 동사는 없다(판 기록의 동사가 지금 것)');
+    assert.equal(lines[0], newsLine(['know-start', 'know-hint', 'ask-parent']));
     assert.ok(!lines[0].includes('--record'), '이미 받은 안내(records)는 없다');
     assert.equal(lines[1], ''); assert.equal(lines[2], '첫 글');
-    assert.ok(!s.texts[0].includes(NOTICE_HEAD), '새 동사는 없다');
     const ev = events(b, 'verbs_notice');
-    assert.equal(ev.length, 1); assert.deepEqual(ev[0].data.news, ['know-start', 'know-hint']); assert.deepEqual(ev[0].data.verbs, []);
+    assert.equal(ev.length, 1); assert.deepEqual(ev[0].data.news, ['know-start', 'know-hint', 'ask-parent']); assert.deepEqual(ev[0].data.verbs, []);
     assert.deepEqual(rowStamp(b, s).news, NEWS_IDS);
     assert.equal(rowStamp(b, s).hash, promptHash(BOARD_SYSTEM_PROMPT));
     await until(() => deriveState(s.rt).state === 'ready');
@@ -202,7 +205,7 @@ test('P375 P364 판 세션: 다음 전달 앞에 새 안내 한 줄 한 번, 두
     lower(b, cx, P364('harness'));
     send(b, cx, '코덱스');
     await until(() => cx.texts.length === 1);
-    assert.equal(cx.texts[0], newsLine(['know-start', 'know-hint']) + '\n\n코덱스');
+    assert.equal(cx.texts[0], newsLine(['know-start', 'know-hint', 'ask-parent']) + '\n\n코덱스');
     assert.equal(rowStamp(b, cx).hash, promptHash(HARNESS_PROMPT));
   } finally { await stop(); }
 });
@@ -215,7 +218,7 @@ test('P375 쓸 수 없는 세션에는 그 줄을 빼기: 자체 오케스트레
     lower(b, free, { ...P364('orch-free-plain'), news: [] }); // records도 모르는 판: 자체 오케스트레이션 안내문에 없으니 빼기
     send(b, free, '일');
     await until(() => free.texts.length === 1);
-    assert.equal(free.texts[0], newsLine(['know-start']) + '\n\n일');
+    assert.equal(free.texts[0], newsLine(['know-start', 'ask-parent']) + '\n\n일'); // P384
     const lead = add('lead');
     const sub = add('h2', { kind: 'hermes', hooked: false, parentSessionId: lead.sessionId, orch: ORCH });
     b.branch.noteChild(sub.sessionId, { parentSessionId: lead.sessionId });
@@ -223,12 +226,12 @@ test('P375 쓸 수 없는 세션에는 그 줄을 빼기: 자체 오케스트레
     lower(b, sub, P364('orch-sub-plain'));
     send(b, sub, '하위 일');
     await until(() => sub.texts.length === 1);
-    assert.equal(sub.texts[0], newsLine(['know-start']) + '\n\n하위 일');
+    assert.equal(sub.texts[0], newsLine(['know-start', 'ask-parent']) + '\n\n하위 일'); // P384: 하위 오케스트레이션에는 answer가 없다
     assert.equal(rowStamp(b, sub).hash, promptHash(orchPromptLines('sub').join(' ')));
     // know-start를 이미 안 오케스트레이션 하위(뒤 판)에 know-hint만 새로면: 쓸 수 없으니 알리지 않고 올린다
     await until(() => deriveState(sub.rt).state !== 'working');
     await tick(150);
-    lower(b, sub, { ...P364('orch-sub-plain'), hash: 'other0000000', news: ['records', 'know-start'] });
+    lower(b, sub, { ...P364('orch-sub-plain'), hash: 'other0000000', news: ['records', 'know-start', 'ask-parent'] });
     send(b, sub, '둘째');
     await until(() => sub.texts.length === 2);
     assert.equal(sub.texts[1], '둘째');
@@ -248,7 +251,7 @@ test('P375 이미 받은 세션·깨운 세션은 없음, 장부에 해시가 �
     assert.equal(s.texts[0], '그냥 글');
     // P368 판으로 뜬 세션(news 칸은 그때의 판 = records만). 뒤에 계약이 오른 판을 흉내(다른 판) → 해시로 안다: 알릴 것 없음
     const t = add('w3');
-    lower(b, t, { ...P364(), hash: entry('P368').hashes.board, contract: CONTRACT_VERSION - 1 });
+    lower(b, t, { ...P364(), verbs: [...VERB_NAMES], hash: entry('P384').hashes.board, contract: CONTRACT_VERSION - 1 }); // P384: 장부 끝 줄의 판
     send(b, t, 'P368 판');
     await until(() => t.texts.length === 1);
     assert.equal(t.texts[0], 'P368 판');
@@ -275,8 +278,8 @@ test('P375 판 기록이 없는 옛 세션: 새 동사 한 줄과 새 안내 한
     await until(() => s.texts.length === 1);
     const lines = s.texts[0].split('\n');
     assert.equal(lines.length, 4, s.texts[0]); // 동사 한 줄, 안내 한 줄, 빈 줄, 글
-    assert.equal(lines[0], noticeLine(['revive', 'fork', 'know']));
-    assert.equal(lines[1], newsLine(['records', 'know-start', 'know-hint']));
+    assert.equal(lines[0], noticeLine(['revive', 'fork', 'know', 'answer'])); // P384
+    assert.equal(lines[1], newsLine(['records', 'know-start', 'know-hint', 'ask-parent']));
     assert.equal(lines[3], '오랜만');
     assert.ok(!lines[0].includes('막혔을 때'), '언제 찾는지는 새 안내 줄이 말한다');
   } finally { await stop(); }

@@ -3482,4 +3482,14 @@ export default {
     wtRootSet: 'Worktree location: {v}',
     wtRootOff: 'Worktree location cleared. Worktrees go inside the repository, in .claude/worktrees.',
   },
+  p384: { // P384: a sub-session's question goes to its parent first (dimmed row in Needs you, Settings › Alerts)
+    held: 'Parent handling · @{parent}',
+    heldTitle: 'Sub-session questions go to the parent session @{parent} first. You are notified if it has not answered within {min} min.',
+    sub: 'Sub-session questions',
+    escName: 'Notify when the parent has not answered (min)',
+    escHint: 'Sub-session questions go to the parent session first. If the parent does not answer within this time, the question shows as Needs you and notifies you. Default {n} min.',
+    escNote: 'While the parent handles it, the question is only shown dimmed in the Needs you list, with no notification or phone push. If the parent asks you with a decision card, answer that card. Permission approvals and trust questions still notify you right away. 0 means never notify.',
+    escSet: 'You are notified if the parent has not answered within {n} min.',
+    escOff: 'Sub-session questions will not notify you. The parent session answers them.',
+  },
 };

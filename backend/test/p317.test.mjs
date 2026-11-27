@@ -118,8 +118,8 @@ test('P317 순수 함수: 새 동사, 한 줄, 같은 판, 옛 세션 어림, �
   assert.equal(a.contract, CONTRACT_VERSION);
   // 옛 세션 어림: P292 합친 뒤·P304 합치기 전에 뜬 세션은 plan만 모른다
   const mid = assumedStamp(VERB_SINCE.todo + 1000);
-  assert.deepEqual(newVerbs(mid), ['plan', 'revive', 'fork', 'know']); // P364: know도 P304 뒤. P360: revive·fork는 P304 뒤에 생겼다
-  assert.deepEqual(newVerbs(assumedStamp(VERB_SINCE.ask - 1000)), ['ask', 'todo', 'plan', 'revive', 'fork', 'know']); // P364
+  assert.deepEqual(newVerbs(mid), ['plan', 'revive', 'fork', 'know', 'answer']); // P384: answer. P364: know도 P304 뒤. P360: revive·fork는 P304 뒤에 생겼다
+  assert.deepEqual(newVerbs(assumedStamp(VERB_SINCE.ask - 1000)), ['ask', 'todo', 'plan', 'revive', 'fork', 'know', 'answer']); // P384. P364
   assert.deepEqual(newVerbs(assumedStamp(Date.now())), []);
   // 종류별 안내문
   assert.equal(boardPromptOf({ kind: 'claude' }), BOARD_SYSTEM_PROMPT);
@@ -263,7 +263,7 @@ test('P317 판 기록이 없는 옛 세션은 띄운 때로 어림, 셸·가져�
     s.briefStamp = null; s.rt.launchedAt = t;
     send(b, s, '오랜만');
     await until(() => s.texts.length === 1);
-    assert.ok(s.texts[0].startsWith(noticeLine(['plan', 'revive', 'fork', 'know'])), s.texts[0]); // P364. P360
+    assert.ok(s.texts[0].startsWith(noticeLine(['plan', 'revive', 'fork', 'know', 'answer'])), s.texts[0]); // P384. P364. P360
     assert.equal(events(b, 'verbs_notice').at(-1).data.assumed, true);
     // 같은 세션 기록을 다시 읽으면(백엔드 다시 켬) 판이 남아 있다
     const row = b.store.openSessions().find((r) => r.sessionId === s.sessionId);

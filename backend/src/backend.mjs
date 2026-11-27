@@ -106,6 +106,7 @@ import { PhoneFeed, phoneHandlers, phoneRoute } from './phone.mjs'; // P353: 휴
 import { preToolUseDecision } from './atrium-allow.mjs'; // P308: 따옴표 꼴 atrium 명령 허용
 import { TodoTidy } from './todo-tidy.mjs'; // P316: 할 일 정리
 import { KnowService, knowHandlers } from './know.mjs'; // P364: 작업 지식 찾기(atrium know)
+import { ChildAsks } from './child-asks.mjs'; // P384: 하위의 질문 창을 부모에게(atrium answer, 올리기)
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 // HTTP 서버 닫기(2026-11-07): http.close는 열린 연결이 모두 끝나야 끝나므로, 쉬는 연결은 바로, 나머지는 forceMs 뒤 끊는다
 export async function closeHttp(server, forceMs = 1000) {
@@ -303,6 +304,7 @@ export class Backend {
     registerKindProgress('codex', 'codex-subagents');
     // P8: 하위 세션 명령. 플러그인에 일 맡기기 스킬과 atrium 명령을 더하고, 이미 띄운 세션의 설정 파일에 env와 승인 규칙을 더한다
     this.branch = attachBranch(this);
+    this.childAsks = new ChildAsks(this); // P384: 하위 질문은 부모가 받는다(요약 askRoute, atrium answer)
     Object.assign(this.api.handlers, this.branch.handlers);
     this.branch.refreshSettings();
     // P4: 판 플러그인 폴더(판이 띄우는 Claude Code에 --plugin-dir로 넘긴다)
@@ -490,6 +492,7 @@ export class Backend {
     this.resources.stop();
     if (this.usage) this.usage.stop(); // P211
     clearTimeout(this.sdkCostTimer); // P366
+    if (this.childAsks) this.childAsks.stop(); // P384
     if (this.know) await this.know.close().catch(() => {}); // P364
     if (this.sdk) await this.sdk.stopAll().catch(() => {}); // P363: SDK 세션 프로세스도 판과 함께 끝난다(다음 글에서 --resume)
     if (this.authRelay) await this.authRelay.stop().catch(() => {}); // P359: 판과 함께 끈다
@@ -668,6 +671,7 @@ export class Backend {
       sessionId: s.sessionId, name: shownName(s), cwd: s.cwd, paneId: s.paneId, termWorkspaceId: s.termWorkspaceId,
       address: s.name, label: s.label || null, // P66: name은 보이는 이름, address는 에이전트가 쓰는 주소(에이전트 이름), label은 사람이 정한 이름(없으면 null)
       state: d.state, estimate: d.estimate || null, termStatus: rt.term.status, ask, waitingSince, error: d.error || rt.lastError || null,
+      askRoute: this.childAsks ? this.childAsks.sync(s, d) : null, // P384: 하위의 질문 창을 부모가 처리 중이면 { parent, since, escalateAt, escalated, viaCard }(창은 흐리게, 알림 없음)
       permissionMode: rt.permissionMode || s.permissionMode, ...shownModel({ model: s.model, effort: s.effort }, s.rt.modelNow), // P95: 미션 맵 카드의 메타 줄. P137: 하네스가 지금 쓰는 값(모르면 띄운 값)
       launchModel: s.model || null, launchEffort: s.effort || null,
       lastPrompt: clip(promptTask(rt.lastPrompt), 300), // P159: 관계 줄은 떼고 보인다

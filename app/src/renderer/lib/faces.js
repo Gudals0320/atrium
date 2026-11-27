@@ -6,6 +6,8 @@
 //   멀리(far)      그보다 작으면: 요약. OpenCove의 개요 모드(배율 0.4 미만)와 같은 생각
 // 제어기(터미널 제어기 프로세스, 약 17MB)는 가까이 얼굴이면서 화면에 보이는 노드에만, 화면 가운데에 가까운 순서로 상한까지 붙인다.
 
+import { heldByParent } from './attention.js'; // P384
+
 export const FACE_CLOSE_PX = 360;
 export const FACE_MIDDLE_PX = 200;
 export const DEFAULT_MAX_CONTROLLERS = 8;
@@ -147,12 +149,14 @@ export class RendererBudget {
 // N 이동 순서: 내 차례(waiting, trust_wait)를 오래 기다린 순서로, 그다음 오류(ARCH 4절 A1, 참고 제품의 needs you는 오류도 포함)
 export function inboxOf(sessions) {
   const askSince = (s) => s.waitingSince || (s.ask && s.ask.since) || s.createdAt;
-  const needsYou = sessions.filter((s) => s.state === 'waiting' || s.state === 'trust_wait').sort((a, b) => askSince(a) - askSince(b));
+  const waitingAll = sessions.filter((s) => s.state === 'waiting' || s.state === 'trust_wait').sort((a, b) => askSince(a) - askSince(b));
+  const needsYou = waitingAll.filter((s) => !heldByParent(s)); // P384: 부모가 처리 중인 하위 질문은 따로(흐리게만)
+  const held = waitingAll.filter(heldByParent);
   const review = sessions.filter((s) => s.unseen && s.state !== 'waiting' && s.state !== 'trust_wait').sort((a, b) => ((a.turn && a.turn.endedAt) || 0) - ((b.turn && b.turn.endedAt) || 0));
   const problems = sessions.filter((s) => s.state === 'error' || (s.state === 'exited' && s.exit && s.exit.kind !== 'normal' && s.exit.kind !== 'user')); // P125: 사람이 닫은 것은 문제가 아니다
   // P302: 작업 중(사이드바 작업 중 묶음과 같다: working, shell_running, starting). 최근에 움직인 것이 먼저
   const working = sessions.filter((s) => s.state === 'working' || s.state === 'shell_running' || s.state === 'starting').sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
-  return { needsYou, review, problems, working };
+  return { needsYou, review, problems, working, held };
 }
 
 export function nextTarget(order, currentId) {

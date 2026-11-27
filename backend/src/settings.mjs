@@ -32,6 +32,8 @@ export const SETTINGS = {
   updateCheck: { type: 'boolean', default: true, label: '새 릴리즈를 몇 시간마다 확인하고 알립니다. 업데이트는 직접 눌러야 합니다.' },
   // P70: 업데이트 채널. stable은 정식 릴리즈만, dev는 dev 브랜치의 사전 릴리즈(v<x.y.z>-dev.<n>)도 알린다. 바꾸면 백엔드가 곧바로 다시 확인한다
   updateChannel: { type: 'choice', default: 'stable', options: ['stable', 'dev'], label: '업데이트 채널 (stable: 정식 릴리즈, dev: dev 브랜치에 합친 기능을 먼저 받는 사전 릴리즈).' },
+  // P384: 하위의 질문 창은 부모가 받는다(child-asks.mjs). 부모가 이 시간(분) 안에 답하지 않으면 사람에게 올린다(응답 필요·알림). 0이면 올리지 않는다
+  childAskEscalateMin: { type: 'number', default: 10, min: 0, max: 1440, label: '하위 세션의 질문은 부모 세션이 먼저 받습니다. 부모가 지정한 시간(분) 안에 답하지 않으면 사람에게 알립니다 (0: 알리지 않음).' },
   sleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '프로젝트 전체에 지정한 시간(분) 동안 활동이 없으면 보드에서 시작한 Claude Code 세션을 모두 절전 모드로 전환합니다 (0: 사용 안 함).' },
   // P111: 세션 하나가 이 시간(분) 동안 쉬면 그 리포가 바빠도 그 세션만 잠재운다(sleep.mjs sessionSleepPlan). 리포 규칙(sleepAfterMin)이 먼저다
   sessionSleepAfterMin: { type: 'number', default: 30, min: 0, max: 1440, label: '세션 하나에 지정한 시간(분) 동안 활동이 없으면 프로젝트의 다른 세션이 작업 중이어도 그 세션만 절전 모드로 전환합니다 (0: 사용 안 함).' },

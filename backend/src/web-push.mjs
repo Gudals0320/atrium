@@ -302,9 +302,12 @@ export class Pusher {
     let tree = null;
     if (from != null && sum && sum.kind !== 'shell') { tree = this.treeNow(sum); this.trackCycle(sum, tree, { turnless: turnless && from === 'working' }); }
     if (!kind || kind === 'done') return turnless && kind === 'done' ? null : kind;
+    if (kind === 'need' && sum.askRoute && !sum.askRoute.escalated) { this.decide({ sessionId: sum.sessionId, kind, deviceId: null, why: 'parent-handles' }); return kind; } // P384: 부모가 처리 중인 하위 질문(올리면 need())
     this.dispatch({ sessionId: sum.sessionId, name: sum.name, kind, workspaceKey: sum.workspaceKey }, (tree || this.treeNow(sum)).isSub(sum.sessionId));
     return kind;
   }
+  // P384: 부모가 답하지 않아 사람에게 올린 하위 질문(child-asks.mjs escalate). 하위 세션 알림 규칙(sub) 그대로, 그 질문마다 한 번
+  need(sum) { if (!sum || sum.kind === 'shell') return; this.dispatch({ sessionId: sum.sessionId, name: sum.name, kind: 'need', workspaceKey: sum.workspaceKey, coolKey: `${sum.sessionId}|need|up|${(sum.ask && (sum.ask.toolUseId || sum.ask.since)) || ''}` }, this.treeNow(sum).isSub(sum.sessionId)); }
   // P284: 결정 카드 하나(atrium ask). 응답 필요(need) 스위치·묶음·보는 중·PC 사용 중 규칙 그대로, 카드마다 한 번. 결정 카드를 남기는 세션은 하위가 아니다
   // P357: 같은 세션의 결정 카드 알림은 카드가 달라도 cooldownMs 안에 한 번만(sessionCool). 묶음 안에서 같은 세션은 마지막 카드 하나. 누르면 그 카드로 가게 카드 번호(decisionId)를 싣는다
   decision(it) { this.dispatch({ sessionId: it.sessionId, name: it.name, kind: 'decision', workspaceKey: it.workspaceKey || null, decisionId: Number.isInteger(it.id) ? it.id : null, coolKey: `decision|${it.id}${it.wake ? `|w${it.wake}` : ''}`, sessionCool: `decision|s|${it.sessionId}` }, false); } // P292: 숨겼다 띄운 카드(wake)는 한 번 더
