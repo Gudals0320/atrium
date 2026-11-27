@@ -13,6 +13,7 @@ import { RECOMMENDED_RE } from './omo-record.mjs';
 export const ESCALATE_DEFAULT_MIN = 10;
 export const ANSWER_SETTLE_MS = 8000; // 답을 친 뒤 질문이 닫히기를 기다리는 시간
 export const ANSWER_STEP_MS = 400; // 키 묶음 사이(질문 창이 다음 입력을 받기까지)
+export const ANSWER_SUBMIT_MS = 1500; // OmO: 친 뒤 이만큼 안 닫히면 검토 화면(Submit)이라 enter를 한 번 더
 export const NOTICE_HEAD = '[Atrium 보드] 하위가 질문했다';
 const Q_MAX = 600, OPT_MAX = 120, OPTS_MAX = 12, QS_MAX = 6;
 const apiError = (code, message, extra = {}) => Object.assign(new Error(message), { code }, extra);
@@ -89,8 +90,8 @@ export function omoAnswerSteps(ask, parsed) {
 
 export class ChildAsks {
   // b: 백엔드(sessions, store, queue, workParentOf, broadcastSession, answer, adapter, web, features, log)
-  constructor(b, { settleMs = ANSWER_SETTLE_MS, stepMs = ANSWER_STEP_MS, now = () => Date.now() } = {}) {
-    this.b = b; this.settleMs = settleMs; this.stepMs = stepMs; this.now = now;
+  constructor(b, { settleMs = ANSWER_SETTLE_MS, stepMs = ANSWER_STEP_MS, submitMs = ANSWER_SUBMIT_MS, now = () => Date.now() } = {}) {
+    this.b = b; this.settleMs = settleMs; this.stepMs = stepMs; this.submitMs = submitMs; this.now = now;
     this.timers = new Map(); // 세션 ID → 올리기 시계
   }
   settings() { try { return this.b.features && this.b.features.settings ? this.b.features.settings.get() : {}; } catch { return {}; } }
@@ -214,6 +215,10 @@ export class ChildAsks {
         if (st.keys) await b.adapter.paneKeys(t.paneId, st.keys); else await b.adapter.sendText(t.paneId, st.text);
       }
       sent = { sent: true, steps: steps.map((x) => (x.keys ? x.keys.join('+') : `text(${x.text.length})`)) };
+      // OmO 질문 창: 숫자 하나는 곧바로 낸다. 글 답·질문 여럿·여러 개 고르기는 "Review your answers → Submit" 화면에서 enter를 한 번 더 받는다(실측 omo 5.1.8x)
+      const t1 = this.now();
+      while (this.now() - t1 < this.submitMs) { if (t.kind === 'omo' && b.refreshOmoRecord) { try { b.refreshOmoRecord(t); } catch {} } if (needKey(deriveState(t.rt)) !== key) break; await new Promise((res) => setTimeout(res, 250)); }
+      if (needKey(deriveState(t.rt)) === key) { await b.adapter.paneKeys(t.paneId, ['enter']); sent.steps.push('enter(submit)'); }
     }
     // 질문이 닫혔는지(기록·hook이 그 질문을 닫음 = 다른 상태나 다른 질문)
     const t0 = this.now(); let closed = false;

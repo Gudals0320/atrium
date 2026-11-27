@@ -37,7 +37,7 @@ function board({ minutes = 10 } = {}) {
     branch: { units: { waiters }, verbs: { target: (caller, name) => { const t = [...sessions.values()].find((x) => x.name === name); if (!t) throw Object.assign(new Error('nf'), { code: 'not_found' }); return t; } } },
     log() {},
   };
-  b.childAsks = new ChildAsks(b, { settleMs: 600, stepMs: 5 });
+  b.childAsks = new ChildAsks(b, { settleMs: 600, stepMs: 5, submitMs: 200 });
   const add = (name, { kind = 'claude', parent = null } = {}) => {
     const rt = newRuntime({ kind, hooked: kind === 'claude' }); rt.phase = 'running'; rt.term.present = true; applyTermStatus(rt, 'idle', 1);
     const s = { sessionId: 'id-' + name, name, kind, rt, paneId: 'p-' + name };
@@ -196,13 +196,13 @@ test('P384 atrium answer: 일 부모만, Claude는 답하기 길(번호·글), O
     const o1 = x.add('o1', { kind: 'omo', parent: ld }); o1.closeOnKey = true;
     x.ask(o1);
     const r2 = await x.b.childAsks.answerVerb(ld, { name: 'o1', answers: ['3'] });
-    assert.deepEqual(x.keys.at(-1), ['3']); assert.equal(r2.answered, true);
+    assert.deepEqual(x.keys.at(-1), ['3']); assert.equal(r2.answered, true, '숫자 하나는 곧바로 닫힌다(Submit enter 없음)');
     assert.ok(x.events.some((e) => e.kind === 'child_ask_end' && e.data.how === 'parent') || o1.rt.askRoute, '답한 뒤 길은 부모가 닫은 것으로');
     // OmO 글 답: 글을 치고 enter. 닫히지 않으면 answered false
     const o2 = x.add('o2', { kind: 'omo', parent: ld });
     x.ask(o2);
     const r3 = await x.b.childAsks.answerVerb(ld, { name: 'o2', answers: ['make it purple'] });
-    assert.equal(x.texts.at(-1), 'make it purple'); assert.deepEqual(x.keys.at(-1), ['enter']);
+    assert.equal(x.texts.at(-1), 'make it purple'); assert.deepEqual(x.keys.slice(-2), [['enter'], ['enter']], '글 다음 enter, 검토 화면에서 Submit enter 한 번 더');
     assert.equal(r3.answered, false);
   } finally { x.stop(); }
 });
