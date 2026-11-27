@@ -25,7 +25,7 @@ import { Peers, peerHandlers } from './peers.mjs'; // P47: 붙은 클라이언�
 import { viewportKey, viewportFor } from './multiclient.mjs'; // P47: 클라이언트별 화면 위치
 import { gitProbe, workspaceOf } from './git.mjs';
 import { readMessages, lastExchange, userPromptsSince } from './transcript.mjs';
-import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted, hermesReasoningShown, hermesStateOf, isOmhScreen } from './screen.mjs'; // P299: hermesReasoningShown. P309: 셸 안 Hermes·OMH 화면
+import { tailLines, isTrustDialog, trustDialogOf, TRUST_SCREEN_KINDS, parseChoices, parsePromptLine, parsePermissionDialog, shellPromptState, parseWorktreeExit, promptOnScreen, claudeInputBox, codexInputBox, dshInputBox, hermesInputBox, hermesPasteState, codexPasteState, codexPasteWanted, hermesReasoningShown, hermesStateOf, isOmhScreen, omoInputBox, screenTurnFailure } from './screen.mjs'; // P299: hermesReasoningShown. P309: 셸 안 Hermes·OMH 화면
 import { parseTargets, toLF, clip, isBoardNotice, promptTask } from './text.mjs';
 import { planAnswer, checkSteps, sameAsk } from './answer.mjs';
 import { checkKeys, keyChain, keysBy } from './keys.mjs'; // P104: 휴대폰 키 줄
@@ -97,7 +97,7 @@ import { m, confirmResult, keyed } from './msg.mjs'; // P16: 화면 글 열쇠
 import { closePlan, checkAfter } from './ws-close.mjs'; // P44: 워크스페이스 지우기 판단
 import { groupHandlers, readGroups, dropWorkspaces, GROUPS_META, syncWsGroups, wsLabels } from './ws-groups.mjs'; // P44: 가상 그룹. P91: 폴더 위계 묶음(저절로)
 import { refreshModel, findCodexRollout, findPiSession, shownModel, sameModel, readPiLastAnswer, resumeModel } from './model-now.mjs'; // P137: 하네스가 지금 쓰는 모델
-import { readOmoRecord, omoAskOf, omoRecordView, newOmoRecord } from './omo-record.mjs'; // P381: omo 기록의 열린 질문·할 일·goal
+import { readOmoRecord, omoAskOf, omoRecordView, newOmoRecord, promptInRecord, omoTurnFailure } from './omo-record.mjs'; // P381: omo 기록의 열린 질문·할 일·goal
 import { codexHomeOf } from './codex-models.mjs';
 import { TempLinks, linkPatch, tempUntilAfter } from './temp-links.mjs'; // P171: 일시 연결
 import { linkRelationPlan, linkDefaultRole, LINK_CHOICES } from './relations.mjs'; // P175: 잇는 자리에서 하위·동료
@@ -328,14 +328,15 @@ export class Backend {
       inspect: async (sid, text) => {
         const s = this.sessions.get(sid); const k = s && (s.kind || 'claude');
         if (isSdk(s)) return { box: 'empty', seen: false, noResend: true }; // P363: SDK 세션은 입력 칸이 없다(stdin 한 줄이 곧 제출). 다시 보내지 않는다
-        if (!s || !s.paneId || (k !== 'claude' && k !== 'codex' && k !== 'dsh' && k !== 'hermes')) return null; // P298: hermes도 화면의 입력 칸
+        if (!s || !s.paneId || (k !== 'claude' && k !== 'codex' && k !== 'dsh' && k !== 'hermes' && k !== 'omo')) return null; // P298: hermes도 화면의 입력 칸. P383: omo(스티어링 전에 입력 칸이 비었는지 본다)
         const scr = await this.adapter.readScreen(s.paneId, { source: 'visible' });
         const r = promptOnScreen(scr, text, k);
-        if (r.box === 'other') r.peek = (k === 'codex' ? codexInputBox : k === 'dsh' ? dshInputBox : k === 'hermes' ? hermesInputBox : claudeInputBox)(scr).text.slice(0, 60); // P106: 무엇이 보였는지 판 기록에 남긴다
-        return k === 'codex' || k === 'hermes' ? { ...r, noResend: true } : r; // P298: hermes도 붙여 넣기(pastePrompt)라 다시 보내지 않는다
+        if (r.box === 'other') r.peek = (k === 'codex' ? codexInputBox : k === 'dsh' ? dshInputBox : k === 'hermes' ? hermesInputBox : k === 'omo' ? omoInputBox : claudeInputBox)(scr).text.slice(0, 60); // P106: 무엇이 보였는지 판 기록에 남긴다
+        return k === 'codex' || k === 'hermes' || k === 'omo' ? { ...r, noResend: true } : r; // P298: hermes도 붙여 넣기(pastePrompt)라 다시 보내지 않는다. P383: omo는 기록으로 확인한다(두 번 넣지 않는다)
       },
       pressEnter: async (sid) => { const s = this.sessions.get(sid); if (s && s.paneId) await this.adapter.paneKeys(s.paneId, ['enter']); },
       drafts: this.draftIo(),
+      recordSeen: (sid, text, since) => this.omoPromptSeen(sid, text, since), // P383: OmO 스티어링 제출 확인(세션 기록의 user 메시지)
     });
     // P128: 쓰다 만 글을 비킴(aside)·비키지 못함(keep)·되돌림(back). 되돌리지 못한 글은 이 이벤트의 text로 판 기록에 남는다
     this.queue.beforeDeliver = (d) => (this.docs ? this.docs.beforeDeliver(d) : undefined); // P257: 문서 점검 경고 한 줄
@@ -1404,6 +1405,11 @@ export class Backend {
     try {
       const text = await this.adapter.readScreen(s.paneId, { source: 'recent_unwrapped', lines: 200 });
       s.rt.lastAnswer = screenAnswerText(text, 20, { kind: s.kind }); s.rt.lastAnswerAt = Date.now(); s.rt.answerSource = 'screen'; // P192: 종류(AGY)
+      // P383: omo 답을 기록에서 못 읽어 화면에서 골랐다. 상태 줄이 실패한 턴(failed · provider_error)이면 카드 상태 error(기록이 실패를 먼저 말했으면 그대로)
+      if (s.kind === 'omo' && !s.rt.turnError && ['idle', 'done'].includes(s.rt.term.status)) {
+        const f = screenTurnFailure(tailLines(text, 40));
+        if (f) { s.rt.turnError = { ...f, via: 'screen', at: Date.now() }; this.store.addEvent(s.sessionId, 'turn_failed', { type: f.type, via: 'screen', message: f.message ? clip(f.message, 200) : null }); this.log(`turn failed ${s.name}: ${f.type} (screen)`); }
+      }
       this.bus.emit('screenAnswer', s);
     } catch {}
   }
@@ -1424,6 +1430,30 @@ export class Backend {
     return false;
   }
 
+  // P383: omo 턴이 실패로 끝났는가(기록의 assistant stopReason error·생명 주기 failed, 이 턴 = 터미널 working 뒤). 쉼일 때만 둔다(working이 되면 applyTermStatus가 지운다) → 바뀌었으면 true
+  noteOmoTurnFailure(s, st) {
+    const rt = s.rt;
+    if (!rt || !['idle', 'done'].includes(rt.term.status)) return false;
+    const f = omoTurnFailure(st, (rt.turn && rt.turn.startedAt) || 0);
+    if (!f || (rt.turnError && rt.turnError.via !== 'screen')) return false;
+    rt.turnError = { type: f.type, message: f.message, via: f.via, at: Date.now() };
+    this.store.addEvent(s.sessionId, 'turn_failed', { type: f.type, via: f.via, message: f.message ? clip(f.message, 200) : null });
+    this.log(`turn failed ${s.name}: ${f.type}${f.message ? ' (' + clip(f.message, 120) + ')' : ''}`);
+    return true;
+  }
+  // P383: 판이 그 세션에 넣은 글이 세션 기록에 user 메시지로 들어갔나(OmO 스티어링 제출 확인). OmO가 아니면 null(대기열의 다른 확인 길)
+  omoPromptSeen(sid, text, since) {
+    const s = this.sessions.get(sid);
+    if (!s || s.kind !== 'omo') return null;
+    if (this.refreshOmoRecord(s)) this.broadcastSession(s, { cause: 'omo record' });
+    return promptInRecord(s._omoRec, text, since);
+  }
+  // P383: 마지막 답 물러섬 전에 본다. 이 턴이 실패로 끝났나 → { type, message, via } | null
+  turnFailure(s) {
+    if (!s || !s.rt) return null;
+    if (s.kind === 'omo' && this.refreshOmoRecord(s)) this.broadcastSession(s, { cause: 'omo record' });
+    return s.rt.turnError || null;
+  }
   // P381: omo 기록을 읽어 열린 질문(rt.recordAsk)을 둔다. 기록을 못 읽으면(꼴이 다름) 세션마다 backend.log에 한 줄 남기고 화면(screenAsk)으로 물러난다 → 바뀌었으면 true
   refreshOmoRecord(s) {
     if (s.kind !== 'omo' || !s.rt) return false;
@@ -1435,10 +1465,11 @@ export class Backend {
     if (!st) return false;
     s._omoRec = st;
     if (st.ok === false && !s._omoRecWarned) { s._omoRecWarned = true; this.log(`omo record unreadable, screen fallback: ${s.name} ${path.basename(file)}${st.error ? ` (${st.error})` : ''}`); }
+    const failed = this.noteOmoTurnFailure(s, st); // P383: 쉬는데 이 턴이 실패로 끝났으면 카드 상태 error
     const ask = omoAskOf(st);
     const was = JSON.stringify(s.rt.recordAsk || null);
     s.rt.recordAsk = ask;
-    if (was === JSON.stringify(ask)) return false;
+    if (was === JSON.stringify(ask)) return failed;
     this.store.addEvent(s.sessionId, 'record_ask', ask ? { id: ask.toolUseId, questions: ask.questions.length, waitingHuman: ask.waitingHuman, more: ask.more } : { closed: true });
     return true;
   }

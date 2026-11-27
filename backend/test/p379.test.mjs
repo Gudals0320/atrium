@@ -14,8 +14,9 @@ test('P379 rowOf: orch.on이면 orch { on: true }, 아니면 칸이 없다(줄�
 });
 
 test('P379 휴대폰 줄의 판단이 백엔드 steerBlock과 같다(자체 오케스트레이션은 대기열만)', () => {
-  const r = rowOf(sum({ orch: { on: true } }));
+  const r = rowOf(sum({ kind: 'hermes', orch: { on: true } })); // P383: OmO는 스티어링을 받으므로 막히는 예는 Hermes
   assert.equal(steerBlock(r), 'orchestrates');
+  assert.equal(steerBlock(rowOf(sum({ orch: { on: true } }))), null, 'P383: OmO는 자체 오케스트레이션이어도 받는다');
   assert.equal(steerBlock(rowOf(sum({ kind: 'claude', hooked: true, orch: { on: true } }))), 'orchestrates');
 });
 

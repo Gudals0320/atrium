@@ -44,6 +44,7 @@ export function newRuntime({ trustPredicted = false, now = Date.now(), kind = 'c
     lastAnswer: null,
     lastAnswerAt: null,
     lastError: null,
+    turnError: null, // P383: hook 없는 세션(omo)의 실패한 턴(기록·화면에서 읽음). 다음 working에 지운다
     permissionMode: null,
     sessionEnd: null, // SessionEnd hook { reason, at }
     exit: null, // { kind: normal|terminal_stopped|trust_declined|other, reason, at }
@@ -208,6 +209,7 @@ export function applyTermStatus(rt, status, now = Date.now(), extra = {}) {
   if (status !== 'blocked') { rt.trustScreen = null; rt.screenAsk = null; rt.worktreeExit = null; }
   // hook이 없는 세션의 턴은 터미널 상태로 센다(검토 대기 표시에 쓴다)
   if (rt.hooked === false && status === 'working' && prev !== 'working') rt.turn = { startedAt: now, endedAt: null };
+  if (status === 'working') rt.turnError = null; // P383: 새 턴이 돈다(실패한 턴 표시를 내린다)
   if (rt.phase === 'starting' && (status === 'idle' || status === 'done' || status === 'blocked' || status === 'working')) rt.phase = 'running';
   // P173: 일 구간의 시작과 끝. 턴 없는 구간(압축)은 턴 끝(turn.endedAt)을 바꾸지 않는다
   let turnless = false;
@@ -258,6 +260,7 @@ export function applyAgentReleased(rt, now = Date.now(), { termStopping = false,
   rt.term.status = 'unknown';
   rt.pendingAsk = null;
   rt.recordAsk = null; // P381
+  rt.turnError = null; // P383
   rt.worktreeExit = null;
   rt.bg = null; // P92: claude가 끝나면 뒤 일도 끝난다
   const reason = rt.sessionEnd && rt.sessionEnd.reason;
@@ -350,6 +353,7 @@ export function deriveState(rt) {
     if (s === 'working') return { state: 'working' };
     // P381: 턴은 쉬는데 기록의 생명 주기가 사람의 답을 기다린다(기다리지 않는 질문 waitForAnswer:false 등). 일하는 중에는 보지 않는다(기록이 늦게 닫힐 수 있다)
     if ((s === 'idle' || s === 'done') && rt.recordAsk && rt.recordAsk.waitingHuman) return { state: 'waiting', ask: rt.recordAsk, estimate: `record waiting_human, term ${s}` };
+    if ((s === 'idle' || s === 'done') && rt.turnError) return { state: 'error', error: rt.turnError }; // P383: omo 턴이 실패로 끝났다(provider_error 등)
     if (s === 'idle' || s === 'done') return { state: 'ready' };
     if (s === 'unknown' && rt.phase === 'running' && h.present) return { state: 'ready', estimate: 'term unknown' };
     return { state: 'starting' };

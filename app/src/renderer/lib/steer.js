@@ -8,11 +8,13 @@
 // 세션 요약(kind, hooked) → 스티어링할 수 없는 까닭 | null. kind: 다른 종류(opencode 등), no_hook: hook이 없는 Claude Code
 // P271(이슈 #19): Codex는 받는다(일하는 중 입력 칸의 글에 Enter를 치면 지금 턴에 끼워 넣는다)
 // P296: 자체 오케스트레이션 세션은 대기열만(orchestrates)
+// P383: OmO(omo)는 자체 오케스트레이션이어도 스티어링을 받는다(일하는 중 Enter = 스티어링 대기열, 지금 턴의 도구 호출 뒤에 들어간다). 백엔드 STEER_ORCH_KINDS와 같다
+export const STEER_ORCH_KINDS = new Set(['omo']);
 export function steerBlock(s) {
   if (!s) return 'kind';
-  if (s.orch && s.orch.on) return 'orchestrates';
   const kind = s.kind || 'claude';
-  if (kind === 'codex') return null;
+  if (s.orch && s.orch.on && !STEER_ORCH_KINDS.has(kind)) return 'orchestrates';
+  if (kind === 'codex' || kind === 'omo') return null;
   if (kind !== 'claude') return 'kind';
   return s.hooked === false ? 'no_hook' : null;
 }

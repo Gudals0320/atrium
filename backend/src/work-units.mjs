@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import { shownName } from './session-label.mjs';
 import { clip, startsAsBoardNotice } from './text.mjs';
-import { UnitStops, launchArgsSuspect, badArgsText } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
+import { UnitStops, launchArgsSuspect, badArgsText, turnErrorDetail } from './unit-stops.mjs'; // P181: 보고 없이 멈춤 알림
 import { checkRecordFiles, copyRecords, recordFolder, recordLines, recordBrief, mainCheckoutOf, readRecord } from './records.mjs'; // P334: done --record
 
 // P216: 에이전트만 끝나고 셸 패널이 남은 것을 멈춤(exited)으로 보는가. 판이 끄라고 한 것(잠재우기·끄기·child-kill·옮기기·다시 띄우기: normal),
@@ -367,6 +367,17 @@ export class WorkUnits {
     while (!fresh() && Date.now() - t0 < (this.fallbackMs ?? FALLBACK_ANSWER_MS)) await new Promise((r) => setTimeout(r, 300));
     const cur = st.openTryOf(sid);
     if (!cur || cur.id !== tr.id || !b.sessions.has(sid) || this.prev.get(sid) === 'working') return null;
+    // P383: 그 턴이 실패로 끝났으면(OmO provider_error 등: 기록의 오류·생명 주기 failed, 화면 상태 줄) ok로 닫지 않는다.
+    //   Claude Code의 오류 턴과 같이 "done 없이 멈춤: 오류로 턴이 끝났다"(turn_error)로 부모에게 알리고 일은 열어 둔다(부모가 다시 시키거나 끈다)
+    let fail = null;
+    try { fail = typeof b.turnFailure === 'function' ? b.turnFailure(s) : (s.rt && s.rt.turnError) || null; } catch { fail = null; }
+    if (fail) {
+      st.addEvent(sid, 'unit_done_fallback_skipped', { unitId: tr.unitId, tryId: tr.id, why: 'turn_failed', type: fail.type || null, via: fail.via || null });
+      b.log(`unit ${tr.unitId}: last-answer close skipped, turn of ${this.nameOf(sid)} failed (${fail.type || 'error'})`);
+      this.recordStop(s, tr, 'turn_error');
+      if (this.stops) this.stops.add(tr, st.getUnit(tr.unitId), 'turn_error', turnErrorDetail(fail));
+      return null;
+    }
     const answer = s.rt && s.rt.lastAnswer ? String(s.rt.lastAnswer) : '';
     const body = answer.trim() ? clip(answer, DONE_TEXT_MAX - 200) : '(마지막 답을 읽지 못했다)';
     const text = `${FALLBACK_MARK} ${body}`;
