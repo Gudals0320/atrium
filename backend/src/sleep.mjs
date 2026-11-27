@@ -889,7 +889,7 @@ export class Sleeper {
       created = await b.withNewPane(() => b.adapter.createWorkspace({ cwd: s.cwd, label: s.name }), (r) => {
         s.paneId = r.paneId; s.termWorkspaceId = r.workspaceId;
         const rt = s.rt;
-        rt.sleep = null; rt.exit = null; rt.phase = 'starting'; rt.launchedAt = Date.now(); rt.hooksSinceLaunch = 0; rt.sessionEnd = null; rt.pendingAsk = null; rt.lastError = null;
+        rt.sleep = null; rt.exit = null; rt.phase = 'starting'; rt.launchedAt = Date.now(); rt.hooksSinceLaunch = 0; rt.sessionEnd = null; rt.pendingAsk = null; rt.lastError = null; rt.turnError = null; // P383
         rt.term = { status: null, launchPending: true, agentSessionId: null, present: false, at: Date.now() };
         b.store.updateSession(s.sessionId, { paneId: r.paneId, termWorkspaceId: r.workspaceId, runtime: rt });
       });

@@ -7,7 +7,7 @@ import { KNOW_RULE_PLAIN } from './cli-contract.mjs'; // P364: 작업 지식 찾
 //       ask·todo도 되고 child는 여전히 없다.
 // - 제한은 오케스트레이션 세션에만 건다. 보통 세션은 지금 그대로(allowed null = 모두).
 // - 백엔드(branch.mjs)가 /branch/* 앞에서 막고(not_permitted), help·안내문은 허용 동사만 보인다.
-// - 입력은 대기열만(스티어링 없음, delivery.mjs steerBlock 'orchestrates'). 보고는 atrium done, 하네스가 atrium을 못 돌리면
+// - 입력은 대기열만(스티어링 없음, delivery.mjs steerBlock 'orchestrates'). P383: OmO(omo)는 예외로 스티어링을 받는다(STEER_ORCH_KINDS). 보고는 atrium done, 하네스가 atrium을 못 돌리면
 //   런처 칸 reportFallback 'last_answer'로 판이 턴 끝 마지막 답을 그 일의 보고로 닫는다(work-units.mjs).
 // - 잠재우기: 안의 에이전트는 화면이 조용해도 돈다. 바쁨 신호(busy: proctree·cpu·{ files })를 sleep.mjs가 보고 바쁘면 재우지 않는다.
 
