@@ -13,6 +13,7 @@ import { WorkUnits, unitHeader, RECORD_TAIL } from '../src/work-units.mjs';
 import { secretName, recordFolder, mainCheckoutOf, checkRecordFiles, copyRecords, recordLines, readRecord, RECORD_LINES_MAX, RECORD_FILES_MAX } from '../src/records.mjs';
 import { summaryLine, mergeSummaryText } from '../src/merger.mjs';
 import { BOARD_SYSTEM_PROMPT, RECORD_RULE } from '../src/launch.mjs';
+import { limitOf } from './text-limits.mjs'; // P387: 글 크기 상한의 한 원본(npm run check:skill도 같은 값)
 import { HARNESS_PROMPT } from '../src/harness.mjs';
 import { boardSkill } from '../src/branch.mjs';
 import { VERBS } from '../src/cli-contract.mjs';
@@ -143,7 +144,7 @@ test('P334 merger 정리 줄에 기록', () => {
 });
 
 test('P334 안내문 한 줄: 판 안내·하네스 안내·일 머리·스킬·계약', () => {
-  assert.ok(RECORD_RULE.length < 160, RECORD_RULE.length);
+  assert.ok(RECORD_RULE.length < limitOf('p334-record'), RECORD_RULE.length);
   assert.ok(BOARD_SYSTEM_PROMPT.includes(RECORD_RULE));
   assert.equal(BOARD_SYSTEM_PROMPT.split('\n').length, 9, '줄 수 그대로');
   assert.ok(HARNESS_PROMPT.includes('--record <파일>') && !HARNESS_PROMPT.includes('\n') && !HARNESS_PROMPT.includes('"'));
