@@ -18,6 +18,7 @@ import { Branch, boardSkill } from '../src/branch.mjs';
 import { VERBS, shortHelp } from '../src/cli-contract.mjs';
 import { BOARD_SYSTEM_PROMPT } from '../src/launch.mjs';
 import { HARNESS_PROMPT } from '../src/harness.mjs';
+import { limitOf } from './text-limits.mjs'; // P387: 글 크기 상한의 한 원본(npm run check:skill도 같은 값)
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'mtask-p143-'));
@@ -224,6 +225,6 @@ test('P143 안내 글: --now는 계약과 CLI 사용법에 그대로, 안내 글
   assert.ok(VERBS.find((v) => v.name === 'prompt').args.includes('[--wait | --steer]')); // P248: --steer(= --now)
   const long = fs.readFileSync(path.join(HERE, '..', 'bin', 'atrium-child.mjs'), 'utf8').match(/const HELP = `([\s\S]*?)`;/)[1];
   assert.match(long, /--now는 받는 쪽이 일하는 중인 Claude Code면/);
-  assert.ok(BOARD_SYSTEM_PROMPT.length < 2088, /* P384: 하위 질문 창은 부모가 atrium answer로(기준 한 마디). P368: 맡기기 전 atrium know로 힌트 찾기 한 마디. P364: 막히면 atrium know 한 마디. P360: 되살리기·갈라 열기 한 마디. P334: 일 기록 한 마디 */ `판 시스템 글 ${BOARD_SYSTEM_PROMPT.length}자`);
+  assert.ok(BOARD_SYSTEM_PROMPT.length < limitOf('p143-board'), `판 시스템 글 ${BOARD_SYSTEM_PROMPT.length}자`); // P387: 상한과 늘린 까닭은 text-limits.mjs의 p143-board 줄
   assert.ok(!/[\r\n"]/.test(HARNESS_PROMPT), '하네스 안내문은 한 줄, 큰따옴표 없이');
 });
