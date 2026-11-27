@@ -4,6 +4,7 @@
 //   P371: 순위·포인터·발췌의 단위는 절(제목 경계)이다. 한 파일은 맞은 낱말이 가장 몰린 절 하나가 대표하고(다른 맞은 절은 꼬리표),
 //   발췌는 그 절 안에서 맞은 줄(줄 번호)과 그 둘레다. 같은 글의 복사본은 한 자리로 접고(같은 글 꼬리표), 부른 세션의 단위(selfUnit)에 딸린
 //   자기 파일(작업 파일·기록·판 일·done, 코드는 빼고)은 --self가 아니면 뺀다(지휘 세션·사람은 단위가 없어 그대로)
+//   P388: 그 절에서 맞은 줄 가까이 제약을 적은 줄(know-text.mjs CAUTION_WORDS)이 있으면 결과의 caution { text, line }과 "제약 L<줄>" 한 줄로 함께 보인다
 // - open: 포인터의 원문(색인에 든 원천만), unit: 그 단위의 파일·기록·판 일·커밋을 순위와 상관없이
 // - format: 사람·에이전트가 읽는 글(첫 줄에 돌려준 글자 수) 또는 JSON(total_chars)
 // 결정 상태: 쓰는 쪽이 .atrium/know.json superseded에 선언한 것만 "대체됨 → 지금: …"으로 붙인다(LLM 판정 없음). 결과의 status 칸
@@ -159,7 +160,7 @@ export function search(o, a = {}) {
     const r = f.rep.row;
     // 자기 단위의 것(코드 주석은 남긴다): 부른 세션이 이미 가진 글이라 자리만 차지한다
     if (selfUnit && r.kind !== 'code' && (r.sunit === selfUnit || (r.origin === 'db' && r.unit === selfUnit))) { hidden++; continue; }
-    const ex = sectionExcerpt(f.rep.parts, searchTerms);
+    const ex = sectionExcerpt(f.rep.parts, searchTerms, undefined, idx.sectionChunks(r.path, f.rep.sa)); // P388: 제약 줄은 절 전체에서
     if (!ex.text) continue;
     const pointer = r.origin === 'db' ? r.path : `${r.path}:${f.rep.sa}-${f.rep.sb}`;
     const me = { path: r.path, origin: r.origin, hash: r.hash, unit: r.sunit || null, lines: normLines(f.rep.parts.map((p) => p.body).join('\n')) };
@@ -175,7 +176,7 @@ export function search(o, a = {}) {
     const also = r.origin === 'db' ? [] : f.others.slice(0, ALSO_MAX).map((s) => `${s.sa}-${s.sb}`);
     const res = { pointer, kind: r.kind, date: dayOf(r.changed), at: Math.round(r.changed), unit: r.unit || r.sunit || null,
       ...(f.rep.heading && r.origin !== 'db' ? { heading: f.rep.heading.slice(0, 80) } : {}), flags, status: statusOf(sup), excerpt: ex.text,
-      ...(ex.line != null && r.origin !== 'db' ? { line: ex.line } : {}), ...(also.length ? { also } : {}), ...(sup.length ? { notes: sup.map(supersededLine) } : {}) };
+      ...(ex.line != null && r.origin !== 'db' ? { line: ex.line } : {}), ...(ex.caution ? { caution: r.origin === 'db' ? { text: ex.caution.text } : ex.caution } : {}), ...(also.length ? { also } : {}), ...(sup.length ? { notes: sup.map(supersededLine) } : {}) };
     results.push(res); kept.push({ me, res });
     if (results.length >= k) break;
   }
@@ -291,7 +292,9 @@ function block(cmd, x) {
   // P371: 발췌 앞의 L<줄>은 맞은 줄의 원문 줄 번호. 같은 글(접은 복사본 자리)과 같은 파일의 다른 맞은 절은 꼬리표 한 줄씩
   const copies = x.copies && x.copies.length ? `\n  같은 글: ${x.copies.slice(0, 3).map((p) => p.replace(/:\d+-\d+$/, '')).join(', ')}${x.copies.length > 3 ? ` 외 ${x.copies.length - 3}곳` : ''}` : '';
   const also = x.also && x.also.length ? `\n  다른 절: ${x.also.join(', ')}` : '';
-  return `${x.pointer}  [${meta}]${x.heading ? ` § ${x.heading}` : ''}\n  ${x.line ? `L${x.line} ` : ''}${x.excerpt}${copies}${also}${(x.notes || []).map((n) => `\n  ${n}`).join('')}`;
+  // P388: 맞은 줄 가까이의 제약 줄(주의·상한·하지 않는다 …)은 발췌 바로 아래 "제약 L<줄>" 한 줄
+  const caution = x.caution ? `\n  제약 ${x.caution.line ? `L${x.caution.line} ` : ''}${x.caution.text}` : '';
+  return `${x.pointer}  [${meta}]${x.heading ? ` § ${x.heading}` : ''}\n  ${x.line ? `L${x.line} ` : ''}${x.excerpt}${caution}${copies}${also}${(x.notes || []).map((n) => `\n  ${n}`).join('')}`;
 }
 // 결과 → { out(그대로 찍을 글), pointers: [{ pointer, chars }], total }. 첫 줄의 글자 수는 마지막 줄바꿈까지 센 out 전체의 글자 수다
 export function format(res, json = false) {

@@ -87,6 +87,8 @@ export class KnowIndex {
     return this.db.prepare(`SELECT c.id, c.path, c.a, c.b, c.sa, c.sb, c.heading, c.body, c.unit, s.unit AS sunit, s.hash, s.kind, s.born, s.changed, s.origin, (${hit}) AS n
       FROM chunk c JOIN source s ON s.path = c.path WHERE (? IS NULL OR s.kind = ?) AND s.born < ? AND n > 0 ORDER BY n DESC, s.changed DESC, c.id LIMIT ?`).all(...terms, kind, kind, cut, limit);
   }
+  // P388: 한 절(경로·sa)의 덩어리 전부(발췌의 제약 줄은 맞은 덩어리 밖에서도 찾는다)
+  sectionChunks(p, sa) { return this.st('SELECT a, body FROM chunk WHERE path = ? AND sa = ? ORDER BY a').all(p, sa); }
   chunkSpan(p) { return this.st('SELECT min(a) AS a, max(b) AS b FROM chunk WHERE path = ?').get(p); }
   unitLinks(u) { return this.st('SELECT l.path, l.a, l.b, s.kind, s.born, s.changed, s.origin FROM unitlink l JOIN source s ON s.path = l.path WHERE l.unit = ? ORDER BY l.path, l.a').all(u); }
   ownedSources(u) { return this.st('SELECT * FROM source WHERE unit = ?').all(u); }

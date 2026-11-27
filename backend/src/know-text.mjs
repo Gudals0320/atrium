@@ -11,6 +11,8 @@ export const SECTION_LINES_MAX = 80; // P371: 이보다 긴 절(빈 줄 빼고 �
 export const ALSO_MAX = 2; // P371: 결과 하나에 붙이는 "다른 절" 수
 export const OPEN_LINES_MAX = 400; // know open 한 번에 보이는 줄 수
 export const NO_CUT = 9e15; // --before 없음(밀리초)
+export const CAUTION_MAX = 160; // P388: 결과 하나에 붙이는 제약 줄("제약 L<줄>")의 글자 수 상한(맞은 줄 발췌 EXCERPT_MAX와 따로)
+export const CAUTION_NEAR = 12; // P388: 맞은 줄에서 이 줄 수 안에 있는 제약 줄만 붙인다(원문 줄 번호 차이)
 
 // 단위 번호(PNNN, P12a). 앞뒤가 영문·숫자가 아닐 때만
 const UNIT_RE = /(?<![A-Za-z0-9])[Pp](\d{1,4})([abcABC]?)(?![A-Za-z0-9])/g;
@@ -156,14 +158,16 @@ const usable = (line) => { const x = line.trim(); return !!x && !/^(?:```|~~~|--
 // 발췌 다듬기: 긴 따옴표 인용(4낱말 넘고 22자 넘음)은 "…"로 줄인다. P371: 물음 낱말이 든 인용은 15낱말까지 보이고(명령·오류 글이 인용으로 적힌 기록이 많다. maskLine과 같은 상한),
 // 문서에 바꿀 문장 인용(docQuote)은 길어도 보인다(긴 줄은 windowOf가 맞은 낱말 둘레만 자른다)
 const tidy = (s, terms = []) => s.replace(/“[^”]*”|「[^」]*」|"[^"\n]*"/g, (q, at) => { const w = q.split(/\s+/).length; if (w < 4 || q.length <= 22 || docQuote(s, at)) return q; const low = q.toLowerCase(); return w <= 15 && terms.some((t) => low.includes(t)) ? q : '"…"'; }).replace(/^[\s|#*>-]+/, '').replace(/\s+/g, ' ').trim();
-// 긴 줄에서 맞은 낱말이 가장 많이 든 창(max 자)을 고른다(첫 낱말 자리만 보지 않는다)
-function windowOf(line, terms, max) {
+// 긴 줄에서 맞은 낱말이 가장 많이 든 창(max 자)을 고른다(첫 낱말 자리만 보지 않는다).
+// P388: anchors(제약 낱말)를 주면 창은 그 낱말 자리에서만 연다(제약 줄의 창에서 제약 낱말이 잘리지 않게)
+function windowOf(line, terms, max, anchors = null) {
   if (line.length <= max) return line;
   const low = line.toLowerCase();
   const hits = [];
   for (const t of terms) { let i = low.indexOf(t); while (i >= 0 && hits.length < 200) { hits.push([i, t]); i = low.indexOf(t, i + 1); } }
+  const starts = anchors && anchors.length ? hits.filter(([, t]) => anchors.includes(t)) : hits;
   let at = 0; let bestN = -1;
-  for (const [p] of hits) {
+  for (const [p] of starts) {
     const s0 = Math.max(0, p - Math.floor(max / 4));
     const n = new Set(hits.filter(([q, t]) => q >= s0 && q + t.length <= s0 + max - 2).map(([, t]) => t)).size;
     if (n > bestN) { bestN = n; at = p; }
@@ -173,26 +177,79 @@ function windowOf(line, terms, max) {
   const end = Math.min(line.length, start + span);
   return (start ? '…' : '') + line.slice(start, end) + (end < line.length ? '…' : '');
 }
-// P371: 절(덩어리 여럿)에서 물음에 가장 맞는 줄과 그 원문 줄 번호. parts: [{ a, body }](body의 i번째 줄 = 원문 a+i줄).
-// 맞은 줄이 짧으면 바로 뒤 글 줄을 " ⏎ "로 이어 둘레를 보인다. → { text, line } (쓸 줄이 없으면 text '')
-export function sectionExcerpt(parts, terms, max = EXCERPT_MAX) {
+// ---------- 제약 줄(P388) ----------
+// 제약을 적은 줄의 낱말(한 곳에 둔다, 한국어·영어). strong은 그것만으로 제약을 적은 줄이고, weak는 흔한 부정·순서 낱말이라 맞은 줄에
+// strong이 없을 때만 본다. 영어는 낱말 경계로 맞춘다(limit → limits·limited도)
+export const CAUTION_WORDS = Object.freeze({
+  strong: Object.freeze(['주의', '함정', '금지', '상한', '하한', '넘으면', '넘지', '조심', '경고', '안 된다', '안된다', '말 것', '깨진다',
+    'must', 'never', 'limit', 'do not', "don't", 'avoid', 'caution', 'warning', 'pitfall', 'beware']),
+  weak: Object.freeze(['하지 않는다', '않는다', '반드시', '먼저', '넘는', '꼭', 'always', 'only if', 'required']),
+});
+const cautionRe = (list) => new RegExp(list.map((w) => (/^[a-z' ]+$/i.test(w) ? `\\b${w.replace(/ /g, '\\s+')}\\w*` : w.replace(/ /g, '\\s*'))).join('|'), 'i');
+const CAUTION_STRONG = cautionRe(CAUTION_WORDS.strong);
+const CAUTION_WEAK = cautionRe(CAUTION_WORDS.weak);
+// 한 줄의 제약 세기: 2(strong 낱말), 1(weak 낱말만), 0
+export function cautionWeight(line) {
+  const s = String(line || '');
+  return CAUTION_STRONG.test(s) ? 2 : CAUTION_WEAK.test(s) ? 1 : 0;
+}
+// 줄에 든 제약 낱말(소문자, windowOf가 그 둘레를 자르게)
+const cautionTerms = (line) => [CAUTION_STRONG, CAUTION_WEAK].flatMap((re) => [...String(line || '').matchAll(new RegExp(re.source, 'gi'))].map((m) => m[0].toLowerCase()));
+
+// 절의 줄들 → [{ n, t }](원문 줄 번호 순, 겹침 없이, 제목·울타리·말 인용 빼고 다듬은 글)
+function sectionLines(parts, terms) {
   const all = [];
   for (const p of parts || []) String(p.body || '').split('\n').forEach((l, i) => { if (usable(l)) all.push({ n: (p.a || 1) + i, raw: l }); });
   all.sort((x, y) => x.n - y.n);
   const uniq = all.filter((x, i) => !i || x.n !== all[i - 1].n);
   const plain = uniq.filter((x) => !/^\s*#/.test(x.raw)); // 제목 줄은 결과의 § 제목으로 이미 보인다
-  const lines = (plain.length ? plain : uniq).map((x) => ({ n: x.n, t: tidy(redact(x.raw), terms) })).filter((x) => x.t.length > 3);
+  return (plain.length ? plain : uniq).map((x) => ({ n: x.n, t: tidy(redact(x.raw), terms) })).filter((x) => x.t.length > 3);
+}
+// 짧은 줄이면 바로 뒤 글 줄(2줄 안)을 " ⏎ "로 이어 둘레를 보인다
+function withNext(text, lines, i, max, skip) {
+  const cur = lines[i]; const next = lines[i + 1];
+  if (text.length < 70 && next && next.n - cur.n <= 2 && !(skip && skip.has(next.n))) {
+    const room = max - text.length - 3;
+    if (room > 12) return { text: text + ' ⏎ ' + (next.t.length > room ? next.t.slice(0, room - 1) + '…' : next.t), next: next.n };
+  }
+  return { text, next: null };
+}
+// P388: 맞은 줄 가까이(CAUTION_NEAR 줄 안)의 제약 줄 하나 → { text, line } | null. lines: sectionLines, at: 맞은 줄, visible: 맞은 발췌에 보인 글,
+// shown: 그 발췌에 든 줄 번호. 보인 글에 strong 제약 낱말이 있으면 붙이지 않고(같은 줄이면 하나만), weak만 있으면 strong 줄만 찾는다.
+// 맞은 줄·이어 보인 줄도 긴 줄이라 창 밖으로 제약 낱말이 잘렸으면 후보다(그 낱말 둘레를 보인다).
+// weak 낱말만 있는 줄은 물음 낱말이 함께 있을 때만 후보다. 고르기: 물음 낱말이 든 줄 → 제약 세기 → 가까움. 창은 제약 낱말에서 열고, 짧으면 뒤 한 줄을 잇는다(CAUTION_MAX 안)
+export function cautionOf(lines, at, terms, visible, shown = new Set(), max = CAUTION_MAX) {
+  const shownW = cautionWeight(visible);
+  if (shownW >= 2) return null;
+  let best = null; let bs = -Infinity;
+  lines.forEach((x, i) => {
+    if (Math.abs(x.n - at) > CAUTION_NEAR) return;
+    const w = cautionWeight(x.t);
+    if (!w || w <= shownW) return;
+    const st = strength(x.t, terms);
+    if (w < 2 && !(st > 0)) return; // weak 낱말(않는다·먼저 …)만 있는 줄은 물음 낱말이 함께 있을 때만(흔한 낱말이라 소음이 된다)
+    const s = (st > 0 ? 3 : 0) + Math.min(st, 3) * 0.3 + w - Math.abs(x.n - at) * 0.08;
+    if (s > bs) { bs = s; best = i; }
+  });
+  if (best == null) return null;
+  const c = lines[best];
+  const anchors = cautionTerms(c.t);
+  const text = withNext(windowOf(c.t, [...anchors, ...terms], max, anchors), lines, best, max, shown).text;
+  return { text, line: c.n };
+}
+// P371: 절(덩어리 여럿)에서 물음에 가장 맞는 줄과 그 원문 줄 번호. parts: [{ a, body }](body의 i번째 줄 = 원문 a+i줄).
+// 맞은 줄이 짧으면 바로 뒤 글 줄을 " ⏎ "로 이어 둘레를 보인다. → { text, line, caution? } (쓸 줄이 없으면 text '')
+// P388: section(그 절의 덩어리 전부, 없으면 parts)에서 맞은 줄 가까이의 제약 줄을 caution { text, line }으로 함께 돌려준다(cautionOf)
+export function sectionExcerpt(parts, terms, max = EXCERPT_MAX, section = null) {
+  const lines = sectionLines(parts, terms);
   if (!lines.length) return { text: '', line: null };
   let bi = 0; let bs = -1;
   lines.forEach((x, i) => { const s = strength(x.t, terms) + Math.min(x.t.length, 90) * 0.003; if (s > bs) { bs = s; bi = i; } });
   const best = lines[bi];
-  let text = windowOf(best.t, terms, max);
-  const next = lines[bi + 1];
-  if (text.length < 70 && next && next.n - best.n <= 2) {
-    const room = max - text.length - 3;
-    if (room > 12) text += ' ⏎ ' + (next.t.length > room ? next.t.slice(0, room - 1) + '…' : next.t);
-  }
-  return { text, line: best.n };
+  const w = withNext(windowOf(best.t, terms, max), lines, bi, max);
+  const shown = new Set([best.n, ...(w.next != null ? [w.next] : [])]);
+  const caution = cautionOf(section ? sectionLines(section, terms) : lines, best.n, terms, w.text, shown);
+  return { text: w.text, line: best.n, ...(caution ? { caution } : {}) };
 }
 // 덩어리에서 물음에 가장 맞는 줄 하나를 짧게(EXCERPT_MAX 자). 쓸 줄이 없으면(모두 말 인용) ''
 export function excerpt(body, terms, max = EXCERPT_MAX) {
@@ -238,6 +295,41 @@ export function selfUnitOf(name, spec) {
   const s = String(spec || '').slice(0, 4000);
   const m = /docs[\\/]log[\\/][Pp](\d{1,4})([abcABC]?)-/.exec(s) || /^\s*\[?[Pp](\d{1,4})([abcABC]?)(?![A-Za-z0-9])/.exec(s.split('\n').find((l) => l.trim()) || '');
   return m ? unitName(m[1], m[2]) : null;
+}
+
+// ---------- 지휘 세션의 힌트(P388) ----------
+// 사용 기록에 돌려준 위치마다 그것이 부른 세션의 지금 일 지시(판의 일 spec와 그것이 가리키는 작업 파일 docs/log/pNNN-*.md)에
+// 이미 적힌 파일인지 남긴다. 지휘 세션이 넘긴 위치와 워커가 새로 찾은 위치를 나중에 가른다(lab 7단계 6절)
+// 일 spec에서 작업 파일 경로(절대 경로나 docs/log/pNNN-….md) → 문자열 | null
+export function taskFileOf(spec) {
+  const m = /(?:[A-Za-z]:)?[^\s`'"()<>]*?docs[\\/]log[\\/][Pp]\d{1,4}[abcABC]?-[^\s`'"()<>]*?\.md/.exec(String(spec || '').slice(0, 4000));
+  return m ? m[0] : null;
+}
+// 지시 글에 적힌 파일 경로 꼴 → { hint: Set, task: Set }. "힌트"·hint가 든 줄의 것은 hint, 그 밖의 줄은 task(소문자, / 구분, 앞 ./ 뗌).
+// 확장자가 있는 파일만(폴더·낱말은 뺀다). 짧은 꼴(know-text.mjs, lib/kinds.js)도 그대로 두고 맞출 때 경로 끝으로 맞춘다
+const PATH_TOKEN = /[A-Za-z0-9_.\-/\\]*[A-Za-z0-9_-]\.[A-Za-z][A-Za-z0-9]{0,5}(?![A-Za-z0-9])/g;
+export function hintPathsOf(text) {
+  const hint = new Set(); const task = new Set();
+  for (const line of String(text || '').split('\n')) {
+    const into = /힌트|\bhints?\b/i.test(line) ? hint : task;
+    for (const m of line.matchAll(PATH_TOKEN)) {
+      const p = m[0].replace(/\\/g, '/').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '').toLowerCase();
+      if (p.length >= 4 && /[a-z]/.test(p.split('.').pop())) into.add(p);
+    }
+  }
+  for (const p of hint) task.delete(p);
+  return { hint, task };
+}
+// 포인터(경로:줄-줄, db:…)가 지시에 적힌 파일인가 → 'hint'(힌트 줄) | 'task'(지시의 다른 곳) | false. 경로가 같거나, 한쪽이 다른 쪽의 끝 마디들이면 맞음
+export function hintOf(pointer, hints) {
+  if (!hints) return false;
+  const p = parsePointer(pointer);
+  if (!p || p.type !== 'file') return false;
+  const f = p.path.toLowerCase();
+  const fits = (h) => h === f || f.endsWith('/' + h) || h.endsWith('/' + f);
+  for (const h of hints.hint) if (fits(h)) return 'hint';
+  for (const h of hints.task) if (fits(h)) return 'task';
+  return false;
 }
 
 // ---------- 포인터 ----------
