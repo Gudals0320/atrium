@@ -15,6 +15,9 @@ export const SETTINGS = {
   // P10: 보관과 리포 스스로 찾기(archive.mjs, recall.mjs). 0일이면 저절로 보관을 끈다(손 보관은 그대로)
   archiveDays: { type: 'number', default: 14, min: 0, max: 365, label: '마지막 활동 이후 지정한 일수가 지난 보드 외부 대화와 닫힌 세션을 자동 보관합니다 (0: 사용 안 함).' },
   autoOpenRepos: { type: 'boolean', default: true, label: '터미널(Claude Code CLI)에서 작업한 Git 저장소를 프로젝트로 자동으로 엽니다.' },
+  // P386: 워크트리 위치. 판이 git worktree add로 만드는 워크트리(Claude Code가 아닌 하네스의 atrium child --worktree, 빠른 워크트리 세션)의 자리.
+  //   비면 <리포>/.claude/worktrees/<이름>(P321·P382), 채우면 <위치>/<리포 ID>/<이름>(worktree-names.mjs boardWtBase, 리포 ID는 사용자 hook과 같은 꼴). claude -w는 Claude Code·hook이 정한다
+  worktreeRoot: { type: 'string', default: '', max: 200, pattern: /^([A-Za-z]:[\\/][^<>:"|?*\r\n]*)?$/, hint: '드라이브로 시작하는 절대 경로(예: E:/worktrees)', label: 'Claude Code가 아닌 하네스의 워크트리를 만들 폴더입니다. 비우면 저장소 안 .claude/worktrees에 만들고, 채우면 <위치>/<리포 ID>/<이름>에 만듭니다.' },
   // P49(R3): Tailscale로 온 요청의 로그인 사용자 제한. 켜져 있으면 이 PC에 로그인한 Tailscale 사용자와 허용 목록만 짝 맺고 연결한다. 이 PC의 창에서만 바꾼다
   remoteSameUser: { type: 'boolean', default: true, label: 'Tailscale을 통한 요청은 이 PC에 로그인한 사용자와 허용 목록의 사용자만 허용합니다.' },
   // P58(S4): 원격 받기. 끄면 이 PC 밖에서 온 요청(바깥 요청, 짝 맺은 기기 연결)을 모두 거부하고 붙은 원격 연결을 닫는다. 이 PC의 창과 CLI는 그대로. Tailscale serve 설정은 건드리지 않는다

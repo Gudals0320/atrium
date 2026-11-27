@@ -3146,7 +3146,7 @@ export default {
       launchers: 'Launchers start sessions (harness, model, effort, approval). Bots use these launchers too.',
       sleep: 'When idle sessions go to sleep to save memory.',
       resources: 'Keep board sessions from hogging the PC: lower their priority and watch for runaway CPU or memory.',
-      recall: 'Auto-archive of old conversations and auto-open of Git repositories.',
+      recall: 'Auto-archive of old conversations, auto-open of Git repositories and the worktree location.',
       bots: 'Helper agents the board starts on its own. Turn each one on and pick its launcher.',
       devices: 'Reach this board from a phone or another PC browser.',
       terminal: 'Status of the terminal server that holds the sessions.',
@@ -3473,5 +3473,13 @@ export default {
   },
   p379: { // P379
     phoneSteerOff: 'This session takes messages after its current work ends ({why}). Just send.',
+  },
+  p386: { // P386
+    wtRootName: 'Worktree location',
+    wtRootHint: 'Folder for the worktrees of harnesses other than Claude Code (Codex, OmO, …). Empty: inside the repository, in .claude/worktrees.',
+    wtRootNote: 'When set, worktrees go to <location>/<repo ID>/<name> on branch worktree-<name>. The repo ID is the repository path with :, \\ and / turned into _ (e.g. C:/Work/app → C_Work_app). Claude Code (claude -w) worktrees don’t follow this setting: Claude Code and its WorktreeCreate hook choose their place. Existing worktrees are not moved.',
+    wtRootPh: 'Empty: inside the repo (e.g. E:/worktrees)',
+    wtRootSet: 'Worktree location: {v}',
+    wtRootOff: 'Worktree location cleared. Worktrees go inside the repository, in .claude/worktrees.',
   },
 };

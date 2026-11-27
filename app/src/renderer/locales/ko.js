@@ -3150,7 +3150,7 @@ export default {
       launchers: '세션을 띄우는 런처(하네스·모델·노력·승인 방식)입니다. 봇도 여기의 런처를 씁니다.',
       sleep: '쉬는 세션을 절전 모드로 바꿔 메모리를 아끼는 시간입니다.',
       resources: '보드의 세션이 PC를 독차지하지 않게 우선순위를 낮추고 CPU·메모리 폭주를 지켜봅니다.',
-      recall: '오래된 대화의 자동 보관과 Git 저장소 자동 열기입니다.',
+      recall: '오래된 대화의 자동 보관, Git 저장소 자동 열기, 워크트리 위치입니다.',
       bots: '보드가 스스로 띄워 쓰는 보조 에이전트입니다. 봇마다 켜기와 쓸 런처를 정합니다.',
       devices: '휴대폰이나 다른 PC의 브라우저로 이 보드에 접속합니다.',
       terminal: '세션을 쥐는 터미널 서버의 상태입니다.',
@@ -3477,5 +3477,13 @@ export default {
   },
   p379: { // P379: 휴대폰 스티어링 단추를 눌렀는데 그 세션이 스티어링을 받지 않을 때(보내기는 대기열 그대로)
     phoneSteerOff: '이 세션은 지금 일이 끝난 뒤 들어갑니다({why}). 그냥 보내세요.',
+  },
+  p386: { // P386: 설정 › 보관 및 Git 저장소의 워크트리 위치
+    wtRootName: '워크트리 위치',
+    wtRootHint: 'Claude Code가 아닌 하네스(Codex, OmO 등)의 워크트리를 만들 폴더입니다. 비우면 저장소 안 .claude/worktrees에 만듭니다.',
+    wtRootNote: '채우면 <위치>/<리포 ID>/<이름>에 브랜치 worktree-<이름>으로 만듭니다. 리포 ID는 저장소 경로의 :, \\, /를 _로 바꾼 이름입니다(예: C:/Work/app → C_Work_app). Claude Code(claude -w)의 워크트리는 이 설정을 따르지 않고 Claude Code와 그 WorktreeCreate hook이 자리를 정합니다. 이미 만든 워크트리는 옮기지 않습니다.',
+    wtRootPh: '비움: 저장소 안 (예: E:/worktrees)',
+    wtRootSet: '워크트리 위치: {v}',
+    wtRootOff: '워크트리 위치를 비웠습니다. 저장소 안 .claude/worktrees에 만듭니다.',
   },
 };

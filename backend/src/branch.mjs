@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { workspaceOf, gitProbe } from './git.mjs';
-import { boardMakesWorktree, makeChildWorktree, undoChildWorktree, omoMainWarning, omoBranchNote } from './child-worktree.mjs'; // P382: 다른 하네스의 --worktree, OMO 경고
+import { boardMakesWorktree, makeChildWorktree, undoChildWorktree, omoMainWarning, omoBranchNote, boardWtRoot } from './child-worktree.mjs'; // P382: 다른 하네스의 --worktree, OMO 경고
 import { uploadsReadRule } from './uploads.mjs'; // P162
 import { ROLE_RE } from './links.mjs';
 import { SIZE_STEPS } from './canvas.mjs';
@@ -804,7 +804,7 @@ export class Branch {
     this.pending.push(parent.sessionId); this.pendingNames.add(name);
     let out, gw = null;
     try {
-      if (worktree && boardMakesWorktree(kind)) { gw = await makeChildWorktree({ cwd, name: worktree, probe }); info.wtVia = 'git'; info.wtPath = gw.dir.split(path.sep).join('/'); } // P382
+      if (worktree && boardMakesWorktree(kind)) { gw = await makeChildWorktree({ cwd, name: worktree, probe, wtRoot: boardWtRoot(b) }); info.wtVia = 'git'; info.wtPath = gw.dir.split(path.sep).join('/'); } // P382
       // 신뢰 관문이면 처음에는 -w 없이 띄운다(그 저장소의 신뢰 질문이 뜬다)
       // P41: 호출자면 그 호출자의 하네스·모델·옵션·env를 그대로 쓴다(준 --effort만 덮는다). 게이트웨이 모델과 게이트웨이 물려받기는 그 게이트웨이 호출자의 env로, 권한 모드는 부모의 것
       const base = { cwd: gw ? gw.dir : cwd, name, worktree: gate || gw ? null : worktree, parentSessionId: parent.sessionId, branch: info };

@@ -58,6 +58,7 @@ export const ITEMS = [
   { id: 'guardInstantX', page: 'resources', name: 'p348.instantX', hint: 'p348.instantXHint', parent: 'guardDetect' }, // P348
   { id: 'archiveDays', page: 'recall', name: 'settings.archiveDays', hint: 'settings.archiveDaysHint', note: 'settings.archiveDaysNote' },
   { id: 'autoOpenRepos', page: 'recall', name: 'settings.autoOpenName', hint: 'settings.autoOpen', note: 'settings.autoOpenNote' },
+  { id: 'worktreeRoot', page: 'recall', name: 'p386.wtRootName', hint: 'p386.wtRootHint', note: 'p386.wtRootNote' }, // P386
   { id: 'usageAlerts', page: 'alerts', name: 'usage.alertsName', hint: 'usage.alertsHint' },
   { id: 'usageProbe', page: 'alerts', name: 'usageProbe.name', hint: 'usageProbe.hint' },
   { id: 'usageProbeMin', page: 'alerts', name: 'usageProbe.minName', hint: 'usageProbe.minHint', parent: 'usageProbe' },

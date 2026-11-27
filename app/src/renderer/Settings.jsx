@@ -244,7 +244,27 @@ function RecallSettings({ settings, schema }) {
         <input type="number" className="mt-set-num" min={sc.min} max={sc.max} data-field="setting-archiveDays" value={days ?? settings.archiveDays} onChange={(e) => setDays(e.target.value)} onBlur={() => days != null && days !== '' && save('archiveDays', Number(days))} onKeyDown={(e) => { if (e.key === 'Enter' && days != null && days !== '') save('archiveDays', Number(days)); }} />
       </SetRow>
       <SetRow id="autoOpenRepos" name={t('settings.autoOpenName')} hint={t('settings.autoOpen')} info={t('settings.autoOpenNote')}><Toggle checked={!!settings.autoOpenRepos} onChange={(v) => save('autoOpenRepos', v)} field="setting-autoOpenRepos" /></SetRow>
+      {'worktreeRoot' in settings && <WtRootSetting settings={settings} />}
     </div>
+  );
+}
+
+// P386: 워크트리 위치(판이 git worktree add로 만드는 워크트리의 자리). 비우면 저장소 안 .claude/worktrees. Enter·초점 잃음에 저장, Esc는 되돌림
+function WtRootSetting({ settings }) {
+  const t = useT();
+  const [v, setV] = useState(null);
+  const cur = settings.worktreeRoot || '';
+  const save = async () => {
+    if (v == null) return;
+    const next = v.trim();
+    if (next === cur) { setV(null); return; }
+    try { await api.call('settings.set', { key: 'worktreeRoot', value: next }); setV(null); toast(next ? t('p386.wtRootSet', { v: next }) : t('p386.wtRootOff')); } catch (e) { toast(t('settings.saveFailed', { error: errText(e) }), 'error'); }
+  };
+  return (
+    <SetRow id="worktreeRoot" name={t('p386.wtRootName')} hint={t('p386.wtRootHint')} info={t('p386.wtRootNote')}>
+      <input type="text" className="mt-set-text mono" data-field="setting-worktreeRoot" value={v ?? cur} placeholder={t('p386.wtRootPh')} spellCheck={false}
+        onChange={(e) => setV(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } if (e.key === 'Escape' && v != null) { e.preventDefault(); e.stopPropagation(); setV(null); } }} />
+    </SetRow>
   );
 }
 
